@@ -110,7 +110,7 @@ def main():
     show_action.triggered.connect(lambda: (window.showNormal(), window.activateWindow()))
     tray_menu.addSeparator()
     quit_action = tray_menu.addAction("Quit")
-    quit_action.triggered.connect(app.quit)
+    quit_action.triggered.connect(window.force_quit)
     tray_icon.setContextMenu(tray_menu)
 
     # Double-click tray to show window

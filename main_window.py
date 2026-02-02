@@ -2033,19 +2033,8 @@ class ThemeEditorWindow(QMainWindow):
                     QTimer.singleShot(0, self.hide)
         super().changeEvent(event)
 
-    def closeEvent(self, event):
-        # Check if we should minimize to tray instead of closing
-        if settings.get_setting("close_to_tray", True) and hasattr(self, 'tray_icon'):
-            event.ignore()
-            self.hide()
-            self.tray_icon.showMessage(
-                "Thermal Engine",
-                "Application minimized to system tray. Right-click tray icon to quit.",
-                QSystemTrayIcon.MessageIcon.Information,
-                2000
-            )
-            return
-
+    def cleanup(self):
+        """Clean up all resources before quitting."""
         self.disconnect_display()
 
         if self.perf_update_timer:
@@ -2059,4 +2048,24 @@ class ThemeEditorWindow(QMainWindow):
         stop_sensors()
         video_background.close()
 
+    def force_quit(self):
+        """Force quit the application, bypassing minimize-to-tray."""
+        self.cleanup()
+        from PySide6.QtWidgets import QApplication
+        QApplication.quit()
+
+    def closeEvent(self, event):
+        # Check if we should minimize to tray instead of closing
+        if settings.get_setting("close_to_tray", True) and hasattr(self, 'tray_icon'):
+            event.ignore()
+            self.hide()
+            self.tray_icon.showMessage(
+                "Thermal Engine",
+                "Application minimized to system tray. Right-click tray icon to quit.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+            return
+
+        self.cleanup()
         event.accept()
