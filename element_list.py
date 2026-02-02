@@ -1,10 +1,11 @@
 """
-ElementListPanel - Element list management widget.
+ElementListPanel - Element list management widget with group support.
 """
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QComboBox, QListWidget, QListWidgetItem
+    QPushButton, QComboBox, QTreeWidget, QTreeWidgetItem,
+    QMenu, QInputDialog, QAbstractItemView
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QIcon
@@ -14,15 +15,18 @@ from element import ThemeElement
 from elements import get_custom_element
 
 
-class ReorderableListWidget(QListWidget):
-    """QListWidget that properly handles drag-and-drop reordering and multi-select."""
+class ElementTreeWidget(QTreeWidget):
+    """QTreeWidget with drag-drop reordering support."""
     items_reordered = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setHeaderHidden(True)
+        self.setIndentation(20)
+        self.setExpandsOnDoubleClick(False)
 
     def dropEvent(self, event):
         super().dropEvent(event)
@@ -38,6 +42,7 @@ class ElementListPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.elements = []
+        self.groups = {}  # group_name -> list of element indices
         self.setup_ui()
 
     def setup_ui(self):
@@ -59,10 +64,12 @@ class ElementListPanel(QWidget):
 
         layout.addLayout(add_layout)
 
-        self.list_widget = ReorderableListWidget()
-        self.list_widget.itemSelectionChanged.connect(self.on_selection_changed)
-        self.list_widget.items_reordered.connect(self.on_items_reordered)
-        layout.addWidget(self.list_widget)
+        self.tree_widget = ElementTreeWidget()
+        self.tree_widget.itemSelectionChanged.connect(self.on_selection_changed)
+        self.tree_widget.items_reordered.connect(self.on_items_reordered)
+        self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
+        layout.addWidget(self.tree_widget)
 
         btn_layout = QHBoxLayout()
 
@@ -76,6 +83,20 @@ class ElementListPanel(QWidget):
 
         layout.addLayout(btn_layout)
 
+        group_layout = QHBoxLayout()
+
+        self.group_btn = QPushButton("Group")
+        self.group_btn.clicked.connect(self.group_selected)
+        self.group_btn.setToolTip("Group selected elements (Ctrl+G)")
+        group_layout.addWidget(self.group_btn)
+
+        self.ungroup_btn = QPushButton("Ungroup")
+        self.ungroup_btn.clicked.connect(self.ungroup_selected)
+        self.ungroup_btn.setToolTip("Ungroup selected elements (Ctrl+Shift+G)")
+        group_layout.addWidget(self.ungroup_btn)
+
+        layout.addLayout(group_layout)
+
         move_layout = QHBoxLayout()
 
         self.up_btn = QPushButton("Move Up")
@@ -88,13 +109,46 @@ class ElementListPanel(QWidget):
 
         layout.addLayout(move_layout)
 
+    def show_context_menu(self, position):
+        """Show context menu for tree items."""
+        menu = QMenu(self)
+
+        selected = self.tree_widget.selectedItems()
+        if selected:
+            # Check if any selected item is a group
+            has_group = any(item.data(0, Qt.ItemDataRole.UserRole + 1) == "group" for item in selected)
+            has_elements = any(item.data(0, Qt.ItemDataRole.UserRole + 1) == "element" for item in selected)
+
+            if has_elements and len(selected) > 1:
+                group_action = menu.addAction("Group Selected")
+                group_action.triggered.connect(self.group_selected)
+
+            if has_group:
+                ungroup_action = menu.addAction("Ungroup")
+                ungroup_action.triggered.connect(self.ungroup_selected)
+
+            menu.addSeparator()
+
+            if has_elements or has_group:
+                rename_action = menu.addAction("Rename...")
+                rename_action.triggered.connect(self.rename_selected)
+
+            menu.addSeparator()
+
+            duplicate_action = menu.addAction("Duplicate")
+            duplicate_action.triggered.connect(self.duplicate_element)
+
+            delete_action = menu.addAction("Delete")
+            delete_action.triggered.connect(self.remove_element)
+
+        menu.exec(self.tree_widget.viewport().mapToGlobal(position))
+
     def set_elements(self, elements):
         self.elements = elements
         self.refresh_list()
 
     def get_element_icon(self, element_type):
         """Create a colored icon based on element type."""
-        # Color and shape mapping for element types
         type_styles = {
             "circle_gauge": ("#00ff96", "circle"),
             "bar_gauge": ("#00aaff", "rect"),
@@ -142,6 +196,20 @@ class ElementListPanel(QWidget):
         painter.end()
         return QIcon(pixmap)
 
+    def get_group_icon(self):
+        """Create a folder icon for groups."""
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor("#ffa500"), 2))
+        painter.setBrush(QBrush(QColor("#ffa500").darker(150)))
+        # Draw folder shape
+        painter.drawRect(2, 6, 16, 12)
+        painter.drawRect(2, 4, 8, 4)
+        painter.end()
+        return QIcon(pixmap)
+
     def get_friendly_label(self, element):
         """Create a user-friendly label for an element."""
         type_names = {
@@ -158,7 +226,6 @@ class ElementListPanel(QWidget):
 
         type_label = type_names.get(element.type, element.type.replace("_", " ").title())
 
-        # Get a descriptive part from the element
         if hasattr(element, 'source') and element.source and element.source != "static":
             source_label = element.source.replace("_", " ").upper()
             return f"{type_label} - {source_label}"
@@ -168,43 +235,100 @@ class ElementListPanel(QWidget):
             return f"{type_label} - {element.name}"
 
     def refresh_list(self):
-        current_row = self.list_widget.currentRow()
-        self.list_widget.blockSignals(True)
-        self.list_widget.clear()
+        """Refresh the tree widget to reflect current elements and groups."""
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.clear()
+
+        # Collect groups and ungrouped elements
+        groups = {}  # group_name -> [(index, element), ...]
+        ungrouped = []  # [(index, element), ...]
+
         for i, element in enumerate(self.elements):
+            if element.group:
+                if element.group not in groups:
+                    groups[element.group] = []
+                groups[element.group].append((i, element))
+            else:
+                ungrouped.append((i, element))
+
+        # Add groups first
+        for group_name in sorted(groups.keys()):
+            group_item = QTreeWidgetItem([f"📁 {group_name}"])
+            group_item.setIcon(0, self.get_group_icon())
+            group_item.setData(0, Qt.ItemDataRole.UserRole, group_name)  # Store group name
+            group_item.setData(0, Qt.ItemDataRole.UserRole + 1, "group")  # Mark as group
+            group_item.setExpanded(True)
+            self.tree_widget.addTopLevelItem(group_item)
+
+            # Add elements in this group
+            for idx, element in groups[group_name]:
+                icon = self.get_element_icon(element.type)
+                label = self.get_friendly_label(element)
+                child_item = QTreeWidgetItem([label])
+                child_item.setIcon(0, icon)
+                child_item.setData(0, Qt.ItemDataRole.UserRole, idx)  # Store element index
+                child_item.setData(0, Qt.ItemDataRole.UserRole + 1, "element")  # Mark as element
+                group_item.addChild(child_item)
+
+        # Add ungrouped elements
+        for idx, element in ungrouped:
             icon = self.get_element_icon(element.type)
             label = self.get_friendly_label(element)
-            item = QListWidgetItem(icon, label)
-            item.setData(Qt.ItemDataRole.UserRole, i)  # Store original index
-            self.list_widget.addItem(item)
-        if current_row >= 0 and current_row < len(self.elements):
-            self.list_widget.setCurrentRow(current_row)
-        self.list_widget.blockSignals(False)
+            item = QTreeWidgetItem([label])
+            item.setIcon(0, icon)
+            item.setData(0, Qt.ItemDataRole.UserRole, idx)  # Store element index
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, "element")  # Mark as element
+            self.tree_widget.addTopLevelItem(item)
+
+        self.tree_widget.blockSignals(False)
+
+    def get_selected_element_indices(self):
+        """Get indices of all selected elements (including those in selected groups)."""
+        indices = []
+        for item in self.tree_widget.selectedItems():
+            item_type = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            if item_type == "element":
+                idx = item.data(0, Qt.ItemDataRole.UserRole)
+                if idx not in indices:
+                    indices.append(idx)
+            elif item_type == "group":
+                # Add all children of the group
+                for i in range(item.childCount()):
+                    child = item.child(i)
+                    idx = child.data(0, Qt.ItemDataRole.UserRole)
+                    if idx not in indices:
+                        indices.append(idx)
+        return sorted(indices)
 
     def on_items_reordered(self):
-        """Handle drag-and-drop reordering of elements."""
+        """Handle drag-and-drop reordering."""
         self.elements_will_change.emit()
-        # Rebuild elements list based on visual order
-        new_order = []
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            original_idx = item.data(Qt.ItemDataRole.UserRole)
-            new_order.append(self.elements[original_idx])
+        # Rebuild elements list and group assignments based on tree structure
+        new_elements = []
 
-        self.elements[:] = new_order
+        def process_item(item, group_name=None):
+            item_type = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            if item_type == "group":
+                grp_name = item.data(0, Qt.ItemDataRole.UserRole)
+                for i in range(item.childCount()):
+                    process_item(item.child(i), grp_name)
+            elif item_type == "element":
+                idx = item.data(0, Qt.ItemDataRole.UserRole)
+                element = self.elements[idx]
+                element.group = group_name
+                new_elements.append(element)
 
-        # Update stored indices to match new order
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            item.setData(Qt.ItemDataRole.UserRole, i)
+        for i in range(self.tree_widget.topLevelItemCount()):
+            process_item(self.tree_widget.topLevelItem(i))
 
+        self.elements[:] = new_elements
+        self.refresh_list()
         self.elements_changed.emit()
 
     def add_element(self):
         self.elements_will_change.emit()
         element_type = self.add_combo.currentText()
 
-        # Check for custom element defaults
         custom = get_custom_element(element_type)
         if custom:
             props = custom.get('defaults', {}).copy()
@@ -215,75 +339,184 @@ class ElementListPanel(QWidget):
         element = ThemeElement(element_type, **props)
         self.elements.append(element)
         self.refresh_list()
-
-        self.list_widget.setCurrentRow(len(self.elements) - 1)
         self.elements_changed.emit()
 
     def remove_element(self):
-        idx = self.list_widget.currentRow()
-        if idx >= 0:
+        indices = self.get_selected_element_indices()
+        if indices:
             self.elements_will_change.emit()
-            del self.elements[idx]
+            # Remove in reverse order to maintain indices
+            for idx in sorted(indices, reverse=True):
+                del self.elements[idx]
             self.refresh_list()
             self.elements_changed.emit()
 
     def duplicate_element(self):
-        idx = self.list_widget.currentRow()
-        if idx >= 0:
+        indices = self.get_selected_element_indices()
+        if indices:
             self.elements_will_change.emit()
-            original = self.elements[idx]
-            new_element = ThemeElement.from_dict(original.to_dict())
-            new_element.name = f"{original.name}_copy"
-            new_element.x += 20
-            new_element.y += 20
-            self.elements.append(new_element)
+            for idx in indices:
+                original = self.elements[idx]
+                new_element = ThemeElement.from_dict(original.to_dict())
+                new_element.name = f"{original.name}_copy"
+                new_element.x += 20
+                new_element.y += 20
+                self.elements.append(new_element)
             self.refresh_list()
-            self.list_widget.setCurrentRow(len(self.elements) - 1)
             self.elements_changed.emit()
+
+    def group_selected(self):
+        """Group selected elements together."""
+        indices = self.get_selected_element_indices()
+        if len(indices) < 2:
+            return
+
+        # Ask for group name
+        name, ok = QInputDialog.getText(self, "Create Group", "Group name:")
+        if not ok or not name.strip():
+            return
+
+        name = name.strip()
+        self.elements_will_change.emit()
+
+        # Assign group to selected elements
+        for idx in indices:
+            self.elements[idx].group = name
+
+        self.refresh_list()
+        self.elements_changed.emit()
+
+    def ungroup_selected(self):
+        """Ungroup selected elements or groups."""
+        self.elements_will_change.emit()
+
+        for item in self.tree_widget.selectedItems():
+            item_type = item.data(0, Qt.ItemDataRole.UserRole + 1)
+            if item_type == "group":
+                # Ungroup all children
+                group_name = item.data(0, Qt.ItemDataRole.UserRole)
+                for element in self.elements:
+                    if element.group == group_name:
+                        element.group = None
+            elif item_type == "element":
+                idx = item.data(0, Qt.ItemDataRole.UserRole)
+                self.elements[idx].group = None
+
+        self.refresh_list()
+        self.elements_changed.emit()
+
+    def rename_selected(self):
+        """Rename selected group or element."""
+        selected = self.tree_widget.selectedItems()
+        if not selected:
+            return
+
+        item = selected[0]
+        item_type = item.data(0, Qt.ItemDataRole.UserRole + 1)
+
+        if item_type == "group":
+            old_name = item.data(0, Qt.ItemDataRole.UserRole)
+            new_name, ok = QInputDialog.getText(self, "Rename Group", "New name:", text=old_name)
+            if ok and new_name.strip() and new_name.strip() != old_name:
+                self.elements_will_change.emit()
+                new_name = new_name.strip()
+                for element in self.elements:
+                    if element.group == old_name:
+                        element.group = new_name
+                self.refresh_list()
+                self.elements_changed.emit()
+        elif item_type == "element":
+            idx = item.data(0, Qt.ItemDataRole.UserRole)
+            element = self.elements[idx]
+            new_name, ok = QInputDialog.getText(self, "Rename Element", "New name:", text=element.name)
+            if ok and new_name.strip():
+                self.elements_will_change.emit()
+                element.name = new_name.strip()
+                self.refresh_list()
+                self.elements_changed.emit()
 
     def move_up(self):
-        idx = self.list_widget.currentRow()
-        if idx > 0:
-            self.elements_will_change.emit()
+        indices = self.get_selected_element_indices()
+        if not indices or min(indices) == 0:
+            return
+
+        self.elements_will_change.emit()
+        for idx in indices:
             self.elements[idx], self.elements[idx - 1] = self.elements[idx - 1], self.elements[idx]
-            self.refresh_list()
-            self.list_widget.setCurrentRow(idx - 1)
-            self.elements_changed.emit()
+        self.refresh_list()
+        self.elements_changed.emit()
 
     def move_down(self):
-        idx = self.list_widget.currentRow()
-        if idx >= 0 and idx < len(self.elements) - 1:
-            self.elements_will_change.emit()
+        indices = self.get_selected_element_indices()
+        if not indices or max(indices) >= len(self.elements) - 1:
+            return
+
+        self.elements_will_change.emit()
+        for idx in reversed(indices):
             self.elements[idx], self.elements[idx + 1] = self.elements[idx + 1], self.elements[idx]
-            self.refresh_list()
-            self.list_widget.setCurrentRow(idx + 1)
-            self.elements_changed.emit()
+        self.refresh_list()
+        self.elements_changed.emit()
 
     def on_selection_changed(self):
-        selected_indices = [self.list_widget.row(item) for item in self.list_widget.selectedItems()]
-        selected_indices.sort()
+        indices = self.get_selected_element_indices()
 
         # Emit both signals for compatibility
-        if len(selected_indices) == 1:
-            self.element_selected.emit(selected_indices[0])
+        if len(indices) == 1:
+            self.element_selected.emit(indices[0])
         else:
             self.element_selected.emit(-1)  # -1 indicates multi-select or none
-        self.elements_selected.emit(selected_indices)
+        self.elements_selected.emit(indices)
 
     def select_element(self, idx):
-        """Select a single element (backwards compatible)."""
-        self.list_widget.blockSignals(True)
-        self.list_widget.clearSelection()
-        if idx >= 0 and idx < self.list_widget.count():
-            self.list_widget.setCurrentRow(idx)
-        self.list_widget.blockSignals(False)
+        """Select a single element by index."""
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.clearSelection()
+
+        def find_and_select(parent_item=None):
+            if parent_item is None:
+                count = self.tree_widget.topLevelItemCount()
+                for i in range(count):
+                    item = self.tree_widget.topLevelItem(i)
+                    if find_and_select(item):
+                        return True
+            else:
+                item_type = parent_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                if item_type == "element":
+                    if parent_item.data(0, Qt.ItemDataRole.UserRole) == idx:
+                        parent_item.setSelected(True)
+                        return True
+                elif item_type == "group":
+                    for i in range(parent_item.childCount()):
+                        if find_and_select(parent_item.child(i)):
+                            return True
+            return False
+
+        find_and_select()
+        self.tree_widget.blockSignals(False)
 
     def select_elements(self, indices):
         """Select multiple elements by their indices."""
-        self.list_widget.blockSignals(True)
-        self.list_widget.clearSelection()
-        for idx in indices:
-            if 0 <= idx < self.list_widget.count():
-                item = self.list_widget.item(idx)
-                item.setSelected(True)
-        self.list_widget.blockSignals(False)
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.clearSelection()
+
+        def select_matching(parent_item=None):
+            if parent_item is None:
+                count = self.tree_widget.topLevelItemCount()
+                for i in range(count):
+                    select_matching(self.tree_widget.topLevelItem(i))
+            else:
+                item_type = parent_item.data(0, Qt.ItemDataRole.UserRole + 1)
+                if item_type == "element":
+                    if parent_item.data(0, Qt.ItemDataRole.UserRole) in indices:
+                        parent_item.setSelected(True)
+                elif item_type == "group":
+                    for i in range(parent_item.childCount()):
+                        select_matching(parent_item.child(i))
+
+        select_matching()
+        self.tree_widget.blockSignals(False)
+
+    # Keep old list_widget reference for compatibility
+    @property
+    def list_widget(self):
+        return self.tree_widget

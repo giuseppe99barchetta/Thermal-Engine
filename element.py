@@ -59,6 +59,9 @@ class ThemeElement:
         self.clock_face_style = kwargs.get("clock_face_style", "numbers")  # "numbers", "ticks", "none"
         self.smooth_animation = kwargs.get("smooth_animation", True)
 
+        # Grouping
+        self.group = kwargs.get("group", None)  # Group name, None if ungrouped
+
     def to_dict(self):
         return {
             "type": self.type,
@@ -101,7 +104,8 @@ class ThemeElement:
             "show_seconds_hand": self.show_seconds_hand,
             "show_clock_border": self.show_clock_border,
             "clock_face_style": self.clock_face_style,
-            "smooth_animation": self.smooth_animation
+            "smooth_animation": self.smooth_animation,
+            "group": self.group
         }
 
     @classmethod
