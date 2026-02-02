@@ -21,6 +21,8 @@ from PySide6.QtGui import QColor, QAction, QKeySequence, QIcon
 
 from PIL import Image, ImageDraw, ImageFont
 
+from security import validate_preset_schema, is_safe_path
+
 
 # Global font cache for PIL fonts (shared across instances)
 _pil_font_cache = {}
@@ -852,6 +854,13 @@ class ThemeEditorWindow(QMainWindow):
                 with open(path, 'r') as f:
                     data = json.load(f)
 
+                # Validate theme schema before loading
+                is_valid, errors = validate_preset_schema(data)
+                if not is_valid:
+                    QMessageBox.warning(self, "Invalid Theme",
+                        f"Theme file has invalid format:\n{', '.join(errors[:5])}")
+                    return
+
                 self.theme_name = data.get("name", "Untitled")
                 self.theme_name_edit.setText(self.theme_name)
                 self.background_color = data.get("background_color", "#0f0f19")
@@ -1320,7 +1329,13 @@ class ThemeEditorWindow(QMainWindow):
         elif element.type == "analog_clock":
             self.render_analog_clock_rgba(img, element, color_opacity, bg_opacity)
         elif element.type == "image":
-            if element.image_path and os.path.exists(element.image_path):
+            if element.image_path:
+                # Validate image path is safe
+                safe, resolved_path, err = is_safe_path(element.image_path, allow_absolute=True)
+                if not safe or not os.path.exists(element.image_path):
+                    if not safe:
+                        print(f"Unsafe image path blocked: {element.image_path} - {err}")
+                    return
                 try:
                     overlay = Image.open(element.image_path).convert('RGBA')
                     if element.scale_proportionally:

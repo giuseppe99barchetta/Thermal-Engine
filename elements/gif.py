@@ -6,10 +6,15 @@ Displays animated GIF images with proper frame timing.
 
 import os
 import time
+import sys
 from PIL import Image as PILImage
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QImage, QPen, QColor
+
+# Add parent directory to path for security import
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from security import is_safe_path
 
 ELEMENT_TYPE = "gif"
 ELEMENT_NAME = "GIF Image"
@@ -168,6 +173,16 @@ def draw_preview(painter, element, x, y, scale):
     gif_path = getattr(element, 'gif_path', '')
     scale_mode = getattr(element, 'scale_mode', 'fit')
 
+    # Validate path is safe before loading
+    if gif_path:
+        safe, _, err = is_safe_path(gif_path, allow_absolute=True)
+        if not safe:
+            painter.fillRect(x, y, width, height, QColor(60, 40, 40))
+            painter.setPen(QPen(QColor(150, 100, 100)))
+            painter.drawRect(x, y, width, height)
+            painter.drawText(x + 5, y + height // 2, "Unsafe path")
+            return
+
     if not gif_path or not os.path.exists(gif_path):
         # Draw placeholder
         painter.fillRect(x, y, width, height, QColor(40, 40, 60))
@@ -217,6 +232,13 @@ def render_image(draw, img, element):
     gif_path = getattr(element, 'gif_path', '')
     scale_mode = getattr(element, 'scale_mode', 'fit')
     opacity = getattr(element, 'color_opacity', 100)
+
+    # Validate path is safe before loading
+    if gif_path:
+        safe, _, err = is_safe_path(gif_path, allow_absolute=True)
+        if not safe:
+            print(f"GIF unsafe path blocked: {gif_path} - {err}")
+            return
 
     if not gif_path or not os.path.exists(gif_path):
         return

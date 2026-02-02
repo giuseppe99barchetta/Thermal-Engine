@@ -9,6 +9,7 @@ import json
 import winreg
 
 from app_path import get_app_dir, get_resource_path
+from security import escape_registry_path
 
 APP_NAME = "ThermalEngine"
 SETTINGS_FILE = get_resource_path("settings.json")
@@ -81,12 +82,12 @@ def get_executable_path():
     """Get the path to use for autostart."""
     if getattr(sys, 'frozen', False):
         # Running as compiled executable
-        return f'"{sys.executable}"'
+        return escape_registry_path(sys.executable)
     else:
         # Running as script - use pythonw to avoid console window
         python_exe = sys.executable.replace('python.exe', 'pythonw.exe')
         script_path = get_resource_path('main.py')
-        return f'"{python_exe}" "{script_path}"'
+        return f'{escape_registry_path(python_exe)} {escape_registry_path(script_path)}'
 
 
 def set_autostart(enabled):

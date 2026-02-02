@@ -16,6 +16,7 @@ from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
 from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT
 from element import ThemeElement
 from app_path import get_resource_path
+from security import validate_preset_schema, is_safe_filename, sanitize_preset_name
 
 
 # Default theme elements (same as main_window.py)
@@ -193,10 +194,23 @@ class PresetsPanel(QWidget):
         self.ensure_presets_dir()
         for filename in os.listdir(self.presets_dir):
             if filename.endswith(".json"):
+                # Validate filename is safe
+                safe, err = is_safe_filename(filename)
+                if not safe:
+                    print(f"Skipping unsafe filename {filename}: {err}")
+                    continue
+
                 filepath = os.path.join(self.presets_dir, filename)
                 try:
                     with open(filepath, 'r') as f:
                         data = json.load(f)
+
+                    # Validate preset schema before using
+                    is_valid, errors = validate_preset_schema(data)
+                    if not is_valid:
+                        print(f"Invalid preset {filename}: {errors}")
+                        continue
+
                     preset_name = data.get("name", filename[:-5])
                     self.presets[preset_name] = {
                         "data": data,
@@ -299,12 +313,17 @@ class PresetsPanel(QWidget):
         """Save a theme as a preset."""
         self.ensure_presets_dir()
 
-        # Clean the name for filename
-        safe_name = "".join(c for c in name if c.isalnum() or c in (' ', '-', '_')).strip()
-        if not safe_name:
-            safe_name = "preset"
+        # Sanitize the name for safe filename
+        safe_name = sanitize_preset_name(name)
 
-        filepath = os.path.join(self.presets_dir, f"{safe_name}.json")
+        # Validate the filename is safe
+        filename = f"{safe_name}.json"
+        safe, err = is_safe_filename(filename)
+        if not safe:
+            QMessageBox.warning(self, "Error", f"Invalid preset name: {err}")
+            return False
+
+        filepath = os.path.join(self.presets_dir, filename)
 
         # Check if overwriting
         if os.path.exists(filepath):

@@ -13,9 +13,13 @@ Each element file should define:
 import os
 import importlib.util
 import sys
+import re
 
 # Store loaded custom elements
 CUSTOM_ELEMENTS = {}
+
+# Allowed characters in element filenames (alphanumeric, underscore, hyphen)
+SAFE_FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+\.py$')
 
 
 def get_elements_dir():
@@ -33,27 +37,42 @@ def load_custom_elements():
     elements_dir = get_elements_dir()
 
     for filename in os.listdir(elements_dir):
-        if filename.endswith('.py') and not filename.startswith('_'):
-            module_name = filename[:-3]
-            filepath = os.path.join(elements_dir, filename)
+        # Skip non-Python files and private files
+        if not filename.endswith('.py') or filename.startswith('_'):
+            continue
 
-            try:
-                spec = importlib.util.spec_from_file_location(module_name, filepath)
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+        # Validate filename is safe (no path traversal)
+        if not SAFE_FILENAME_PATTERN.match(filename):
+            print(f"[Elements] Skipping unsafe filename: {filename}")
+            continue
 
-                if hasattr(module, 'ELEMENT_TYPE'):
-                    CUSTOM_ELEMENTS[module.ELEMENT_TYPE] = {
-                        'name': getattr(module, 'ELEMENT_NAME', module.ELEMENT_TYPE),
-                        'defaults': getattr(module, 'DEFAULT_PROPS', {}),
-                        'draw_preview': getattr(module, 'draw_preview', None),
-                        'render_image': getattr(module, 'render_image', None),
-                        'module': module
-                    }
-                    print(f"[Elements] Loaded custom element: {module.ELEMENT_TYPE}")
+        module_name = filename[:-3]
+        filepath = os.path.join(elements_dir, filename)
 
-            except Exception as e:
-                print(f"[Elements] Failed to load {filename}: {e}")
+        # Verify file is actually inside elements_dir (prevent symlink attacks)
+        real_path = os.path.realpath(filepath)
+        real_elements_dir = os.path.realpath(elements_dir)
+        if not real_path.startswith(real_elements_dir + os.sep):
+            print(f"[Elements] Skipping file outside elements dir: {filename}")
+            continue
+
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, filepath)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            if hasattr(module, 'ELEMENT_TYPE'):
+                CUSTOM_ELEMENTS[module.ELEMENT_TYPE] = {
+                    'name': getattr(module, 'ELEMENT_NAME', module.ELEMENT_TYPE),
+                    'defaults': getattr(module, 'DEFAULT_PROPS', {}),
+                    'draw_preview': getattr(module, 'draw_preview', None),
+                    'render_image': getattr(module, 'render_image', None),
+                    'module': module
+                }
+                print(f"[Elements] Loaded custom element: {module.ELEMENT_TYPE}")
+
+        except Exception as e:
+            print(f"[Elements] Failed to load {filename}: {e}")
 
     return CUSTOM_ELEMENTS
 
