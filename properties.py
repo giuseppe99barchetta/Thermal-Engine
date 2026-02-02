@@ -368,6 +368,11 @@ class PropertiesPanel(QWidget):
         self.show_seconds_label = QLabel("")
         self.props_layout.addRow(self.show_seconds_label, self.show_seconds_check)
 
+        self.show_leading_zero_check = QCheckBox("Show Leading Zero (09 vs 9)")
+        self.show_leading_zero_check.stateChanged.connect(self.on_property_changed)
+        self.show_leading_zero_label = QLabel("")
+        self.props_layout.addRow(self.show_leading_zero_label, self.show_leading_zero_check)
+
         # Analog clock options
         self.show_seconds_hand_check = QCheckBox("Show Seconds Hand")
         self.show_seconds_hand_check.stateChanged.connect(self.on_property_changed)
@@ -576,7 +581,7 @@ class PropertiesPanel(QWidget):
                 "color": True, "bg_color": False, "text": False,
                 "font": True, "font_size": True, "font_style": True,
                 "align": True, "clip": True, "source": False, "value": False, "image": False,
-                "time_format": True, "show_am_pm": True, "show_seconds": True
+                "time_format": True, "show_am_pm": True, "show_seconds": True, "show_leading_zero": True
             },
             "rectangle": {
                 "width": True, "height": True, "radius": False,
@@ -711,6 +716,8 @@ class PropertiesPanel(QWidget):
         self.show_am_pm_check.setVisible(visibility.get("show_am_pm", False))
         self.show_seconds_label.setVisible(visibility.get("show_seconds", False))
         self.show_seconds_check.setVisible(visibility.get("show_seconds", False))
+        self.show_leading_zero_label.setVisible(visibility.get("show_leading_zero", False))
+        self.show_leading_zero_check.setVisible(visibility.get("show_leading_zero", False))
 
         # Analog clock options
         self.show_seconds_hand_label.setVisible(visibility.get("show_seconds_hand", False))
@@ -773,6 +780,7 @@ class PropertiesPanel(QWidget):
         self.time_format_combo.blockSignals(True)
         self.show_am_pm_check.blockSignals(True)
         self.show_seconds_check.blockSignals(True)
+        self.show_leading_zero_check.blockSignals(True)
         self.show_seconds_hand_check.blockSignals(True)
         self.show_clock_border_check.blockSignals(True)
         self.clock_face_style_combo.blockSignals(True)
@@ -822,6 +830,7 @@ class PropertiesPanel(QWidget):
             self.time_format_combo.setCurrentIndex(time_format_idx)
         self.show_am_pm_check.setChecked(getattr(element, 'show_am_pm', True))
         self.show_seconds_check.setChecked(getattr(element, 'show_seconds', True))
+        self.show_leading_zero_check.setChecked(getattr(element, 'show_leading_zero', True))
 
         # Analog clock options
         self.show_seconds_hand_check.setChecked(getattr(element, 'show_seconds_hand', True))
@@ -892,6 +901,7 @@ class PropertiesPanel(QWidget):
         self.time_format_combo.blockSignals(False)
         self.show_am_pm_check.blockSignals(False)
         self.show_seconds_check.blockSignals(False)
+        self.show_leading_zero_check.blockSignals(False)
         self.show_seconds_hand_check.blockSignals(False)
         self.show_clock_border_check.blockSignals(False)
         self.clock_face_style_combo.blockSignals(False)
@@ -957,6 +967,7 @@ class PropertiesPanel(QWidget):
         self.current_element.time_format = self.time_format_combo.currentData() or '24h'
         self.current_element.show_am_pm = self.show_am_pm_check.isChecked()
         self.current_element.show_seconds = self.show_seconds_check.isChecked()
+        self.current_element.show_leading_zero = self.show_leading_zero_check.isChecked()
 
         # Analog clock options
         self.current_element.show_seconds_hand = self.show_seconds_hand_check.isChecked()

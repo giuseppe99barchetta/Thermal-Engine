@@ -338,6 +338,7 @@ class CanvasPreview(QWidget):
         time_format = getattr(element, 'time_format', '24h')
         show_seconds = getattr(element, 'show_seconds', True)
         show_am_pm = getattr(element, 'show_am_pm', True)
+        show_leading_zero = getattr(element, 'show_leading_zero', True)
 
         if time_format == '12h':
             fmt = "%I:%M:%S" if show_seconds else "%I:%M"
@@ -347,6 +348,10 @@ class CanvasPreview(QWidget):
             fmt = "%H:%M:%S" if show_seconds else "%H:%M"
 
         current_time = time.strftime(fmt)
+
+        # Remove leading zero from hour if disabled
+        if not show_leading_zero and current_time[0] == '0':
+            current_time = current_time[1:]
 
         metrics = painter.fontMetrics()
         text_width = metrics.horizontalAdvance(current_time)

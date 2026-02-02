@@ -51,6 +51,7 @@ class ThemeElement:
         self.time_format = kwargs.get("time_format", "24h")  # "24h", "12h"
         self.show_am_pm = kwargs.get("show_am_pm", True)  # Show AM/PM indicator
         self.show_seconds = kwargs.get("show_seconds", True)  # Show seconds
+        self.show_leading_zero = kwargs.get("show_leading_zero", True)  # Show leading zero (09 vs 9)
 
         # Analog clock options
         self.show_seconds_hand = kwargs.get("show_seconds_hand", True)
@@ -96,6 +97,7 @@ class ThemeElement:
             "time_format": self.time_format,
             "show_am_pm": self.show_am_pm,
             "show_seconds": self.show_seconds,
+            "show_leading_zero": self.show_leading_zero,
             "show_seconds_hand": self.show_seconds_hand,
             "show_clock_border": self.show_clock_border,
             "clock_face_style": self.clock_face_style,
