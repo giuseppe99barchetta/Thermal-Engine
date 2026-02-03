@@ -116,32 +116,25 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller ThermalEngine.spec
 
-      - name: Copy SensorHelper and DLLs to dist
+      - name: Copy SensorHelper to dist
         run: |
-          # Copy SensorHelperApp.exe to main dist folder
-          if (Test-Path "dist_helper/SensorHelperApp.exe") {
-            Copy-Item "dist_helper/SensorHelperApp.exe" "dist/ThermalEngine/" -Force
-            Write-Host "Copied SensorHelperApp.exe to dist/ThermalEngine/"
-          }
+          # Create SensorHelper subfolder
+          New-Item -ItemType Directory -Force -Path "dist/ThermalEngine/SensorHelper"
 
-          # Copy LHM DLLs next to SensorHelperApp in main folder
+          # Copy all SensorHelper files (self-contained .NET runtime + exe)
+          Copy-Item "dist_helper/*" "dist/ThermalEngine/SensorHelper/" -Recurse -Force
+          Write-Host "Copied SensorHelper files to dist/ThermalEngine/SensorHelper/"
+
+          # Copy LHM DLLs to SensorHelper folder
           if (Test-Path "lhm/LibreHardwareMonitorLib.dll") {
-            Copy-Item "lhm/LibreHardwareMonitorLib.dll" "dist/ThermalEngine/" -Force
-            Copy-Item "lhm/HidSharp.dll" "dist/ThermalEngine/" -Force
-            Write-Host "Copied DLLs to dist/ThermalEngine/"
+            Copy-Item "lhm/LibreHardwareMonitorLib.dll" "dist/ThermalEngine/SensorHelper/" -Force
+            Copy-Item "lhm/HidSharp.dll" "dist/ThermalEngine/SensorHelper/" -Force
+            Write-Host "Copied LHM DLLs to SensorHelper folder"
           }
 
-          # Also copy to _internal folder if it exists (PyInstaller structure)
-          if (Test-Path "dist/ThermalEngine/_internal") {
-            Copy-Item "dist_helper/SensorHelperApp.exe" "dist/ThermalEngine/_internal/" -Force
-            Copy-Item "lhm/LibreHardwareMonitorLib.dll" "dist/ThermalEngine/_internal/" -Force
-            Copy-Item "lhm/HidSharp.dll" "dist/ThermalEngine/_internal/" -Force
-            Write-Host "Copied SensorHelperApp.exe and DLLs to dist/ThermalEngine/_internal/"
-          }
-
-          # List what's in dist
-          Write-Host "=== dist/ThermalEngine contents ==="
-          Get-ChildItem "dist/ThermalEngine" -Recurse | Where-Object { $_.Extension -in '.exe','.dll' } | ForEach-Object { Write-Host $_.FullName }
+          # List SensorHelper contents
+          Write-Host "=== SensorHelper folder contents ==="
+          Get-ChildItem "dist/ThermalEngine/SensorHelper" | ForEach-Object { Write-Host $_.Name }
         shell: pwsh
 
       - name: Get version from tag
