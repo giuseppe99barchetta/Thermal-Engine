@@ -115,21 +115,32 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller ThermalEngine.spec
 
-      - name: Copy SensorHelper to dist
+      - name: Copy SensorHelper and DLLs to dist
         run: |
-          # Copy to main dist folder
+          # Copy SensorHelperApp.exe to main dist folder
           if (Test-Path "dist_helper/SensorHelperApp.exe") {
             Copy-Item "dist_helper/SensorHelperApp.exe" "dist/ThermalEngine/" -Force
             Write-Host "Copied SensorHelperApp.exe to dist/ThermalEngine/"
           }
+
+          # Copy LHM DLLs next to SensorHelperApp in main folder
+          if (Test-Path "lhm/LibreHardwareMonitorLib.dll") {
+            Copy-Item "lhm/LibreHardwareMonitorLib.dll" "dist/ThermalEngine/" -Force
+            Copy-Item "lhm/HidSharp.dll" "dist/ThermalEngine/" -Force
+            Write-Host "Copied DLLs to dist/ThermalEngine/"
+          }
+
           # Also copy to _internal folder if it exists (PyInstaller structure)
           if (Test-Path "dist/ThermalEngine/_internal") {
             Copy-Item "dist_helper/SensorHelperApp.exe" "dist/ThermalEngine/_internal/" -Force
-            Write-Host "Copied SensorHelperApp.exe to dist/ThermalEngine/_internal/"
+            Copy-Item "lhm/LibreHardwareMonitorLib.dll" "dist/ThermalEngine/_internal/" -Force
+            Copy-Item "lhm/HidSharp.dll" "dist/ThermalEngine/_internal/" -Force
+            Write-Host "Copied SensorHelperApp.exe and DLLs to dist/ThermalEngine/_internal/"
           }
+
           # List what's in dist
           Write-Host "=== dist/ThermalEngine contents ==="
-          Get-ChildItem "dist/ThermalEngine" | ForEach-Object { Write-Host $_.Name }
+          Get-ChildItem "dist/ThermalEngine" -Recurse | Where-Object { $_.Extension -in '.exe','.dll' } | ForEach-Object { Write-Host $_.FullName }
         shell: pwsh
 
       - name: Get version from tag
