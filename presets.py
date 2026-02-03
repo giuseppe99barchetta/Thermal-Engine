@@ -8,7 +8,7 @@ import math
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QGridLayout, QMessageBox
+    QScrollArea, QFrame, QGridLayout, QMessageBox, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
@@ -202,10 +202,19 @@ class PresetsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Title
+        # Title row with New button
+        title_row = QHBoxLayout()
         title = QLabel("Presets")
         title.setStyleSheet("font-weight: bold; font-size: 14px; padding: 5px;")
-        layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        self.new_preset_btn = QPushButton("+ New")
+        self.new_preset_btn.setFixedWidth(60)
+        self.new_preset_btn.clicked.connect(self.create_new_preset)
+        title_row.addWidget(self.new_preset_btn)
+
+        layout.addLayout(title_row)
 
         # Preset grid container
         self.grid_container = QWidget()
@@ -400,6 +409,46 @@ class PresetsPanel(QWidget):
             # Delay refresh to allow context menu to close properly
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, self.refresh_display)
+
+    def create_new_preset(self):
+        """Create a new empty preset with a black background."""
+        name, ok = QInputDialog.getText(
+            self, "New Preset",
+            "Enter preset name:",
+            text="New Theme"
+        )
+
+        if not ok or not name.strip():
+            return
+
+        name = name.strip()
+
+        # Check if name already exists
+        if name in self.presets:
+            QMessageBox.warning(
+                self, "Name Exists",
+                f"A preset named '{name}' already exists. Please choose a different name."
+            )
+            return
+
+        # Create empty preset data
+        new_preset_data = {
+            "name": name,
+            "background_color": "#000000",
+            "display_width": DISPLAY_WIDTH,
+            "display_height": DISPLAY_HEIGHT,
+            "elements": [],
+            "video_background": {
+                "video_path": "",
+                "fit_mode": "fit_height",
+                "enabled": False
+            }
+        }
+
+        # Save the preset (without thumbnail since it's empty/black)
+        if self.save_preset(name, new_preset_data):
+            # Emit signal to load the new preset
+            self.preset_selected.emit(new_preset_data)
 
     def get_default_preset_data(self):
         """Get the default preset data, if one is set and exists."""
