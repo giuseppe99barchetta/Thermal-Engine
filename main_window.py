@@ -198,7 +198,7 @@ from element import ThemeElement
 import sensors
 from sensors import init_sensors, get_lhm_sensors, get_lhm_sensors_sync, stop_sensors
 import settings
-from app_path import get_resource_path
+from app_path import get_resource_path, get_bundled_resource_path
 
 
 def hex_to_rgba(hex_color, opacity=100):
@@ -413,7 +413,7 @@ class ThemeEditorWindow(QMainWindow):
         self.setMinimumSize(1200, 700)
 
         # Set window icon
-        icon_path = get_resource_path("icon.ico")
+        icon_path = get_bundled_resource_path("icon.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 

@@ -25,8 +25,9 @@ SAFE_FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+\.py$')
 def get_elements_dir():
     """Get the elements directory (works for both script and frozen exe)."""
     if getattr(sys, 'frozen', False):
-        # Running as compiled executable
-        return os.path.join(os.path.dirname(sys.executable), 'elements')
+        # Running as compiled executable - files are in _MEIPASS temp folder
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+        return os.path.join(base_path, 'elements')
     else:
         # Running as script
         return os.path.dirname(os.path.abspath(__file__))
