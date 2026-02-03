@@ -47,19 +47,34 @@ jobs:
             Write-Host "Copied LibreHardwareMonitorLib.dll from $($lhmDll.FullName)"
           }
 
-          # Find and copy HidSharp.dll
+          # Find and copy HidSharp.dll (may be in LHM package or need separate download)
           $hidDll = Get-ChildItem -Path "lhm_extract" -Filter "HidSharp.dll" -Recurse | Select-Object -First 1
           if ($hidDll) {
             Copy-Item $hidDll.FullName -Destination "lhm/" -Force
             Copy-Item $hidDll.FullName -Destination "." -Force
             Write-Host "Copied HidSharp.dll from $($hidDll.FullName)"
+          } else {
+            # Download HidSharp separately
+            Write-Host "HidSharp not in LHM package, downloading separately..."
+            Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/HidSharp/2.1.0" -OutFile "hidsharp.nupkg"
+            Expand-Archive -Path "hidsharp.nupkg" -DestinationPath "hidsharp_extract" -Force
+            $hidDll = Get-ChildItem -Path "hidsharp_extract" -Filter "HidSharp.dll" -Recurse | Select-Object -First 1
+            if ($hidDll) {
+              Copy-Item $hidDll.FullName -Destination "lhm/" -Force
+              Copy-Item $hidDll.FullName -Destination "." -Force
+              Write-Host "Copied HidSharp.dll from $($hidDll.FullName)"
+            } else {
+              Write-Host "ERROR: Could not find HidSharp.dll"
+              exit 1
+            }
           }
 
           # Download additional .NET runtime DLLs
           $dlls = @(
             @{name="Microsoft.Win32.Registry"; version="5.0.0"},
             @{name="System.Security.AccessControl"; version="6.0.0"},
-            @{name="System.Security.Principal.Windows"; version="5.0.0"}
+            @{name="System.Security.Principal.Windows"; version="5.0.0"},
+            @{name="System.IO.FileSystem.AccessControl"; version="5.0.0"}
           )
 
           foreach ($dll in $dlls) {
