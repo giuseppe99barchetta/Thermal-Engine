@@ -117,12 +117,19 @@ jobs:
 
       - name: Copy SensorHelper to dist
         run: |
-          if (Test-Path "SensorHelperApp.exe") {
-            Copy-Item "SensorHelperApp.exe" "dist/ThermalEngine/" -Force
-          }
+          # Copy to main dist folder
           if (Test-Path "dist_helper/SensorHelperApp.exe") {
             Copy-Item "dist_helper/SensorHelperApp.exe" "dist/ThermalEngine/" -Force
+            Write-Host "Copied SensorHelperApp.exe to dist/ThermalEngine/"
           }
+          # Also copy to _internal folder if it exists (PyInstaller structure)
+          if (Test-Path "dist/ThermalEngine/_internal") {
+            Copy-Item "dist_helper/SensorHelperApp.exe" "dist/ThermalEngine/_internal/" -Force
+            Write-Host "Copied SensorHelperApp.exe to dist/ThermalEngine/_internal/"
+          }
+          # List what's in dist
+          Write-Host "=== dist/ThermalEngine contents ==="
+          Get-ChildItem "dist/ThermalEngine" | ForEach-Object { Write-Host $_.Name }
         shell: pwsh
 
       - name: Get version from tag

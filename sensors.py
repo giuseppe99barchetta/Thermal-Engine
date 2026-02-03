@@ -49,6 +49,7 @@ class SensorProcess:
 
         candidates = [
             os.path.join(app_dir, "SensorHelperApp.exe"),
+            os.path.join(app_dir, "_internal", "SensorHelperApp.exe"),
             os.path.join(app_dir, "lhm", "SensorHelperApp.exe"),
             os.path.join(app_dir, "SensorHelperApp", "bin", "Release", "net10.0-windows", "SensorHelperApp.exe"),
             os.path.join(app_dir, "SensorHelperApp", "bin", "Release", "net8.0-windows", "SensorHelperApp.exe"),
