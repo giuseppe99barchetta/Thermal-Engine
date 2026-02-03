@@ -19,6 +19,10 @@ from app_path import get_resource_path
 from security import validate_preset_schema, is_safe_filename, sanitize_preset_name
 from settings import get_setting, set_setting
 
+# Thumbnail dimensions (maintain aspect ratio of display)
+THUMBNAIL_WIDTH = 150
+THUMBNAIL_HEIGHT = int(THUMBNAIL_WIDTH * DISPLAY_HEIGHT / DISPLAY_WIDTH)
+
 
 # Default theme elements (same as main_window.py)
 DEFAULT_THEME = {
@@ -45,12 +49,19 @@ class PresetThumbnail(QWidget):
     delete_requested = Signal(str)  # Emits preset name for deletion
     set_default_requested = Signal(str)  # Emits preset name to set as default
 
-    def __init__(self, preset_name, preset_data, is_builtin=False, is_default=False):
+    def __init__(self, preset_name, preset_data, is_builtin=False, is_default=False, thumbnail_path=None):
         super().__init__()
         self.preset_name = preset_name
         self.preset_data = preset_data
         self.is_builtin = is_builtin
         self.is_default = is_default
+        self.thumbnail_path = thumbnail_path
+        self.thumbnail_pixmap = None
+
+        # Load thumbnail image if it exists
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            self.thumbnail_pixmap = QPixmap(thumbnail_path)
+
         self.setFixedSize(150, 100)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         tooltip = f"Click to load: {preset_name}"
@@ -62,37 +73,57 @@ class PresetThumbnail(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Draw background
-        bg_color = QColor(self.preset_data.get("background_color", "#0f0f19"))
-        painter.fillRect(0, 0, self.width(), self.height() - 20, bg_color)
+        preview_height = self.height() - 20
 
-        # Draw border
-        painter.setPen(QPen(QColor(60, 60, 80), 2))
-        painter.drawRect(0, 0, self.width(), self.height() - 20)
+        # Use saved thumbnail if available, otherwise generate preview
+        if self.thumbnail_pixmap and not self.thumbnail_pixmap.isNull():
+            # Draw the saved thumbnail scaled to fit
+            scaled_pixmap = self.thumbnail_pixmap.scaled(
+                self.width(), preview_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            # Center the scaled pixmap
+            x_offset = (self.width() - scaled_pixmap.width()) // 2
+            y_offset = (preview_height - scaled_pixmap.height()) // 2
+            painter.drawPixmap(x_offset, y_offset, scaled_pixmap)
 
-        # Scale factor for preview
-        scale_x = self.width() / DISPLAY_WIDTH
-        scale_y = (self.height() - 20) / DISPLAY_HEIGHT
+            # Draw border
+            painter.setPen(QPen(QColor(60, 60, 80), 2))
+            painter.drawRect(0, 0, self.width(), preview_height)
+        else:
+            # Fall back to generated preview
+            # Draw background
+            bg_color = QColor(self.preset_data.get("background_color", "#0f0f19"))
+            painter.fillRect(0, 0, self.width(), preview_height, bg_color)
 
-        # Draw simplified element previews
-        elements = self.preset_data.get("elements", [])
-        for el_data in elements:
-            el_type = el_data.get("type", "")
-            color = QColor(el_data.get("color", "#00ff96"))
-            x = int(el_data.get("x", 0) * scale_x)
-            y = int(el_data.get("y", 0) * scale_y)
+            # Draw border
+            painter.setPen(QPen(QColor(60, 60, 80), 2))
+            painter.drawRect(0, 0, self.width(), preview_height)
 
-            if el_type in ["circle_gauge", "analog_clock"]:
-                radius = int(el_data.get("radius", 50) * min(scale_x, scale_y))
-                painter.setPen(QPen(color, 2))
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.drawEllipse(x - radius, y - radius, radius * 2, radius * 2)
-            elif el_type in ["bar_gauge", "rectangle", "text", "clock", "image", "line_chart", "gif"]:
-                width = int(el_data.get("width", 100) * scale_x)
-                height = int(el_data.get("height", 30) * scale_y)
-                painter.setPen(QPen(color, 1))
-                painter.setBrush(QBrush(color.darker(200)))
-                painter.drawRect(x, y, max(width, 3), max(height, 3))
+            # Scale factor for preview
+            scale_x = self.width() / DISPLAY_WIDTH
+            scale_y = preview_height / DISPLAY_HEIGHT
+
+            # Draw simplified element previews
+            elements = self.preset_data.get("elements", [])
+            for el_data in elements:
+                el_type = el_data.get("type", "")
+                color = QColor(el_data.get("color", "#00ff96"))
+                x = int(el_data.get("x", 0) * scale_x)
+                y = int(el_data.get("y", 0) * scale_y)
+
+                if el_type in ["circle_gauge", "analog_clock"]:
+                    radius = int(el_data.get("radius", 50) * min(scale_x, scale_y))
+                    painter.setPen(QPen(color, 2))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawEllipse(x - radius, y - radius, radius * 2, radius * 2)
+                elif el_type in ["bar_gauge", "rectangle", "text", "clock", "image", "line_chart", "gif"]:
+                    width = int(el_data.get("width", 100) * scale_x)
+                    height = int(el_data.get("height", 30) * scale_y)
+                    painter.setPen(QPen(color, 1))
+                    painter.setBrush(QBrush(color.darker(200)))
+                    painter.drawRect(x, y, max(width, 3), max(height, 3))
 
         # Draw name label at bottom
         painter.fillRect(0, self.height() - 20, self.width(), 20, QColor(35, 35, 40))
@@ -217,7 +248,8 @@ class PresetsPanel(QWidget):
         # Always include the default preset
         self.presets["Default"] = {
             "data": DEFAULT_THEME,
-            "builtin": True
+            "builtin": True,
+            "thumbnail_path": None
         }
 
         # Load presets from folder
@@ -242,10 +274,17 @@ class PresetsPanel(QWidget):
                         continue
 
                     preset_name = data.get("name", filename[:-5])
+
+                    # Check for corresponding thumbnail
+                    thumbnail_path = filepath[:-5] + ".png"  # Replace .json with .png
+                    if not os.path.exists(thumbnail_path):
+                        thumbnail_path = None
+
                     self.presets[preset_name] = {
                         "data": data,
                         "builtin": False,
-                        "filepath": filepath
+                        "filepath": filepath,
+                        "thumbnail_path": thumbnail_path
                     }
                 except Exception as e:
                     print(f"Failed to load preset {filename}: {e}")
@@ -285,7 +324,8 @@ class PresetsPanel(QWidget):
                 name,
                 preset_info["data"],
                 preset_info.get("builtin", False),
-                is_default=(name == default_preset)
+                is_default=(name == default_preset),
+                thumbnail_path=preset_info.get("thumbnail_path")
             )
             thumbnail.clicked.connect(self.on_preset_clicked)
             thumbnail.delete_requested.connect(self.on_delete_preset)
@@ -335,6 +375,10 @@ class PresetsPanel(QWidget):
                 if filepath and os.path.exists(filepath):
                     try:
                         os.remove(filepath)
+                        # Also delete thumbnail if it exists
+                        thumbnail_path = filepath[:-5] + ".png"
+                        if os.path.exists(thumbnail_path):
+                            os.remove(thumbnail_path)
                     except Exception as e:
                         QMessageBox.warning(self, "Error", f"Failed to delete preset file: {e}")
                         return
@@ -364,8 +408,14 @@ class PresetsPanel(QWidget):
             return self.presets[default_name]["data"]
         return None
 
-    def save_preset(self, name, theme_data):
-        """Save a theme as a preset."""
+    def save_preset(self, name, theme_data, thumbnail_image=None):
+        """Save a theme as a preset with optional thumbnail.
+
+        Args:
+            name: Preset name
+            theme_data: Theme data dict
+            thumbnail_image: Optional PIL Image to save as thumbnail
+        """
         self.ensure_presets_dir()
 
         # Sanitize the name for safe filename
@@ -379,6 +429,7 @@ class PresetsPanel(QWidget):
             return False
 
         filepath = os.path.join(self.presets_dir, filename)
+        thumbnail_path = os.path.join(self.presets_dir, f"{safe_name}.png")
 
         # Check if overwriting
         if os.path.exists(filepath):
@@ -394,10 +445,24 @@ class PresetsPanel(QWidget):
             with open(filepath, 'w') as f:
                 json.dump(theme_data, f, indent=2)
 
+            # Save thumbnail if provided
+            if thumbnail_image is not None:
+                try:
+                    # Resize to thumbnail dimensions
+                    thumbnail = thumbnail_image.copy()
+                    thumbnail.thumbnail((THUMBNAIL_WIDTH * 2, THUMBNAIL_HEIGHT * 2))  # 2x for retina/sharp display
+                    thumbnail.save(thumbnail_path, "PNG")
+                except Exception as e:
+                    print(f"[Presets] Failed to save thumbnail: {e}")
+                    thumbnail_path = None
+            else:
+                thumbnail_path = None
+
             self.presets[name] = {
                 "data": theme_data,
                 "builtin": False,
-                "filepath": filepath
+                "filepath": filepath,
+                "thumbnail_path": thumbnail_path if thumbnail_path and os.path.exists(thumbnail_path) else None
             }
             self.refresh_display()
             self.preset_saved.emit(name)

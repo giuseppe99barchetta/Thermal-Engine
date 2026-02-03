@@ -41,11 +41,14 @@ class VideoBackground:
         self._video_height = 0
 
         # Frame buffer - stores pre-scaled numpy arrays (RGB)
+        # Limited to prevent excessive memory usage
         self._frame_buffer = []
         self._buffer_ready = False
         self._loading = False
         self._load_progress = 0
         self._load_error = None
+        self._max_buffered_frames = 300  # ~10 seconds at 30fps, ~540MB max
+        self._frames_truncated = False
 
         # Playback state
         self._current_frame_idx = 0
@@ -175,8 +178,14 @@ class VideoBackground:
                 frames.append(output)
                 frame_idx += 1
 
+                # Limit frames to prevent excessive memory usage
+                if frame_idx >= self._max_buffered_frames:
+                    self._frames_truncated = True
+                    print(f"[Video] Limiting to {self._max_buffered_frames} frames to save memory")
+                    break
+
                 # Update progress
-                progress = frame_idx / max(1, self._frame_count)
+                progress = frame_idx / max(1, min(self._frame_count, self._max_buffered_frames))
                 with self._lock:
                     self._load_progress = progress
 

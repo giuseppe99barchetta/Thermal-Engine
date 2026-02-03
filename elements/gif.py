@@ -30,6 +30,8 @@ DEFAULT_PROPS = {
 
 # Cache for loaded GIFs - stores frames and timing info per path
 _gif_cache = {}
+_gif_cache_max_size = 10  # Maximum number of GIFs to cache
+_gif_cache_order = []  # Track insertion order for LRU eviction
 
 # Playback state per element
 _playback_state = {}
@@ -101,14 +103,32 @@ class GifData:
 
 
 def get_gif_data(path):
-    """Get or load GIF data from cache."""
+    """Get or load GIF data from cache with LRU eviction."""
+    global _gif_cache_order
+
     if not path:
         return None
 
-    if path not in _gif_cache:
-        gif_data = GifData(path)
-        gif_data.load()
-        _gif_cache[path] = gif_data
+    if path in _gif_cache:
+        # Move to end of order list (most recently used)
+        if path in _gif_cache_order:
+            _gif_cache_order.remove(path)
+        _gif_cache_order.append(path)
+        return _gif_cache[path]
+
+    # Load new GIF
+    gif_data = GifData(path)
+    gif_data.load()
+
+    # Evict oldest entries if cache is full
+    while len(_gif_cache) >= _gif_cache_max_size and _gif_cache_order:
+        oldest_path = _gif_cache_order.pop(0)
+        if oldest_path in _gif_cache:
+            del _gif_cache[oldest_path]
+            print(f"[GIF] Evicted from cache: {oldest_path}")
+
+    _gif_cache[path] = gif_data
+    _gif_cache_order.append(path)
 
     return _gif_cache[path]
 

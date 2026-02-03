@@ -12,10 +12,17 @@
       "width": 200,
       "height": 50,
       "radius": 120,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#ff4f52",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#ff4f52",
+      "text_color_opacity": 100,
       "text": "",
       "font_size": 50,
       "font_family": "Arial",
@@ -24,7 +31,7 @@
       "text_align": "center",
       "clip": false,
       "source": "gpu_temp",
-      "value": 48.0,
+      "value": 58.0,
       "image_path": "",
       "scale_proportionally": true,
       "aspect_ratio": 1.0,
@@ -35,6 +42,16 @@
       "smooth": false,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": false,
@@ -49,7 +66,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "GPU",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "text",
@@ -59,10 +77,17 @@
       "width": 200,
       "height": 50,
       "radius": 100,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#ffffff",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#ffffff",
+      "text_color_opacity": 100,
       "text": "GPU",
       "font_size": 36,
       "font_family": "Arial",
@@ -82,6 +107,16 @@
       "smooth": false,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": true,
@@ -96,7 +131,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "GPU",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "circle_gauge",
@@ -106,10 +142,17 @@
       "width": 200,
       "height": 50,
       "radius": 120,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#00b3ff",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#00b3ff",
+      "text_color_opacity": 100,
       "text": "",
       "font_size": 50,
       "font_family": "Arial",
@@ -118,7 +161,7 @@
       "text_align": "center",
       "clip": false,
       "source": "cpu_temp",
-      "value": 56.3,
+      "value": 48.8,
       "image_path": "",
       "scale_proportionally": true,
       "aspect_ratio": 1.0,
@@ -129,6 +172,16 @@
       "smooth": false,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": false,
@@ -143,7 +196,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "CPU",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "text",
@@ -153,10 +207,17 @@
       "width": 200,
       "height": 50,
       "radius": 100,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#ffffff",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#ffffff",
+      "text_color_opacity": 100,
       "text": "CPU",
       "font_size": 36,
       "font_family": "Arial",
@@ -176,6 +237,16 @@
       "smooth": false,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": true,
@@ -190,7 +261,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "CPU",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "clock",
@@ -200,10 +272,17 @@
       "width": 270,
       "height": 100,
       "radius": 100,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#ffffff",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#ffffff",
+      "text_color_opacity": 100,
       "text": "Label",
       "font_size": 72,
       "font_family": "Arial",
@@ -223,6 +302,16 @@
       "smooth": false,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": true,
@@ -237,7 +326,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": null,
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "line_chart",
@@ -247,10 +337,17 @@
       "width": 1280,
       "height": 480,
       "radius": 100,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#ff4f52",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#ff4f52",
+      "text_color_opacity": 100,
       "text": "CPU",
       "font_size": 14,
       "font_family": "Arial",
@@ -259,7 +356,7 @@
       "text_align": "center",
       "clip": false,
       "source": "gpu_percent",
-      "value": 7.0,
+      "value": 35.0,
       "image_path": "",
       "scale_proportionally": true,
       "aspect_ratio": 1.0,
@@ -270,6 +367,16 @@
       "smooth": true,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": true,
@@ -284,7 +391,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "Charts",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "line_chart",
@@ -294,10 +402,17 @@
       "width": 1280,
       "height": 480,
       "radius": 100,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#00b3ff",
       "color_opacity": 100,
       "background_color": "#000000",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#00b3ff",
+      "text_color_opacity": 100,
       "text": "CPU",
       "font_size": 14,
       "font_family": "Arial",
@@ -306,7 +421,7 @@
       "text_align": "center",
       "clip": false,
       "source": "cpu_percent",
-      "value": 21.7,
+      "value": 10.3,
       "image_path": "",
       "scale_proportionally": true,
       "aspect_ratio": 1.0,
@@ -317,6 +432,16 @@
       "smooth": true,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": true,
@@ -331,7 +456,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "Charts",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "line_chart",
@@ -341,10 +467,17 @@
       "width": 1280,
       "height": 480,
       "radius": 100,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#39ff6b",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#39ff6b",
+      "text_color_opacity": 100,
       "text": "CPU",
       "font_size": 14,
       "font_family": "Arial",
@@ -364,6 +497,16 @@
       "smooth": true,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": true,
@@ -378,7 +521,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "Charts",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     },
     {
       "type": "line_chart",
@@ -388,10 +532,17 @@
       "width": 1280,
       "height": 480,
       "radius": 100,
+      "border_radius": 0,
+      "glass_effect": false,
+      "glass_blur": 10,
+      "glass_opacity": 50,
       "color": "#ff7700",
       "color_opacity": 100,
       "background_color": "#1a1a2e",
       "background_color_opacity": 100,
+      "use_custom_text_color": false,
+      "text_color": "#ff7700",
+      "text_color_opacity": 100,
       "text": "CPU",
       "font_size": 14,
       "font_family": "Arial",
@@ -411,6 +562,16 @@
       "smooth": true,
       "rounded_corners": false,
       "gradient_fill": false,
+      "gradient_stops": [
+        [
+          0.0,
+          "#00ff96"
+        ],
+        [
+          1.0,
+          "#ff4444"
+        ]
+      ],
       "bar_text_mode": "full",
       "bar_text_position": "inside",
       "auto_color_change": true,
@@ -425,7 +586,8 @@
       "clock_face_style": "numbers",
       "smooth_animation": true,
       "group": "Charts",
-      "locked": false
+      "locked": false,
+      "temp_hide_unit": false
     }
   ],
   "video_background": {

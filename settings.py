@@ -6,7 +6,11 @@ Handles persistent settings and Windows autostart.
 import os
 import sys
 import json
-import winreg
+
+# Windows-only imports
+IS_WINDOWS = sys.platform == "win32"
+if IS_WINDOWS:
+    import winreg
 
 from app_path import get_app_dir, get_resource_path
 from security import escape_registry_path
@@ -20,8 +24,10 @@ DEFAULT_SETTINGS = {
     "launch_minimized": True,
     "minimize_to_tray": True,
     "close_to_tray": True,
-    "target_fps": 10,
+    "target_fps": 30,  # 30 FPS is smooth for most PCs
     "default_preset": None,  # Name of preset to load on startup
+    "overdrive_mode": False,
+    "suppress_60fps_warning": False,  # Show warning when selecting 60 FPS
 }
 
 _settings = None
@@ -85,14 +91,21 @@ def get_executable_path():
         # Running as compiled executable
         return escape_registry_path(sys.executable)
     else:
-        # Running as script - use pythonw to avoid console window
-        python_exe = sys.executable.replace('python.exe', 'pythonw.exe')
+        # Running as script - use pythonw on Windows to avoid console window
+        if IS_WINDOWS:
+            python_exe = sys.executable.replace('python.exe', 'pythonw.exe')
+        else:
+            python_exe = sys.executable
         script_path = get_resource_path('main.py')
         return f'{escape_registry_path(python_exe)} {escape_registry_path(script_path)}'
 
 
 def set_autostart(enabled):
-    """Enable or disable Windows autostart via registry."""
+    """Enable or disable autostart. Windows-only via registry."""
+    if not IS_WINDOWS:
+        print("[Settings] Autostart is only supported on Windows")
+        return False
+
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
     try:
@@ -118,7 +131,10 @@ def set_autostart(enabled):
 
 
 def is_autostart_enabled():
-    """Check if autostart is currently enabled in registry."""
+    """Check if autostart is currently enabled. Windows-only via registry."""
+    if not IS_WINDOWS:
+        return False
+
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
     try:
@@ -135,7 +151,9 @@ def is_autostart_enabled():
 
 
 def apply_autostart_setting():
-    """Apply the current autostart setting to the registry."""
+    """Apply the current autostart setting to the registry. Windows-only."""
+    if not IS_WINDOWS:
+        return
     enabled = get_setting("launch_at_login", True)
     set_autostart(enabled)
 

@@ -10,7 +10,67 @@ from PySide6.QtWidgets import (
     QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint
-from PySide6.QtGui import QColor, QFont, QPixmap, QFontDatabase, QPainter, QLinearGradient, QPen, QBrush
+from PySide6.QtGui import QColor, QFont, QPixmap, QFontDatabase, QPainter, QLinearGradient, QPen, QBrush, QIcon
+
+
+def create_alignment_icon(align_type, size=20):
+    """Create alignment icons programmatically using QPainter.
+
+    align_type options:
+    - 'text_left', 'text_center', 'text_right' (text alignment - horizontal lines)
+    - 'h_left', 'h_center', 'h_right' (object horizontal alignment)
+    - 'v_top', 'v_middle', 'v_bottom' (object vertical alignment)
+    """
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+
+    color = QColor("#dddddd")
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(color))
+
+    if align_type.startswith('text_'):
+        # Text alignment - 4 horizontal bars of varying lengths
+        bar_height = 3
+        widths = [16, 10, 14, 8]
+        y_positions = [2, 7, 12, 17]
+
+        for y, w in zip(y_positions, widths):
+            if align_type == 'text_left':
+                painter.fillRect(2, y, w, bar_height, color)
+            elif align_type == 'text_center':
+                x = (size - w) // 2
+                painter.fillRect(x, y, w, bar_height, color)
+            elif align_type == 'text_right':
+                painter.fillRect(size - 2 - w, y, w, bar_height, color)
+
+    elif align_type.startswith('h_'):
+        # Horizontal alignment - two rectangles at different heights
+        if align_type == 'h_left':
+            painter.fillRect(1, 1, 7, 7, color)
+            painter.fillRect(1, 11, 15, 7, color)
+        elif align_type == 'h_center':
+            painter.fillRect(6, 1, 7, 7, color)
+            painter.fillRect(2, 11, 15, 7, color)
+        elif align_type == 'h_right':
+            painter.fillRect(11, 1, 7, 7, color)
+            painter.fillRect(3, 11, 15, 7, color)
+
+    elif align_type.startswith('v_'):
+        # Vertical alignment - two rectangles side by side
+        if align_type == 'v_top':
+            painter.fillRect(1, 1, 7, 7, color)
+            painter.fillRect(11, 1, 7, 15, color)
+        elif align_type == 'v_middle':
+            painter.fillRect(1, 6, 7, 7, color)
+            painter.fillRect(11, 2, 7, 15, color)
+        elif align_type == 'v_bottom':
+            painter.fillRect(1, 11, 7, 7, color)
+            painter.fillRect(11, 3, 7, 15, color)
+
+    painter.end()
+    return QIcon(pixmap)
 
 
 class ColorPickerDialog(QDialog):
@@ -130,7 +190,6 @@ class GradientPreviewWidget(QPushButton):
                 border-radius: 4px;
                 color: white;
                 font-size: 10px;
-                text-shadow: 1px 1px 1px black;
             }}
             QPushButton:hover {{
                 border: 1px solid #888;
@@ -525,6 +584,8 @@ class PropertiesPanel(QWidget):
             QFrame#sectionFrame QLabel {
                 background: transparent;
                 border: none;
+                min-height: 22px;
+                qproperty-alignment: AlignVCenter;
             }
             QFrame#sectionFrame QCheckBox {
                 background: transparent;
@@ -576,6 +637,12 @@ class PropertiesPanel(QWidget):
 
         return frame, form_layout
 
+    def create_label(self, text):
+        """Create a label with vertical center alignment."""
+        label = QLabel(text)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        return label
+
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -616,7 +683,7 @@ class PropertiesPanel(QWidget):
 
         self.name_edit = QLineEdit()
         self.name_edit.textChanged.connect(self.on_property_changed)
-        self.name_label = QLabel("Name:")
+        self.name_label = self.create_label("Name:")
         general_layout.addRow(self.name_label, self.name_edit)
 
         self.section_fields['general'] = [
@@ -654,7 +721,7 @@ class PropertiesPanel(QWidget):
 
         self.position_widget = QWidget()
         self.position_widget.setLayout(position_layout)
-        self.position_label = QLabel("Position:")
+        self.position_label = self.create_label("Position:")
         transform_layout.addRow(self.position_label, self.position_widget)
 
         # Size row (Width and Height side by side)
@@ -683,13 +750,13 @@ class PropertiesPanel(QWidget):
 
         self.size_widget = QWidget()
         self.size_widget.setLayout(size_layout)
-        self.size_label = QLabel("Size:")
+        self.size_label = self.create_label("Size:")
         transform_layout.addRow(self.size_label, self.size_widget)
 
         self.radius_spin = QSpinBox()
         self.radius_spin.setRange(20, 300)
         self.radius_spin.valueChanged.connect(self.on_property_changed)
-        self.radius_label = QLabel("Radius:")
+        self.radius_label = self.create_label("Radius:")
         transform_layout.addRow(self.radius_label, self.radius_spin)
 
         self.section_fields['transform'] = [
@@ -707,14 +774,14 @@ class PropertiesPanel(QWidget):
         self.color_btn = QPushButton()
         self.color_btn.setFixedHeight(26)
         self.color_btn.clicked.connect(self.choose_color)
-        self.color_label = QLabel("Color:")
+        self.color_label = self.create_label("Color:")
         colors_layout.addRow(self.color_label, self.color_btn)
 
         # Background color
         self.bg_color_btn = QPushButton()
         self.bg_color_btn.setFixedHeight(26)
         self.bg_color_btn.clicked.connect(self.choose_bg_color)
-        self.bg_color_label = QLabel("BG Color:")
+        self.bg_color_label = self.create_label("BG Color:")
         colors_layout.addRow(self.bg_color_label, self.bg_color_btn)
 
         # Custom text color checkbox
@@ -727,7 +794,7 @@ class PropertiesPanel(QWidget):
         self.text_color_btn = QPushButton()
         self.text_color_btn.setFixedHeight(26)
         self.text_color_btn.clicked.connect(self.choose_text_color)
-        self.text_color_label = QLabel("Text Color:")
+        self.text_color_label = self.create_label("Text Color:")
         colors_layout.addRow(self.text_color_label, self.text_color_btn)
 
         # Gradient fill checkbox (for gauges)
@@ -739,7 +806,7 @@ class PropertiesPanel(QWidget):
         # Gradient preview widget (shown when gradient fill is enabled)
         self.gradient_preview = GradientPreviewWidget()
         self.gradient_preview.clicked.connect(self.edit_gradient)
-        self.gradient_preview_label = QLabel("Gradient:")
+        self.gradient_preview_label = self.create_label("Gradient:")
         colors_layout.addRow(self.gradient_preview_label, self.gradient_preview)
 
         self.section_fields['colors'] = [
@@ -759,20 +826,20 @@ class PropertiesPanel(QWidget):
         self.border_radius_spin = QSpinBox()
         self.border_radius_spin.setRange(0, 500)
         self.border_radius_spin.valueChanged.connect(self.on_property_changed)
-        self.border_radius_label = QLabel("Border Radius:")
+        self.border_radius_label = self.create_label("Border Radius:")
         appearance_layout.addRow(self.border_radius_label, self.border_radius_spin)
 
         # Glass effect controls
         self.glass_effect_check = QCheckBox("Frosted Glass")
         self.glass_effect_check.stateChanged.connect(self.on_property_changed)
-        self.glass_effect_label = QLabel("Glass Effect:")
+        self.glass_effect_label = self.create_label("Glass Effect:")
         appearance_layout.addRow(self.glass_effect_label, self.glass_effect_check)
 
         self.glass_blur_spin = QSpinBox()
         self.glass_blur_spin.setRange(1, 50)
         self.glass_blur_spin.setValue(10)
         self.glass_blur_spin.valueChanged.connect(self.on_property_changed)
-        self.glass_blur_label = QLabel("Glass Blur:")
+        self.glass_blur_label = self.create_label("Glass Blur:")
         appearance_layout.addRow(self.glass_blur_label, self.glass_blur_spin)
 
         self.glass_opacity_spin = QSpinBox()
@@ -780,7 +847,7 @@ class PropertiesPanel(QWidget):
         self.glass_opacity_spin.setValue(50)
         self.glass_opacity_spin.setSuffix("%")
         self.glass_opacity_spin.valueChanged.connect(self.on_property_changed)
-        self.glass_opacity_label = QLabel("Glass Tint:")
+        self.glass_opacity_label = self.create_label("Glass Tint:")
         appearance_layout.addRow(self.glass_opacity_label, self.glass_opacity_spin)
 
         self.section_fields['appearance'] = [
@@ -797,7 +864,7 @@ class PropertiesPanel(QWidget):
 
         self.text_edit = QLineEdit()
         self.text_edit.textChanged.connect(self.on_property_changed)
-        self.text_label = QLabel("Text:")
+        self.text_label = self.create_label("Text:")
         text_layout.addRow(self.text_label, self.text_edit)
 
         self.font_family_combo = QComboBox()
@@ -805,13 +872,13 @@ class PropertiesPanel(QWidget):
         self.font_family_combo.setMaxVisibleItems(15)
         self.load_system_fonts()
         self.font_family_combo.currentTextChanged.connect(self.on_property_changed)
-        self.font_family_label = QLabel("Font:")
+        self.font_family_label = self.create_label("Font:")
         text_layout.addRow(self.font_family_label, self.font_family_combo)
 
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(8, 200)
         self.font_size_spin.valueChanged.connect(self.on_property_changed)
-        self.font_size_label = QLabel("Font Size:")
+        self.font_size_label = self.create_label("Font Size:")
         text_layout.addRow(self.font_size_label, self.font_size_spin)
 
         font_style_layout = QHBoxLayout()
@@ -832,37 +899,43 @@ class PropertiesPanel(QWidget):
 
         self.font_style_widget = QWidget()
         self.font_style_widget.setLayout(font_style_layout)
-        self.font_style_label = QLabel("Style:")
+        self.font_style_label = self.create_label("Style:")
         text_layout.addRow(self.font_style_label, self.font_style_widget)
 
         align_layout = QHBoxLayout()
-        self.align_left_btn = QPushButton("L")
+        self.align_left_btn = QPushButton()
+        self.align_left_btn.setIcon(create_alignment_icon('text_left'))
         self.align_left_btn.setCheckable(True)
-        self.align_left_btn.setFixedWidth(30)
+        self.align_left_btn.setFixedSize(28, 24)
+        self.align_left_btn.setToolTip("Align Left")
         self.align_left_btn.clicked.connect(lambda: self.set_alignment("left"))
         align_layout.addWidget(self.align_left_btn)
 
-        self.align_center_btn = QPushButton("C")
+        self.align_center_btn = QPushButton()
+        self.align_center_btn.setIcon(create_alignment_icon('text_center'))
         self.align_center_btn.setCheckable(True)
-        self.align_center_btn.setFixedWidth(30)
+        self.align_center_btn.setFixedSize(28, 24)
+        self.align_center_btn.setToolTip("Align Center")
         self.align_center_btn.clicked.connect(lambda: self.set_alignment("center"))
         align_layout.addWidget(self.align_center_btn)
 
-        self.align_right_btn = QPushButton("R")
+        self.align_right_btn = QPushButton()
+        self.align_right_btn.setIcon(create_alignment_icon('text_right'))
         self.align_right_btn.setCheckable(True)
-        self.align_right_btn.setFixedWidth(30)
+        self.align_right_btn.setFixedSize(28, 24)
+        self.align_right_btn.setToolTip("Align Right")
         self.align_right_btn.clicked.connect(lambda: self.set_alignment("right"))
         align_layout.addWidget(self.align_right_btn)
         align_layout.addStretch()
 
         self.align_widget = QWidget()
         self.align_widget.setLayout(align_layout)
-        self.align_label = QLabel("Align:")
+        self.align_label = self.create_label("Align:")
         text_layout.addRow(self.align_label, self.align_widget)
 
         self.clip_checkbox = QCheckBox("Clip content to boundary")
         self.clip_checkbox.stateChanged.connect(self.on_property_changed)
-        self.clip_label = QLabel("Clip:")
+        self.clip_label = self.create_label("Clip:")
         text_layout.addRow(self.clip_label, self.clip_checkbox)
 
         self.section_fields['text'] = [
@@ -882,13 +955,13 @@ class PropertiesPanel(QWidget):
         self.source_combo = QComboBox()
         self.setup_source_combo()
         self.source_combo.currentIndexChanged.connect(self.on_source_changed)
-        self.source_label = QLabel("Source:")
+        self.source_label = self.create_label("Source:")
         data_layout.addRow(self.source_label, self.source_combo)
 
         self.value_spin = QDoubleSpinBox()
         self.value_spin.setRange(0, 100)
         self.value_spin.valueChanged.connect(self.on_property_changed)
-        self.value_label = QLabel("Preview Value:")
+        self.value_label = self.create_label("Preview Value:")
         data_layout.addRow(self.value_label, self.value_spin)
 
         self.section_fields['data'] = [
@@ -912,7 +985,7 @@ class PropertiesPanel(QWidget):
 
         self.image_widget = QWidget()
         self.image_widget.setLayout(image_layout)
-        self.image_label = QLabel("Image:")
+        self.image_label = self.create_label("Image:")
         media_layout.addRow(self.image_label, self.image_widget)
 
         self.scale_proportionally_check = QCheckBox("Scale Proportionally")
@@ -933,7 +1006,7 @@ class PropertiesPanel(QWidget):
 
         self.gif_widget = QWidget()
         self.gif_widget.setLayout(gif_layout)
-        self.gif_label = QLabel("GIF:")
+        self.gif_label = self.create_label("GIF:")
         media_layout.addRow(self.gif_label, self.gif_widget)
 
         self.scale_mode_combo = QComboBox()
@@ -941,7 +1014,7 @@ class PropertiesPanel(QWidget):
         self.scale_mode_combo.addItem("Fill (crop excess)", "fill")
         self.scale_mode_combo.addItem("Stretch", "stretch")
         self.scale_mode_combo.currentIndexChanged.connect(self.on_property_changed)
-        self.scale_mode_label = QLabel("Scale:")
+        self.scale_mode_label = self.create_label("Scale:")
         media_layout.addRow(self.scale_mode_label, self.scale_mode_combo)
 
         self.section_fields['media'] = [
@@ -976,7 +1049,7 @@ class PropertiesPanel(QWidget):
         self.line_thickness_spin.setRange(1, 10)
         self.line_thickness_spin.setValue(2)
         self.line_thickness_spin.valueChanged.connect(self.on_property_changed)
-        self.line_thickness_label = QLabel("Line Thickness:")
+        self.line_thickness_label = self.create_label("Line Thickness:")
         options_layout.addRow(self.line_thickness_label, self.line_thickness_spin)
 
         self.smooth_check = QCheckBox("Smooth Line")
@@ -997,15 +1070,22 @@ class PropertiesPanel(QWidget):
         self.bar_text_mode_combo.addItem("Value Only", "value_only")
         self.bar_text_mode_combo.addItem("Hidden", "none")
         self.bar_text_mode_combo.currentIndexChanged.connect(self.on_property_changed)
-        self.bar_text_mode_label = QLabel("Text:")
+        self.bar_text_mode_label = self.create_label("Text:")
         options_layout.addRow(self.bar_text_mode_label, self.bar_text_mode_combo)
 
         self.bar_text_position_combo = QComboBox()
         self.bar_text_position_combo.addItem("Inside Bar", "inside")
         self.bar_text_position_combo.addItem("Left of Bar", "left")
         self.bar_text_position_combo.currentIndexChanged.connect(self.on_property_changed)
-        self.bar_text_position_label = QLabel("Position:")
+        self.bar_text_position_label = self.create_label("Position:")
         options_layout.addRow(self.bar_text_position_label, self.bar_text_position_combo)
+
+        # Temperature display option
+        self.temp_hide_unit_check = QCheckBox("Hide unit letter (show ° only)")
+        self.temp_hide_unit_check.setToolTip("Show 45° instead of 45°C for temperature")
+        self.temp_hide_unit_check.stateChanged.connect(self.on_property_changed)
+        self.temp_hide_unit_label = QLabel("")
+        options_layout.addRow(self.temp_hide_unit_label, self.temp_hide_unit_check)
 
         # Gauge options
         self.auto_color_change_check = QCheckBox("Auto Color (warn/critical)")
@@ -1019,7 +1099,7 @@ class PropertiesPanel(QWidget):
         self.time_format_combo.addItem("24-Hour (Military)", "24h")
         self.time_format_combo.addItem("12-Hour (Standard)", "12h")
         self.time_format_combo.currentIndexChanged.connect(self.on_property_changed)
-        self.time_format_label = QLabel("Time Format:")
+        self.time_format_label = self.create_label("Time Format:")
         options_layout.addRow(self.time_format_label, self.time_format_combo)
 
         self.show_am_pm_check = QCheckBox("Show AM/PM")
@@ -1053,7 +1133,7 @@ class PropertiesPanel(QWidget):
         self.clock_face_style_combo.addItem("Tick Marks", "ticks")
         self.clock_face_style_combo.addItem("None", "none")
         self.clock_face_style_combo.currentIndexChanged.connect(self.on_property_changed)
-        self.clock_face_style_label = QLabel("Face Style:")
+        self.clock_face_style_label = self.create_label("Face Style:")
         options_layout.addRow(self.clock_face_style_label, self.clock_face_style_combo)
 
         self.smooth_animation_check = QCheckBox("Smooth Animation")
@@ -1070,6 +1150,7 @@ class PropertiesPanel(QWidget):
             (self.rounded_corners_label, self.rounded_corners_check),
             (self.bar_text_mode_label, self.bar_text_mode_combo),
             (self.bar_text_position_label, self.bar_text_position_combo),
+            (self.temp_hide_unit_label, self.temp_hide_unit_check),
             (self.auto_color_change_label, self.auto_color_change_check),
             (self.time_format_label, self.time_format_combo),
             (self.show_am_pm_label, self.show_am_pm_check),
@@ -1103,7 +1184,7 @@ class PropertiesPanel(QWidget):
         self.multi_general_frame, multi_general_layout = self.create_section("General")
         self.multi_layout.addWidget(self.multi_general_frame)
 
-        self.multi_name_label = QLabel("Selection:")
+        self.multi_name_label = self.create_label("Selection:")
         self.multi_name_value = QLabel("0 elements")
         self.multi_name_value.setStyleSheet("color: #0096ff; font-weight: bold;")
         multi_general_layout.addRow(self.multi_name_label, self.multi_name_value)
@@ -1111,7 +1192,7 @@ class PropertiesPanel(QWidget):
         self.group_name_edit = QLineEdit()
         self.group_name_edit.setPlaceholderText("Group name")
         self.group_name_edit.textChanged.connect(self.on_group_name_changed)
-        self.group_name_label = QLabel("Group:")
+        self.group_name_label = self.create_label("Group:")
         multi_general_layout.addRow(self.group_name_label, self.group_name_edit)
 
         # === MULTI-SELECTION TRANSFORM SECTION ===
@@ -1172,7 +1253,7 @@ class PropertiesPanel(QWidget):
 
         multi_size_widget = QWidget()
         multi_size_widget.setLayout(multi_size_layout)
-        self.multi_size_label = QLabel("Size:")
+        self.multi_size_label = self.create_label("Size:")
         multi_transform_layout.addRow(self.multi_size_label, multi_size_widget)
 
         # === ALIGNMENT SECTION ===
@@ -1181,17 +1262,27 @@ class PropertiesPanel(QWidget):
 
         # Horizontal alignment
         h_align_layout = QHBoxLayout()
-        self.align_h_left_btn = QPushButton("Left")
+        self.align_h_left_btn = QPushButton()
+        self.align_h_left_btn.setIcon(create_alignment_icon('h_left'))
+        self.align_h_left_btn.setFixedSize(32, 26)
+        self.align_h_left_btn.setToolTip("Align Left Edges")
         self.align_h_left_btn.clicked.connect(self.align_left)
         h_align_layout.addWidget(self.align_h_left_btn)
 
-        self.align_h_center_btn = QPushButton("Center")
+        self.align_h_center_btn = QPushButton()
+        self.align_h_center_btn.setIcon(create_alignment_icon('h_center'))
+        self.align_h_center_btn.setFixedSize(32, 26)
+        self.align_h_center_btn.setToolTip("Align Horizontal Centers")
         self.align_h_center_btn.clicked.connect(self.align_h_center)
         h_align_layout.addWidget(self.align_h_center_btn)
 
-        self.align_h_right_btn = QPushButton("Right")
+        self.align_h_right_btn = QPushButton()
+        self.align_h_right_btn.setIcon(create_alignment_icon('h_right'))
+        self.align_h_right_btn.setFixedSize(32, 26)
+        self.align_h_right_btn.setToolTip("Align Right Edges")
         self.align_h_right_btn.clicked.connect(self.align_right)
         h_align_layout.addWidget(self.align_h_right_btn)
+        h_align_layout.addStretch()
 
         h_align_widget = QWidget()
         h_align_widget.setLayout(h_align_layout)
@@ -1199,17 +1290,27 @@ class PropertiesPanel(QWidget):
 
         # Vertical alignment
         v_align_layout = QHBoxLayout()
-        self.align_v_top_btn = QPushButton("Top")
+        self.align_v_top_btn = QPushButton()
+        self.align_v_top_btn.setIcon(create_alignment_icon('v_top'))
+        self.align_v_top_btn.setFixedSize(32, 26)
+        self.align_v_top_btn.setToolTip("Align Top Edges")
         self.align_v_top_btn.clicked.connect(self.align_top)
         v_align_layout.addWidget(self.align_v_top_btn)
 
-        self.align_v_middle_btn = QPushButton("Middle")
+        self.align_v_middle_btn = QPushButton()
+        self.align_v_middle_btn.setIcon(create_alignment_icon('v_middle'))
+        self.align_v_middle_btn.setFixedSize(32, 26)
+        self.align_v_middle_btn.setToolTip("Align Vertical Centers")
         self.align_v_middle_btn.clicked.connect(self.align_v_middle)
         v_align_layout.addWidget(self.align_v_middle_btn)
 
-        self.align_v_bottom_btn = QPushButton("Bottom")
+        self.align_v_bottom_btn = QPushButton()
+        self.align_v_bottom_btn.setIcon(create_alignment_icon('v_bottom'))
+        self.align_v_bottom_btn.setFixedSize(32, 26)
+        self.align_v_bottom_btn.setToolTip("Align Bottom Edges")
         self.align_v_bottom_btn.clicked.connect(self.align_bottom)
         v_align_layout.addWidget(self.align_v_bottom_btn)
+        v_align_layout.addStretch()
 
         v_align_widget = QWidget()
         v_align_widget.setLayout(v_align_layout)
@@ -1573,6 +1674,13 @@ class PropertiesPanel(QWidget):
         self.bar_text_mode_combo.setVisible(bar_text_mode_visible)
         self.bar_text_position_label.setVisible(bar_text_position_visible)
         self.bar_text_position_combo.setVisible(bar_text_position_visible)
+        # Temperature hide unit option - visible only for temperature sources
+        temp_sources = ["cpu_temp", "gpu_temp"]
+        current_source = getattr(self.current_element, 'source', 'static') if self.current_element else 'static'
+        temp_hide_unit_visible = current_source in temp_sources
+        self.temp_hide_unit_label.setVisible(temp_hide_unit_visible)
+        self.temp_hide_unit_check.setVisible(temp_hide_unit_visible)
+
         self.auto_color_change_label.setVisible(auto_color_change_visible)
         self.auto_color_change_check.setVisible(auto_color_change_visible)
         self.time_format_label.setVisible(time_format_visible)
@@ -1596,11 +1704,11 @@ class PropertiesPanel(QWidget):
                                       show_gradient_visible or line_thickness_visible or
                                       smooth_visible or rounded_corners_visible or
                                       bar_text_mode_visible or bar_text_position_visible or
-                                      auto_color_change_visible or time_format_visible or
-                                      show_am_pm_visible or show_seconds_visible or
-                                      show_leading_zero_visible or show_seconds_hand_visible or
-                                      show_clock_border_visible or clock_face_style_visible or
-                                      smooth_animation_visible)
+                                      temp_hide_unit_visible or auto_color_change_visible or
+                                      time_format_visible or show_am_pm_visible or
+                                      show_seconds_visible or show_leading_zero_visible or
+                                      show_seconds_hand_visible or show_clock_border_visible or
+                                      clock_face_style_visible or smooth_animation_visible)
 
         # Update section header visibility
         for section, header in self.section_headers.items():
@@ -1654,6 +1762,7 @@ class PropertiesPanel(QWidget):
         self.rounded_corners_check.blockSignals(True)
         self.gradient_fill_check.blockSignals(True)
         self.auto_color_change_check.blockSignals(True)
+        self.temp_hide_unit_check.blockSignals(True)
         self.gif_path_edit.blockSignals(True)
         self.scale_mode_combo.blockSignals(True)
         self.custom_text_color_check.blockSignals(True)
@@ -1695,6 +1804,7 @@ class PropertiesPanel(QWidget):
         gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
         self.gradient_preview.set_gradient(gradient_stops)
         self.auto_color_change_check.setChecked(getattr(element, 'auto_color_change', True))
+        self.temp_hide_unit_check.setChecked(getattr(element, 'temp_hide_unit', False))
 
         # GIF options
         self.gif_path_edit.setText(getattr(element, 'gif_path', ''))
@@ -1790,6 +1900,7 @@ class PropertiesPanel(QWidget):
         self.rounded_corners_check.blockSignals(False)
         self.gradient_fill_check.blockSignals(False)
         self.auto_color_change_check.blockSignals(False)
+        self.temp_hide_unit_check.blockSignals(False)
         self.gif_path_edit.blockSignals(False)
         self.scale_mode_combo.blockSignals(False)
         self.custom_text_color_check.blockSignals(False)
@@ -1944,6 +2055,9 @@ class PropertiesPanel(QWidget):
 
         # Gauge options
         self.current_element.auto_color_change = self.auto_color_change_check.isChecked()
+
+        # Temperature display options
+        self.current_element.temp_hide_unit = self.temp_hide_unit_check.isChecked()
 
         # GIF options
         self.current_element.gif_path = self.gif_path_edit.text()

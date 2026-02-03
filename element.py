@@ -75,6 +75,9 @@ class ThemeElement:
         # Locking
         self.locked = kwargs.get("locked", False)  # Prevent editing/dragging when True
 
+        # Temperature display option
+        self.temp_hide_unit = kwargs.get("temp_hide_unit", False)  # Show only ° instead of °C
+
     def to_dict(self):
         return {
             "type": self.type,
@@ -129,7 +132,8 @@ class ThemeElement:
             "clock_face_style": self.clock_face_style,
             "smooth_animation": self.smooth_animation,
             "group": self.group,
-            "locked": self.locked
+            "locked": self.locked,
+            "temp_hide_unit": self.temp_hide_unit
         }
 
     @classmethod

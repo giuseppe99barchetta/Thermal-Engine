@@ -15,13 +15,17 @@ except ImportError:
     SOURCE_UNITS = {}
 
 
-def get_value_with_unit(value, source):
+def get_value_with_unit(value, source, temp_hide_unit=False):
     """Format a value with its appropriate unit symbol."""
     unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
     symbol = unit_info.get("symbol", "%")
     unit_type = unit_info.get("type", "percent")
 
-    if unit_type in ["clock", "temp", "power"]:
+    if unit_type == "temp":
+        if temp_hide_unit:
+            return f"{value:.0f}°"
+        return f"{value:.0f}{symbol}"
+    elif unit_type in ["clock", "power"]:
         return f"{value:.0f}{symbol}"
     elif unit_type in ["size", "speed"]:
         return f"{value:.1f}{symbol}"
@@ -269,7 +273,7 @@ def draw_preview(painter, element, x, y, scale):
             label_color = color
         painter.setPen(QPen(label_color))
 
-        label_text = f"{element.text}: {get_value_with_unit(element.value, element.source)}"
+        label_text = f"{element.text}: {get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))}"
         painter.drawText(x + 5, y + int(element.font_size * scale) + 2, label_text)
 
 
@@ -414,12 +418,40 @@ def render_image(draw, img, element):
         try:
             from PIL import ImageFont
             import os
-            font_path = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf')
-            font = ImageFont.truetype(font_path, element.font_size)
+            import sys
+            font = None
+            # Try platform-specific font paths
+            font_paths = []
+            if sys.platform == "win32":
+                font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+                font_paths = [
+                    os.path.join(font_dir, 'arial.ttf'),
+                    os.path.join(font_dir, 'segoeui.ttf'),
+                    os.path.join(font_dir, 'tahoma.ttf'),
+                ]
+            elif sys.platform == "darwin":
+                font_paths = [
+                    '/System/Library/Fonts/Helvetica.ttc',
+                    '/System/Library/Fonts/SFNSText.ttf',
+                    '/Library/Fonts/Arial.ttf',
+                ]
+            else:  # Linux
+                font_paths = [
+                    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                    '/usr/share/fonts/TTF/DejaVuSans.ttf',
+                    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+                ]
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    try:
+                        font = ImageFont.truetype(font_path, element.font_size)
+                        break
+                    except:
+                        continue
         except:
             font = None
 
-        label_text = f"{element.text}: {get_value_with_unit(element.value, element.source)}"
+        label_text = f"{element.text}: {get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))}"
 
         # Use custom text color if enabled
         if getattr(element, 'use_custom_text_color', False):

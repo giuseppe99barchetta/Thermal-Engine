@@ -267,13 +267,8 @@ class ElementListPanel(QWidget):
 
         type_label = type_names.get(element.type, element.type.replace("_", " ").title())
 
-        if hasattr(element, 'source') and element.source and element.source != "static":
-            source_label = element.source.replace("_", " ").upper()
-            return f"{type_label} - {source_label}"
-        elif hasattr(element, 'text') and element.text:
-            return f"{type_label} - {element.text}"
-        else:
-            return f"{type_label} - {element.name}"
+        # Use element name from properties panel
+        return f"{type_label} - {element.name}"
 
     def refresh_list(self, preserve_state=True):
         """Refresh the tree widget to reflect current elements and groups."""
@@ -582,6 +577,18 @@ class ElementListPanel(QWidget):
             if ok and new_name.strip() and new_name.strip() != old_name:
                 self.elements_will_change.emit()
                 new_name = new_name.strip()
+
+                # Get all existing group names (excluding the one being renamed)
+                existing_groups = set(el.group for el in self.elements if el.group and el.group != old_name)
+
+                # If name already exists, append a number
+                if new_name in existing_groups:
+                    base_name = new_name
+                    counter = 1
+                    while f"{base_name} ({counter})" in existing_groups:
+                        counter += 1
+                    new_name = f"{base_name} ({counter})"
+
                 for element in self.elements:
                     if element.group == old_name:
                         element.group = new_name
@@ -839,26 +846,38 @@ class ElementListPanel(QWidget):
         self.tree_widget.blockSignals(True)
         self.tree_widget.clearSelection()
 
-        def find_and_select(parent_item=None):
+        selected_item = None
+
+        def find_and_select(parent_item=None, group_item=None):
+            nonlocal selected_item
             if parent_item is None:
                 count = self.tree_widget.topLevelItemCount()
                 for i in range(count):
                     item = self.tree_widget.topLevelItem(i)
-                    if find_and_select(item):
+                    if find_and_select(item, None):
                         return True
             else:
                 item_type = parent_item.data(0, Qt.ItemDataRole.UserRole + 1)
                 if item_type == "element":
                     if parent_item.data(0, Qt.ItemDataRole.UserRole) == idx:
                         parent_item.setSelected(True)
+                        selected_item = parent_item
+                        # Expand parent group if this is a child element
+                        if group_item is not None:
+                            group_item.setExpanded(True)
                         return True
                 elif item_type == "group":
                     for i in range(parent_item.childCount()):
-                        if find_and_select(parent_item.child(i)):
+                        if find_and_select(parent_item.child(i), parent_item):
                             return True
             return False
 
         find_and_select()
+
+        # Scroll to show the selected item
+        if selected_item is not None:
+            self.tree_widget.scrollToItem(selected_item)
+
         self.tree_widget.blockSignals(False)
 
         # Emit signals to update canvas selection
@@ -889,7 +908,10 @@ class ElementListPanel(QWidget):
         self.tree_widget.blockSignals(True)
         self.tree_widget.clearSelection()
 
+        first_selected_item = None
+
         def select_matching(parent_item=None):
+            nonlocal first_selected_item
             if parent_item is None:
                 count = self.tree_widget.topLevelItemCount()
                 for i in range(count):
@@ -899,11 +921,41 @@ class ElementListPanel(QWidget):
                 if item_type == "element":
                     if parent_item.data(0, Qt.ItemDataRole.UserRole) in indices:
                         parent_item.setSelected(True)
+                        if first_selected_item is None:
+                            first_selected_item = parent_item
                 elif item_type == "group":
+                    # Check if all children in this group are being selected
+                    group_indices = []
                     for i in range(parent_item.childCount()):
-                        select_matching(parent_item.child(i))
+                        child = parent_item.child(i)
+                        child_idx = child.data(0, Qt.ItemDataRole.UserRole)
+                        group_indices.append(child_idx)
+
+                    all_selected = all(idx in indices for idx in group_indices)
+                    if all_selected and group_indices:
+                        # Select the group folder itself when all children are selected
+                        parent_item.setSelected(True)
+                        parent_item.setExpanded(True)
+                        if first_selected_item is None:
+                            first_selected_item = parent_item
+                    else:
+                        # Select individual children
+                        for i in range(parent_item.childCount()):
+                            child = parent_item.child(i)
+                            child_idx = child.data(0, Qt.ItemDataRole.UserRole)
+                            if child_idx in indices:
+                                child.setSelected(True)
+                                # Expand parent group to show selected child
+                                parent_item.setExpanded(True)
+                                if first_selected_item is None:
+                                    first_selected_item = child
 
         select_matching()
+
+        # Scroll to show the first selected item
+        if first_selected_item is not None:
+            self.tree_widget.scrollToItem(first_selected_item)
+
         self.tree_widget.blockSignals(False)
 
         # Emit signals to update canvas selection

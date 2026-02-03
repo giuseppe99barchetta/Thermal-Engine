@@ -23,7 +23,10 @@ import settings
 
 
 def is_admin():
-    """Check if running with administrator privileges."""
+    """Check if running with administrator privileges. Windows-only."""
+    if sys.platform != "win32":
+        # On non-Windows, check if running as root
+        return os.getuid() == 0 if hasattr(os, 'getuid') else True
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
     except:
@@ -62,17 +65,21 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Keep running when minimized to tray
 
-    # Check for admin rights
+    # Check for admin rights (Windows-only elevation prompt)
     if not is_admin():
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Icon.Warning)
         msg.setWindowTitle("Administrator Required")
         msg.setText("This application needs administrator privileges to read hardware sensors.")
         msg.setInformativeText("CPU and GPU temperatures will not work without admin rights.")
-        msg.addButton("Restart as Admin", QMessageBox.ButtonRole.AcceptRole)
+
+        # Only offer restart-as-admin on Windows
+        if sys.platform == "win32":
+            msg.addButton("Restart as Admin", QMessageBox.ButtonRole.AcceptRole)
         msg.addButton("Continue Anyway", QMessageBox.ButtonRole.RejectRole)
 
-        if msg.exec() == 0:  # "Restart as Admin" clicked
+        result = msg.exec()
+        if sys.platform == "win32" and result == 0:  # "Restart as Admin" clicked
             ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", sys.executable, " ".join([f'"{arg}"' for arg in sys.argv]), None, 1
             )

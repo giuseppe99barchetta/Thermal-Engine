@@ -68,7 +68,7 @@ def interpolate_gradient_color(gradient_stops, position):
     return QColor(sorted_stops[-1][1])
 
 
-def get_value_with_unit(value, source):
+def get_value_with_unit(value, source, temp_hide_unit=False):
     """Format a value with its appropriate unit symbol."""
     unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
     symbol = unit_info["symbol"]
@@ -77,6 +77,8 @@ def get_value_with_unit(value, source):
     if unit_type == "clock":
         return f"{value:.0f}{symbol}"
     elif unit_type == "temp":
+        if temp_hide_unit:
+            return f"{value:.0f}°"
         return f"{value:.0f}{symbol}"
     elif unit_type == "power":
         return f"{value:.0f}{symbol}"
@@ -120,6 +122,8 @@ class CanvasPreview(QWidget):
         self.handle_size = 10
         self.group_selection_mode = False  # True when a complete group is selected
         self._glass_background = None  # Cached background for glass effect
+        self._glass_cache_valid = False  # Track if glass cache needs rebuild
+        self._has_glass_cache = None  # Cache result of _has_glass_elements()
 
         self.setFixedSize(
             int(DISPLAY_WIDTH * self.scale),
@@ -130,6 +134,8 @@ class CanvasPreview(QWidget):
 
     def set_elements(self, elements):
         self.elements = elements
+        self._glass_cache_valid = False  # Invalidate glass cache when elements change
+        self._has_glass_cache = None  # Clear has_glass cache
         self.update()
 
     def set_selected(self, index):
@@ -159,14 +165,17 @@ class CanvasPreview(QWidget):
 
     def set_background_color(self, color):
         self.background_color = QColor(color)
+        self._glass_cache_valid = False  # Invalidate glass cache
         self.update()
 
     def _has_glass_elements(self):
-        """Check if any element has glass effect enabled."""
-        return any(
-            el.type == "rectangle" and getattr(el, 'glass_effect', False)
-            for el in self.elements
-        )
+        """Check if any element has glass effect enabled (cached)."""
+        if self._has_glass_cache is None:
+            self._has_glass_cache = any(
+                el.type == "rectangle" and getattr(el, 'glass_effect', False)
+                for el in self.elements
+            )
+        return self._has_glass_cache
 
     def _render_background_for_glass(self):
         """Render everything except glass effects to a buffer for blur source."""
@@ -199,8 +208,12 @@ class CanvasPreview(QWidget):
 
     def paintEvent(self, event):
         # If we have glass elements, pre-render the background for blur
+        # Only rebuild if cache is invalid or video is playing (video changes every frame)
         if self._has_glass_elements():
-            self._glass_background = self._render_background_for_glass()
+            needs_rebuild = not self._glass_cache_valid or video_background.enabled
+            if needs_rebuild or self._glass_background is None:
+                self._glass_background = self._render_background_for_glass()
+                self._glass_cache_valid = True
         else:
             self._glass_background = None
 
@@ -309,7 +322,7 @@ class CanvasPreview(QWidget):
         font.setItalic(element.font_italic)
         painter.setFont(font)
 
-        text = get_value_with_unit(element.value, element.source)
+        text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
         text_rect = QRectF(x - radius, y - radius / 2, radius * 2, radius)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
@@ -371,7 +384,7 @@ class CanvasPreview(QWidget):
             font.setItalic(element.font_italic)
             painter.setFont(font)
 
-            value_text = get_value_with_unit(element.value, element.source)
+            value_text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
             if bar_text_mode == 'full':
                 display_text = f"{element.text}: {value_text}"
             else:  # value_only
@@ -401,7 +414,7 @@ class CanvasPreview(QWidget):
         source = getattr(element, 'source', 'static')
         if source and source != 'static':
             # Display sensor value, optionally with label
-            value_text = get_value_with_unit(element.value, source)
+            value_text = get_value_with_unit(element.value, source, getattr(element, 'temp_hide_unit', False))
             if element.text:
                 text = f"{element.text}: {value_text}"
             else:

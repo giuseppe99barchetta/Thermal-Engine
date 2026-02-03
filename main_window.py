@@ -39,6 +39,10 @@ from security import validate_preset_schema, is_safe_path
 _pil_font_cache = {}
 _pil_font_cache_lock = threading.Lock()
 
+# Gradient image cache for performance
+_gradient_cache = {}
+_gradient_cache_max_size = 20  # Reduced from 50 to save memory
+
 
 # Background psutil data collection
 _psutil_data = {
@@ -125,8 +129,8 @@ def _psutil_polling_thread():
                 except:
                     pass
 
-        # Poll every 200ms for responsive CPU readings
-        time.sleep(0.2)
+        # Poll every 500ms - balances responsiveness with CPU usage
+        time.sleep(0.5)
 
 
 def start_psutil_thread():
@@ -169,7 +173,7 @@ except ImportError:
 from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT, SOURCE_UNITS
 
 
-def get_value_with_unit(value, source):
+def get_value_with_unit(value, source, temp_hide_unit=False):
     """Format a value with its appropriate unit symbol."""
     unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
     symbol = unit_info["symbol"]
@@ -178,6 +182,9 @@ def get_value_with_unit(value, source):
     if unit_type == "clock":
         return f"{value:.0f}{symbol}"
     elif unit_type == "temp":
+        # Option to show only ° instead of °C
+        if temp_hide_unit:
+            return f"{value:.0f}°"
         return f"{value:.0f}{symbol}"
     elif unit_type == "power":
         return f"{value:.0f}{symbol}"
@@ -220,7 +227,7 @@ class ThemeEditorWindow(QMainWindow):
         self.elements = []
         self.device = None
         self.live_preview_timer = None
-        self.target_fps = settings.get_setting("target_fps", 10)
+        self.target_fps = settings.get_setting("target_fps", 30)
 
         # Performance monitoring
         self.frame_times = []
@@ -236,6 +243,15 @@ class ThemeEditorWindow(QMainWindow):
         # Canvas update throttling (skip canvas updates during high-speed rendering)
         self._canvas_update_counter = 0
         self._canvas_update_interval = 3  # Update canvas every N frames when connected
+
+        # Frame timing for smooth delivery
+        self._frame_deadline = 0  # When next frame should be sent
+        self._frames_skipped = 0  # Counter for skipped frames
+        self._overdrive_mode = settings.get_setting("overdrive_mode", False)
+        self._frame_buffer = None  # Pre-rendered frame buffer
+        self._frame_buffer_lock = threading.Lock()
+        self._render_thread = None
+        self._render_thread_running = False
 
         # Sleep/wake handling - auto-reconnect
         self._reconnect_timer = None
@@ -573,13 +589,23 @@ class ThemeEditorWindow(QMainWindow):
 
         fps_menu = display_menu.addMenu("Frame Rate")
         self.fps_actions = []
-        for fps in [10, 20, 30]:
+        for fps in [10, 20, 30, 60]:
             action = QAction(f"{fps} FPS", self)
             action.setCheckable(True)
             action.setChecked(fps == self.target_fps)
             action.triggered.connect(lambda checked, f=fps: self.set_target_fps(f))
             fps_menu.addAction(action)
             self.fps_actions.append(action)
+
+        fps_menu.addSeparator()
+
+        # Overdrive mode - uses threaded rendering and frame skipping for consistent timing
+        self.overdrive_action = QAction("Overdrive Mode", self)
+        self.overdrive_action.setCheckable(True)
+        self.overdrive_action.setChecked(self._overdrive_mode)
+        self.overdrive_action.setToolTip("Threaded rendering with frame skipping for smoother output")
+        self.overdrive_action.triggered.connect(self.toggle_overdrive_mode)
+        fps_menu.addAction(self.overdrive_action)
 
         display_menu.addSeparator()
 
@@ -654,12 +680,24 @@ class ThemeEditorWindow(QMainWindow):
             f"background-color: {color}; border-radius: 4px; min-height: 16px;"
         )
 
+        # Get memory usage
+        try:
+            mem_mb = self.process.memory_info().rss / (1024 * 1024)
+            mem_str = f" | RAM: {mem_mb:.0f}MB"
+        except:
+            mem_str = ""
+
         if self.device:
+            mode_str = " [OD]" if self._overdrive_mode else ""
+            skip_str = f" Skip:{self._frames_skipped}" if self._overdrive_mode and self._frames_skipped > 0 else ""
             self.perf_label.setText(
-                f"FPS: {actual_fps:.1f}/{self.target_fps} | CPU: {cpu_percent:.1f}% | {status}"
+                f"FPS: {actual_fps:.1f}/{self.target_fps}{mode_str} | CPU: {cpu_percent:.1f}%{mem_str} | {status}{skip_str}"
             )
+            # Reset skip counter periodically
+            if self._overdrive_mode:
+                self._frames_skipped = 0
         else:
-            self.perf_label.setText("FPS: -- | CPU: --%")
+            self.perf_label.setText(f"FPS: -- | CPU: --%{mem_str}")
 
         if self.device and actual_fps < self.target_fps * 0.7 and actual_fps > 0:
             self.status_bar.showMessage(
@@ -668,13 +706,15 @@ class ThemeEditorWindow(QMainWindow):
             )
 
     def record_frame_time(self):
-        """Record the time taken for a frame."""
-        current_time = time.time()
+        """Record the time between frames sent to the device."""
+        current_time = time.perf_counter()  # High-precision timer
         if self.last_frame_time > 0:
             frame_time = current_time - self.last_frame_time
-            self.frame_times.append(frame_time)
-            if len(self.frame_times) > 30:
-                self.frame_times.pop(0)
+            # Only record reasonable frame times (filter out outliers from pauses)
+            if frame_time < 1.0:  # Ignore gaps > 1 second
+                self.frame_times.append(frame_time)
+                if len(self.frame_times) > 60:  # Larger sample for stability
+                    self.frame_times.pop(0)
         self.last_frame_time = current_time
 
     def add_default_elements(self):
@@ -742,6 +782,18 @@ class ThemeEditorWindow(QMainWindow):
             self.properties_panel.set_element(self.elements[idx])
 
     def refresh_canvas(self):
+        """Refresh canvas - debounced to prevent rapid successive updates."""
+        # Use a short timer to batch multiple rapid changes into one update
+        if not hasattr(self, '_refresh_timer'):
+            self._refresh_timer = QTimer(self)
+            self._refresh_timer.setSingleShot(True)
+            self._refresh_timer.timeout.connect(self._do_refresh_canvas)
+
+        # Restart timer - this batches rapid changes
+        self._refresh_timer.start(16)  # ~60fps max update rate
+
+    def _do_refresh_canvas(self):
+        """Actually perform the canvas refresh."""
         self.canvas.set_elements(self.elements)
         self.canvas.update()
 
@@ -768,6 +820,9 @@ class ThemeEditorWindow(QMainWindow):
             'background_color': self.background_color
         }
         self.redo_stack.append(current_state)
+        # Limit redo stack size to match undo stack
+        if len(self.redo_stack) > self.max_undo_levels:
+            self.redo_stack.pop(0)
 
         # Restore previous state
         state = self.undo_stack.pop()
@@ -849,7 +904,7 @@ class ThemeEditorWindow(QMainWindow):
         self.status_bar.showMessage(f"Preset saved: {preset_name}")
 
     def save_as_preset(self):
-        """Save current theme as a preset."""
+        """Save current theme as a preset with thumbnail snapshot."""
         theme_data = {
             "name": self.theme_name,
             "background_color": self.background_color,
@@ -858,7 +913,18 @@ class ThemeEditorWindow(QMainWindow):
             "elements": [e.to_dict() for e in self.elements],
             "video_background": video_background.to_dict()
         }
-        self.presets_panel.save_preset(self.theme_name, theme_data)
+
+        # Capture current frame as thumbnail
+        thumbnail_image = None
+        try:
+            thumbnail_image = self.render_theme_image()
+            # Convert to RGB if necessary (remove alpha channel for PNG efficiency)
+            if thumbnail_image and thumbnail_image.mode == 'RGBA':
+                thumbnail_image = thumbnail_image.convert('RGB')
+        except Exception as e:
+            print(f"[Preset] Failed to capture thumbnail: {e}")
+
+        self.presets_panel.save_preset(self.theme_name, theme_data, thumbnail_image)
 
     def quick_save(self):
         """Quick save to presets folder using current theme name."""
@@ -1186,15 +1252,21 @@ class ThemeEditorWindow(QMainWindow):
             info.append("\nLibreHardwareMonitor not working!")
             if sensors.LHM_ERROR:
                 info.append(f"\nError: {sensors.LHM_ERROR}")
-            info.append("\nTo fix this:")
-            info.append("1. Install: pip install pythonnet clr-loader")
-            info.append("2. Download LibreHardwareMonitor from:")
-            info.append("   https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases")
-            info.append("3. Extract and copy LibreHardwareMonitorLib.dll to:")
-            info.append(f"   {os.path.dirname(os.path.abspath(__file__))}")
-            info.append("4. Also copy HidSharp.dll to the same folder")
-            info.append("5. Unblock both DLLs (right-click > Properties > Unblock)")
-            info.append("6. Restart this application AS ADMINISTRATOR")
+
+            if sys.platform != "win32":
+                info.append("\nNote: Hardware sensor reading requires Windows.")
+                info.append("The application can still be used for creating themes,")
+                info.append("but CPU/GPU temperatures will show placeholder values.")
+            else:
+                info.append("\nTo fix this:")
+                info.append("1. Install: pip install pythonnet clr-loader")
+                info.append("2. Download LibreHardwareMonitor from:")
+                info.append("   https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases")
+                info.append("3. Extract and copy LibreHardwareMonitorLib.dll to:")
+                info.append(f"   {os.path.dirname(os.path.abspath(__file__))}")
+                info.append("4. Also copy HidSharp.dll to the same folder")
+                info.append("5. Unblock both DLLs (right-click > Properties > Unblock)")
+                info.append("6. Restart this application AS ADMINISTRATOR")
 
         info.append("\n" + "-" * 40)
         info.append("Current sensor values:")
@@ -1281,6 +1353,14 @@ class ThemeEditorWindow(QMainWindow):
             pass  # UI might not be available during shutdown
 
     def set_target_fps(self, fps):
+        # Show warning for 60 FPS if not suppressed
+        if fps == 60 and not settings.get_setting("suppress_60fps_warning", False):
+            if not self._show_60fps_warning():
+                # User declined - revert to previous FPS selection
+                for action in self.fps_actions:
+                    action.setChecked(action.text() == f"{self.target_fps} FPS")
+                return
+
         self.target_fps = fps
         settings.set_setting("target_fps", fps)  # Persist across relaunches
 
@@ -1293,20 +1373,135 @@ class ThemeEditorWindow(QMainWindow):
 
         self.status_bar.showMessage(f"Frame rate set to {fps} FPS")
 
+    def _show_60fps_warning(self):
+        """Show warning dialog for 60 FPS mode. Returns True if user accepts."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QCheckBox, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Performance Warning")
+        dialog.setMinimumWidth(400)
+
+        layout = QVBoxLayout(dialog)
+
+        # Warning message
+        warning_label = QLabel(
+            "<b>60 FPS Mode</b><br><br>"
+            "Running at 60 FPS significantly increases CPU usage and may cause:<br><br>"
+            "• Higher CPU temperatures<br>"
+            "• Reduced battery life on laptops<br>"
+            "• Potential frame drops on older hardware<br>"
+            "• Less headroom for other applications<br><br>"
+            "<b>Recommended:</b> Use 30 FPS with Overdrive mode for smooth "
+            "performance on most systems."
+        )
+        warning_label.setWordWrap(True)
+        layout.addWidget(warning_label)
+
+        # Don't show again checkbox
+        dont_show_checkbox = QCheckBox("Don't show this warning again")
+        layout.addWidget(dont_show_checkbox)
+
+        # Buttons
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.button(QDialogButtonBox.StandardButton.Ok).setText("Continue with 60 FPS")
+        button_box.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancel")
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        result = dialog.exec()
+
+        if result == QDialog.DialogCode.Accepted:
+            # Save preference if checkbox is checked
+            if dont_show_checkbox.isChecked():
+                settings.set_setting("suppress_60fps_warning", True)
+            return True
+        return False
+
+    def toggle_overdrive_mode(self, checked):
+        """Toggle overdrive mode for smoother frame delivery."""
+        self._overdrive_mode = checked
+        settings.set_setting("overdrive_mode", checked)
+
+        if checked:
+            self._start_render_thread()
+            self.status_bar.showMessage("Overdrive mode enabled - threaded rendering active")
+        else:
+            self._stop_render_thread()
+            self.status_bar.showMessage("Overdrive mode disabled")
+
+    def _start_render_thread(self):
+        """Start background render thread for overdrive mode."""
+        if self._render_thread and self._render_thread.is_alive():
+            return
+
+        self._render_thread_running = True
+        self._render_thread = threading.Thread(target=self._render_thread_loop, daemon=True)
+        self._render_thread.start()
+
+    def _stop_render_thread(self):
+        """Stop background render thread."""
+        self._render_thread_running = False
+        if self._render_thread:
+            self._render_thread.join(timeout=1.0)
+            self._render_thread = None
+
+    def _render_thread_loop(self):
+        """Background thread that pre-renders frames."""
+        while self._render_thread_running:
+            try:
+                if self.device and self._overdrive_mode:
+                    # Update sensor values
+                    sensor_data = self.get_sensor_data()
+                    for element in self.elements:
+                        if element.source != "static" and element.source in sensor_data:
+                            element.value = sensor_data[element.source]
+
+                    # Render frame
+                    img = self.render_theme_image()
+                    jpeg_data = self.image_to_jpeg(img)
+
+                    # Store in buffer
+                    with self._frame_buffer_lock:
+                        self._frame_buffer = jpeg_data
+
+                # Sleep to match roughly 2x target FPS for buffer freshness
+                time.sleep(1.0 / (self.target_fps * 2))
+            except Exception as e:
+                print(f"[Render Thread] Error: {e}")
+                time.sleep(0.1)
+
     def start_continuous_send(self):
         interval = 1000 // self.target_fps
+
+        # Initialize frame deadline for smooth timing
+        self._frame_deadline = time.perf_counter()
+        self._frames_skipped = 0
+
+        # Start render thread if overdrive mode
+        if self._overdrive_mode:
+            self._start_render_thread()
+
         if self.live_preview_timer is None:
             self.live_preview_timer = QTimer(self)
             self.live_preview_timer.timeout.connect(self.send_frame_with_sensors)
-            self.live_preview_timer.start(interval)
+            # Use slightly shorter interval in overdrive to catch up faster
+            actual_interval = interval if not self._overdrive_mode else max(1, interval - 2)
+            self.live_preview_timer.start(actual_interval)
         else:
-            self.live_preview_timer.setInterval(interval)
+            actual_interval = interval if not self._overdrive_mode else max(1, interval - 2)
+            self.live_preview_timer.setInterval(actual_interval)
             self.live_preview_timer.start()
 
     def stop_continuous_send(self):
         if self.live_preview_timer:
             self.live_preview_timer.stop()
             self.live_preview_timer = None
+
+        # Stop render thread
+        self._stop_render_thread()
 
     def send_to_display(self):
         self.send_frame_with_sensors()
@@ -1316,19 +1511,54 @@ class ThemeEditorWindow(QMainWindow):
             return
 
         try:
-            sensor_data = self.get_sensor_data()
+            current_time = time.perf_counter()
+            frame_interval = 1.0 / self.target_fps
 
-            for element in self.elements:
-                # Don't override value for static source - let user control it
-                if element.source != "static" and element.source in sensor_data:
-                    element.value = sensor_data[element.source]
+            # Time-compensated frame delivery
+            if self._overdrive_mode:
+                # Check if we're behind schedule
+                if current_time < self._frame_deadline:
+                    # We're ahead - wait until deadline (smooth pacing)
+                    pass
+                elif current_time > self._frame_deadline + frame_interval:
+                    # We're more than one frame behind - skip frames to catch up
+                    frames_behind = int((current_time - self._frame_deadline) / frame_interval)
+                    self._frames_skipped += frames_behind
+                    self._frame_deadline = current_time  # Reset deadline
 
-            img = self.render_theme_image()
-            jpeg_data = self.image_to_jpeg(img)
-            self.send_jpeg_frame(jpeg_data)
+                # Use pre-rendered frame from buffer if available
+                jpeg_data = None
+                with self._frame_buffer_lock:
+                    if self._frame_buffer:
+                        jpeg_data = self._frame_buffer
+
+                if jpeg_data:
+                    self.send_jpeg_frame(jpeg_data)
+                else:
+                    # Fallback to direct render if buffer empty
+                    sensor_data = self.get_sensor_data()
+                    for element in self.elements:
+                        if element.source != "static" and element.source in sensor_data:
+                            element.value = sensor_data[element.source]
+                    img = self.render_theme_image()
+                    jpeg_data = self.image_to_jpeg(img)
+                    self.send_jpeg_frame(jpeg_data)
+
+                # Advance deadline
+                self._frame_deadline += frame_interval
+            else:
+                # Standard mode - direct render and send
+                sensor_data = self.get_sensor_data()
+
+                for element in self.elements:
+                    if element.source != "static" and element.source in sensor_data:
+                        element.value = sensor_data[element.source]
+
+                img = self.render_theme_image()
+                jpeg_data = self.image_to_jpeg(img)
+                self.send_jpeg_frame(jpeg_data)
 
             # Throttle canvas updates to reduce CPU usage
-            # Only update Qt canvas every N frames when sending to display
             self._canvas_update_counter += 1
             if self._canvas_update_counter >= self._canvas_update_interval:
                 self._canvas_update_counter = 0
@@ -1339,11 +1569,9 @@ class ThemeEditorWindow(QMainWindow):
 
         except Exception as e:
             error_str = str(e).lower()
-            # Check for device disconnect errors
             if "device" in error_str or "hid" in error_str or "write" in error_str or "closed" in error_str:
                 print(f"[HID] Device error, disconnecting: {e}")
                 self.disconnect_display()
-                # Attempt auto-reconnect
                 self._was_connected_before_sleep = True
                 self._reconnect_attempts = 0
                 self._start_reconnect_timer()
@@ -1354,48 +1582,105 @@ class ThemeEditorWindow(QMainWindow):
 
     _font_cache = None
 
+    def _get_font_dirs(self):
+        """Get platform-specific font directories."""
+        if sys.platform == "win32":
+            return [os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')]
+        elif sys.platform == "darwin":
+            return [
+                '/System/Library/Fonts',
+                '/Library/Fonts',
+                os.path.expanduser('~/Library/Fonts'),
+            ]
+        else:  # Linux
+            return [
+                '/usr/share/fonts/truetype',
+                '/usr/share/fonts/TTF',
+                '/usr/local/share/fonts',
+                os.path.expanduser('~/.fonts'),
+            ]
+
     def _build_font_cache(self):
-        """Build a cache of font family names to file paths from Windows Registry."""
+        """Build a cache of font family names to file paths."""
         if self._font_cache is not None:
             return self._font_cache
 
         self._font_cache = {}
-        font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
 
-        try:
-            import winreg
-            reg_paths = [
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"),
-                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"),
-            ]
+        # Windows: use registry for accurate font names
+        if sys.platform == "win32":
+            font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+            try:
+                import winreg
+                reg_paths = [
+                    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"),
+                    (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"),
+                ]
 
-            for hkey, subkey in reg_paths:
+                for hkey, subkey in reg_paths:
+                    try:
+                        with winreg.OpenKey(hkey, subkey) as key:
+                            i = 0
+                            while True:
+                                try:
+                                    name, value, _ = winreg.EnumValue(key, i)
+                                    font_name = name.replace(" (TrueType)", "").replace(" (OpenType)", "")
+
+                                    if not os.path.isabs(value):
+                                        value = os.path.join(font_dir, value)
+
+                                    if os.path.exists(value):
+                                        self._font_cache[font_name.lower()] = value
+
+                                    i += 1
+                                except OSError:
+                                    break
+                    except OSError:
+                        pass
+            except ImportError:
+                pass
+        else:
+            # Non-Windows: scan font directories
+            for font_dir in self._get_font_dirs():
+                if not os.path.exists(font_dir):
+                    continue
                 try:
-                    with winreg.OpenKey(hkey, subkey) as key:
-                        i = 0
-                        while True:
-                            try:
-                                name, value, _ = winreg.EnumValue(key, i)
-                                font_name = name.replace(" (TrueType)", "").replace(" (OpenType)", "")
-
-                                if not os.path.isabs(value):
-                                    value = os.path.join(font_dir, value)
-
-                                if os.path.exists(value):
-                                    self._font_cache[font_name.lower()] = value
-
-                                i += 1
-                            except OSError:
-                                break
-                except OSError:
+                    for root, dirs, files in os.walk(font_dir):
+                        for filename in files:
+                            if filename.lower().endswith(('.ttf', '.otf', '.ttc')):
+                                font_path = os.path.join(root, filename)
+                                # Use filename without extension as font name
+                                font_name = os.path.splitext(filename)[0].lower()
+                                self._font_cache[font_name] = font_path
+                except:
                     pass
-        except ImportError:
-            pass
 
         return self._font_cache
 
+    def _get_default_font_path(self):
+        """Get a default fallback font path for the current platform."""
+        if sys.platform == "win32":
+            font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+            for name in ['arial.ttf', 'segoeui.ttf', 'tahoma.ttf']:
+                path = os.path.join(font_dir, name)
+                if os.path.exists(path):
+                    return path
+        elif sys.platform == "darwin":
+            for path in ['/System/Library/Fonts/Helvetica.ttc', '/Library/Fonts/Arial.ttf']:
+                if os.path.exists(path):
+                    return path
+        else:  # Linux
+            for path in [
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                '/usr/share/fonts/TTF/DejaVuSans.ttf',
+                '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+            ]:
+                if os.path.exists(path):
+                    return path
+        return None
+
     def get_font_path(self, font_family, bold=False, italic=False):
-        font_dir = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
+        font_dirs = self._get_font_dirs()
         font_cache = self._build_font_cache()
 
         if bold and italic:
@@ -1430,16 +1715,28 @@ class ThemeEditorWindow(QMainWindow):
             if font_name_lower in cached_name or cached_name.startswith(font_name_lower):
                 return cached_path
 
+        # Try to find font by filename in font directories
         try:
             font_name_clean = font_family.lower().replace(' ', '')
-            for filename in os.listdir(font_dir):
-                if filename.lower().endswith(('.ttf', '.otf')):
-                    if font_name_clean in filename.lower().replace(' ', ''):
-                        return os.path.join(font_dir, filename)
+            for font_dir in font_dirs:
+                if not os.path.exists(font_dir):
+                    continue
+                for filename in os.listdir(font_dir):
+                    if filename.lower().endswith(('.ttf', '.otf', '.ttc')):
+                        if font_name_clean in filename.lower().replace(' ', ''):
+                            return os.path.join(font_dir, filename)
         except:
             pass
 
-        return os.path.join(font_dir, 'arial.ttf')
+        # Return platform-appropriate default font
+        default_font = self._get_default_font_path()
+        if default_font:
+            return default_font
+
+        # Last resort fallback
+        if sys.platform == "win32":
+            return os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts', 'arial.ttf')
+        return None
 
     def get_pil_font(self, element, size_override=None):
         """Get a PIL font with caching for performance."""
@@ -1452,17 +1749,19 @@ class ThemeEditorWindow(QMainWindow):
 
         try:
             font_path = self.get_font_path(element.font_family, element.font_bold, element.font_italic)
-            font = ImageFont.truetype(font_path, size)
+            if font_path and os.path.exists(font_path):
+                font = ImageFont.truetype(font_path, size)
+            else:
+                font = ImageFont.load_default()
         except:
             font = ImageFont.load_default()
 
         with _pil_font_cache_lock:
-            # Limit cache size to prevent memory bloat
-            if len(_pil_font_cache) > 100:
-                # Remove oldest entries (simple FIFO)
-                keys_to_remove = list(_pil_font_cache.keys())[:20]
-                for k in keys_to_remove:
-                    del _pil_font_cache[k]
+            # Limit cache size to prevent memory bloat (hard limit of 50)
+            while len(_pil_font_cache) >= 50:
+                # Remove oldest entry (FIFO)
+                oldest_key = next(iter(_pil_font_cache))
+                del _pil_font_cache[oldest_key]
             _pil_font_cache[cache_key] = font
 
         return font
@@ -1640,7 +1939,7 @@ class ThemeEditorWindow(QMainWindow):
         source = getattr(element, 'source', 'static')
         if source and source != 'static':
             # Display sensor value, optionally with label
-            value_text = get_value_with_unit(element.value, source)
+            value_text = get_value_with_unit(element.value, source, getattr(element, 'temp_hide_unit', False))
             if element.text:
                 text = f"{element.text}: {value_text}"
             else:
@@ -1689,7 +1988,7 @@ class ThemeEditorWindow(QMainWindow):
         source = getattr(element, 'source', 'static')
         if source and source != 'static':
             # Display sensor value, optionally with label
-            value_text = get_value_with_unit(element.value, source)
+            value_text = get_value_with_unit(element.value, source, getattr(element, 'temp_hide_unit', False))
             if element.text:
                 text = f"{element.text}: {value_text}"
             else:
@@ -1760,19 +2059,50 @@ class ThemeEditorWindow(QMainWindow):
         return sorted_stops[-1][1]
 
     def create_horizontal_gradient(self, width, height, gradient_stops, opacity=100):
-        """Create a horizontal gradient image from gradient stops."""
-        gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        """Create a horizontal gradient image from gradient stops using NumPy for performance."""
+        if width <= 0 or height <= 0:
+            return Image.new('RGBA', (max(1, width), max(1, height)), (0, 0, 0, 0))
 
-        for px in range(width):
-            position = px / (width - 1) if width > 1 else 0
-            color = self.interpolate_gradient_color(gradient_stops, position)
-            r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+        # Check cache first - use tuple of stops for hashable key
+        cache_key = (width, height, tuple(gradient_stops) if gradient_stops else (), opacity)
+        if cache_key in _gradient_cache:
+            return _gradient_cache[cache_key].copy()
+
+        try:
+            import numpy as np
+            # Create 1D array of colors for the gradient
+            colors = np.zeros((width, 4), dtype=np.uint8)
             a = int(255 * opacity / 100)
 
-            for py in range(height):
-                gradient.putpixel((px, py), (r, g, b, a))
+            for px in range(width):
+                position = px / (width - 1) if width > 1 else 0
+                color = self.interpolate_gradient_color(gradient_stops, position)
+                r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+                colors[px] = [r, g, b, a]
 
-        return gradient
+            # Tile the 1D gradient to create 2D image (much faster than putpixel)
+            gradient_array = np.tile(colors, (height, 1, 1))
+            gradient = Image.fromarray(gradient_array, 'RGBA')
+        except ImportError:
+            # Fallback without numpy - use line drawing instead of putpixel
+            gradient = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(gradient)
+            a = int(255 * opacity / 100)
+
+            for px in range(width):
+                position = px / (width - 1) if width > 1 else 0
+                color = self.interpolate_gradient_color(gradient_stops, position)
+                r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+                draw.line([(px, 0), (px, height - 1)], fill=(r, g, b, a))
+
+        # Cache the result (limit cache size)
+        if len(_gradient_cache) >= _gradient_cache_max_size:
+            # Remove oldest entry
+            oldest_key = next(iter(_gradient_cache))
+            del _gradient_cache[oldest_key]
+        _gradient_cache[cache_key] = gradient
+
+        return gradient.copy()
 
     def render_circle_gauge_rgba(self, img, element, font, font_small, color_opacity, bg_opacity):
         """Render circle gauge with opacity support."""
@@ -1811,32 +2141,30 @@ class ThemeEditorWindow(QMainWindow):
         overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
 
-        # Draw background arc
+        # Draw background arc - single thick arc instead of multiple thin ones
         bg_rgba = hex_to_rgba(element.background_color, bg_opacity)
         arc_width = 18
-        for i in range(arc_width):
-            r = radius - i
-            draw.arc(
-                [x - r, y - r, x + r, y + r],
-                start=135, end=405,
-                fill=bg_rgba, width=2
-            )
+        arc_radius = radius - arc_width // 2
+        draw.arc(
+            [x - arc_radius, y - arc_radius, x + arc_radius, y + arc_radius],
+            start=135, end=405,
+            fill=bg_rgba, width=arc_width
+        )
 
-        # Draw value arc
+        # Draw value arc - single thick arc
         color_rgba = hex_to_rgba(color, color_opacity)
         sweep = int(270 * min(value, 100) / 100)
         end_angle = 135 + sweep
 
-        for i in range(arc_width):
-            r = radius - i
+        if sweep > 0:
             draw.arc(
-                [x - r, y - r, x + r, y + r],
+                [x - arc_radius, y - arc_radius, x + arc_radius, y + arc_radius],
                 start=135, end=end_angle,
-                fill=color_rgba, width=2
+                fill=color_rgba, width=arc_width
             )
 
         # Draw value text (white, full opacity)
-        value_text = get_value_with_unit(value, element.source)
+        value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
         bbox = draw.textbbox((0, 0), value_text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -1935,7 +2263,7 @@ class ThemeEditorWindow(QMainWindow):
         bar_text_position = getattr(element, 'bar_text_position', 'inside')
 
         if bar_text_mode != 'none':
-            value_text = get_value_with_unit(value, element.source)
+            value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
             if bar_text_mode == 'full':
                 display_text = f"{element.text}: {value_text}"
             else:  # value_only
@@ -2130,7 +2458,7 @@ class ThemeEditorWindow(QMainWindow):
                 fill=color, width=2
             )
 
-        value_text = get_value_with_unit(value, element.source)
+        value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
         bbox = draw.textbbox((0, 0), value_text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -2185,21 +2513,15 @@ class ThemeEditorWindow(QMainWindow):
         fill_width = int(width * min(value, 100) / 100)
         if fill_width > 0:
             if use_gradient:
-                # Use horizontal gradient from gradient stops
+                # Use horizontal gradient from gradient stops - optimized with NumPy
                 gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
 
-                # Create gradient fill using multiple thin rectangles
-                for i in range(fill_width):
-                    # Position along entire bar (0 to 1)
-                    t = i / (width - 1) if width > 1 else 0
-                    grad_color = self.interpolate_gradient_color(gradient_stops, t)
-
-                    # Parse interpolated color
-                    r = int(grad_color[1:3], 16)
-                    g = int(grad_color[3:5], 16)
-                    b = int(grad_color[5:7], 16)
-
-                    draw.line([(x + i, y), (x + i, y + height - 1)], fill=(r, g, b))
+                # Create full-width gradient once and crop to fill_width
+                gradient_img = self.create_horizontal_gradient(width, height, gradient_stops, color_opacity)
+                # Crop to fill_width and paste
+                if fill_width < width:
+                    gradient_img = gradient_img.crop((0, 0, fill_width, height))
+                img.paste(gradient_img, (x, y), gradient_img)
 
             else:
                 if rounded:
@@ -2219,7 +2541,7 @@ class ThemeEditorWindow(QMainWindow):
         bar_text_position = getattr(element, 'bar_text_position', 'inside')
 
         if bar_text_mode != 'none':
-            value_text = get_value_with_unit(value, element.source)
+            value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
             if bar_text_mode == 'full':
                 display_text = f"{element.text}: {value_text}"
             else:  # value_only
@@ -2364,6 +2686,7 @@ class ThemeEditorWindow(QMainWindow):
             self._video_load_timer.stop()
 
         # Stop background threads
+        self._stop_render_thread()
         stop_psutil_thread()
         stop_sensors()
         video_background.close()

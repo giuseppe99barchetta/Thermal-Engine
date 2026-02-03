@@ -9,10 +9,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="LibreHardwareMonitorLib">
-      <HintPath>C:\Users\netha\Downloads\LibreHardwareMonitor.NET.10\LibreHardwareMonitorLib.dll</HintPath>
+      <HintPath>..\lhm\LibreHardwareMonitorLib.dll</HintPath>
     </Reference>
     <Reference Include="HidSharp">
-      <HintPath>C:\Users\netha\Downloads\LibreHardwareMonitor.NET.10\HidSharp.dll</HintPath>
+      <HintPath>..\lhm\HidSharp.dll</HintPath>
     </Reference>
   </ItemGroup>
 </Project>

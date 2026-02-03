@@ -42,7 +42,11 @@ class SensorProcess:
         self._response_queue = queue.Queue()
 
     def _find_helper_exe(self, app_dir):
-        """Find SensorHelperApp.exe in various locations."""
+        """Find SensorHelperApp.exe in various locations. Windows-only."""
+        # SensorHelperApp is Windows-only (uses LibreHardwareMonitor .NET library)
+        if sys.platform != "win32":
+            return None
+
         candidates = [
             os.path.join(app_dir, "SensorHelperApp.exe"),
             os.path.join(app_dir, "lhm", "SensorHelperApp.exe"),
@@ -82,7 +86,10 @@ class SensorProcess:
         self.helper_exe = self._find_helper_exe(app_dir)
 
         if not self.helper_exe:
-            self.error = "SensorHelperApp.exe not found"
+            if sys.platform != "win32":
+                self.error = "Hardware sensors are only supported on Windows"
+            else:
+                self.error = "SensorHelperApp.exe not found"
             return False
 
         return self._start_process()
@@ -104,6 +111,11 @@ class SensorProcess:
                 break
 
         try:
+            # CREATE_NO_WINDOW only exists on Windows
+            creation_flags = 0
+            if sys.platform == "win32":
+                creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
             self.process = subprocess.Popen(
                 [self.helper_exe],
                 stdin=subprocess.PIPE,
@@ -112,7 +124,7 @@ class SensorProcess:
                 text=True,
                 bufsize=1,  # Line buffered
                 cwd=os.path.dirname(self.helper_exe),
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                creationflags=creation_flags
             )
 
             # Start background reader thread
