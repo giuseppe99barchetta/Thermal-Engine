@@ -672,9 +672,10 @@ class PropertiesPanel(QWidget):
         self.scroll_area = scroll
 
         self.props_widget = QWidget()
+        self.props_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.props_layout = QVBoxLayout(self.props_widget)
         self.props_layout.setSpacing(8)
-        self.props_layout.setContentsMargins(4, 4, 20, 4)  # Margins with extra right padding for scrollbar
+        self.props_layout.setContentsMargins(4, 4, 4, 4)
 
         # === GENERAL SECTION ===
         general_frame, general_layout = self.create_section("General")
@@ -682,6 +683,8 @@ class PropertiesPanel(QWidget):
         self.props_layout.addWidget(general_frame)
 
         self.name_edit = QLineEdit()
+        self.name_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.name_edit.setMinimumWidth(50)
         self.name_edit.textChanged.connect(self.on_property_changed)
         self.name_label = self.create_label("Name:")
         general_layout.addRow(self.name_label, self.name_edit)
@@ -863,11 +866,15 @@ class PropertiesPanel(QWidget):
         self.props_layout.addWidget(text_frame)
 
         self.text_edit = QLineEdit()
+        self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.text_edit.setMinimumWidth(50)
         self.text_edit.textChanged.connect(self.on_property_changed)
         self.text_label = self.create_label("Text:")
         text_layout.addRow(self.text_label, self.text_edit)
 
         self.font_family_combo = QComboBox()
+        self.font_family_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.font_family_combo.setMinimumWidth(50)
         self.font_family_combo.setItemDelegate(FontPreviewDelegate(self.font_family_combo))
         self.font_family_combo.setMaxVisibleItems(15)
         self.load_system_fonts()
@@ -953,6 +960,8 @@ class PropertiesPanel(QWidget):
         self.props_layout.addWidget(data_frame)
 
         self.source_combo = QComboBox()
+        self.source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.source_combo.setMinimumWidth(50)
         self.setup_source_combo()
         self.source_combo.currentIndexChanged.connect(self.on_source_changed)
         self.source_label = self.create_label("Source:")
@@ -975,13 +984,17 @@ class PropertiesPanel(QWidget):
         self.props_layout.addWidget(media_frame)
 
         self.image_path_edit = QLineEdit()
+        self.image_path_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.image_path_edit.setMinimumWidth(50)
         self.image_path_edit.textChanged.connect(self.on_property_changed)
-        self.image_browse_btn = QPushButton("Browse...")
+        self.image_browse_btn = QPushButton("...")
+        self.image_browse_btn.setFixedWidth(30)
         self.image_browse_btn.clicked.connect(self.browse_image)
 
         image_layout = QHBoxLayout()
-        image_layout.addWidget(self.image_path_edit)
-        image_layout.addWidget(self.image_browse_btn)
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.addWidget(self.image_path_edit, 1)
+        image_layout.addWidget(self.image_browse_btn, 0)
 
         self.image_widget = QWidget()
         self.image_widget.setLayout(image_layout)
@@ -996,13 +1009,17 @@ class PropertiesPanel(QWidget):
 
         # GIF options
         self.gif_path_edit = QLineEdit()
+        self.gif_path_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.gif_path_edit.setMinimumWidth(50)
         self.gif_path_edit.textChanged.connect(self.on_property_changed)
-        self.gif_browse_btn = QPushButton("Browse...")
+        self.gif_browse_btn = QPushButton("...")
+        self.gif_browse_btn.setFixedWidth(30)
         self.gif_browse_btn.clicked.connect(self.browse_gif)
 
         gif_layout = QHBoxLayout()
-        gif_layout.addWidget(self.gif_path_edit)
-        gif_layout.addWidget(self.gif_browse_btn)
+        gif_layout.setContentsMargins(0, 0, 0, 0)
+        gif_layout.addWidget(self.gif_path_edit, 1)
+        gif_layout.addWidget(self.gif_browse_btn, 0)
 
         self.gif_widget = QWidget()
         self.gif_widget.setLayout(gif_layout)
@@ -1010,6 +1027,8 @@ class PropertiesPanel(QWidget):
         media_layout.addRow(self.gif_label, self.gif_widget)
 
         self.scale_mode_combo = QComboBox()
+        self.scale_mode_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.scale_mode_combo.setMinimumWidth(50)
         self.scale_mode_combo.addItem("Fit (maintain ratio)", "fit")
         self.scale_mode_combo.addItem("Fill (crop excess)", "fill")
         self.scale_mode_combo.addItem("Stretch", "stretch")
@@ -1176,9 +1195,10 @@ class PropertiesPanel(QWidget):
         self.multi_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         self.multi_widget = QWidget()
+        self.multi_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.multi_layout = QVBoxLayout(self.multi_widget)
         self.multi_layout.setSpacing(8)
-        self.multi_layout.setContentsMargins(4, 4, 20, 4)
+        self.multi_layout.setContentsMargins(4, 4, 4, 4)
 
         # === MULTI-SELECTION GENERAL SECTION ===
         self.multi_general_frame, multi_general_layout = self.create_section("General")
@@ -1190,6 +1210,8 @@ class PropertiesPanel(QWidget):
         multi_general_layout.addRow(self.multi_name_label, self.multi_name_value)
 
         self.group_name_edit = QLineEdit()
+        self.group_name_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.group_name_edit.setMinimumWidth(50)
         self.group_name_edit.setPlaceholderText("Group name")
         self.group_name_edit.textChanged.connect(self.on_group_name_changed)
         self.group_name_label = self.create_label("Group:")
