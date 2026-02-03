@@ -26,6 +26,53 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Download LibreHardwareMonitor DLLs
+        run: |
+          # Create lhm directory for SensorHelperApp
+          New-Item -ItemType Directory -Force -Path "lhm"
+
+          # Download and extract LibreHardwareMonitor NuGet package
+          Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/LibreHardwareMonitorLib/0.9.3" -OutFile "lhm.nupkg"
+          Expand-Archive -Path "lhm.nupkg" -DestinationPath "lhm_extract" -Force
+
+          # Copy main DLLs
+          Copy-Item "lhm_extract/lib/net4.7.2/LibreHardwareMonitorLib.dll" -Destination "lhm/" -Force
+          Copy-Item "lhm_extract/lib/net4.7.2/HidSharp.dll" -Destination "lhm/" -Force
+
+          # Copy to root for PyInstaller spec
+          Copy-Item "lhm/LibreHardwareMonitorLib.dll" -Destination "." -Force
+          Copy-Item "lhm/HidSharp.dll" -Destination "." -Force
+
+          # Download additional .NET runtime DLLs
+          $dlls = @(
+            @{name="Microsoft.Win32.Registry"; version="5.0.0"},
+            @{name="System.Security.AccessControl"; version="6.0.0"},
+            @{name="System.Security.Principal.Windows"; version="5.0.0"}
+          )
+
+          foreach ($dll in $dlls) {
+            $url = "https://www.nuget.org/api/v2/package/$($dll.name)/$($dll.version)"
+            $outFile = "$($dll.name).nupkg"
+            Invoke-WebRequest -Uri $url -OutFile $outFile
+            Expand-Archive -Path $outFile -DestinationPath "$($dll.name)_extract" -Force
+
+            # Try to find and copy the DLL
+            $dllFile = Get-ChildItem -Path "$($dll.name)_extract" -Filter "*.dll" -Recurse | Where-Object { $_.Name -like "$($dll.name).dll" } | Select-Object -First 1
+            if ($dllFile) {
+              Copy-Item $dllFile.FullName -Destination "." -Force
+              Write-Host "Copied $($dllFile.Name)"
+            }
+          }
+
+          # Create empty placeholder for System.IO.FileSystem.AccessControl if not found
+          if (-not (Test-Path "System.IO.FileSystem.AccessControl.dll")) {
+            Write-Host "Note: System.IO.FileSystem.AccessControl.dll not found, may not be needed"
+          }
+
+          # List DLLs
+          Get-ChildItem -Filter "*.dll" | ForEach-Object { Write-Host $_.Name }
+        shell: pwsh
+
       - name: Build SensorHelperApp
         run: |
           cd SensorHelperApp
