@@ -35,13 +35,25 @@ jobs:
           Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/LibreHardwareMonitorLib/0.9.3" -OutFile "lhm.nupkg"
           Expand-Archive -Path "lhm.nupkg" -DestinationPath "lhm_extract" -Force
 
-          # Copy main DLLs
-          Copy-Item "lhm_extract/lib/net4.7.2/LibreHardwareMonitorLib.dll" -Destination "lhm/" -Force
-          Copy-Item "lhm_extract/lib/net4.7.2/HidSharp.dll" -Destination "lhm/" -Force
+          # Debug: Show package contents
+          Write-Host "=== LibreHardwareMonitor package contents ==="
+          Get-ChildItem -Path "lhm_extract" -Recurse | ForEach-Object { Write-Host $_.FullName }
 
-          # Copy to root for PyInstaller spec
-          Copy-Item "lhm/LibreHardwareMonitorLib.dll" -Destination "." -Force
-          Copy-Item "lhm/HidSharp.dll" -Destination "." -Force
+          # Find and copy LibreHardwareMonitorLib.dll
+          $lhmDll = Get-ChildItem -Path "lhm_extract" -Filter "LibreHardwareMonitorLib.dll" -Recurse | Select-Object -First 1
+          if ($lhmDll) {
+            Copy-Item $lhmDll.FullName -Destination "lhm/" -Force
+            Copy-Item $lhmDll.FullName -Destination "." -Force
+            Write-Host "Copied LibreHardwareMonitorLib.dll from $($lhmDll.FullName)"
+          }
+
+          # Find and copy HidSharp.dll
+          $hidDll = Get-ChildItem -Path "lhm_extract" -Filter "HidSharp.dll" -Recurse | Select-Object -First 1
+          if ($hidDll) {
+            Copy-Item $hidDll.FullName -Destination "lhm/" -Force
+            Copy-Item $hidDll.FullName -Destination "." -Force
+            Write-Host "Copied HidSharp.dll from $($hidDll.FullName)"
+          }
 
           # Download additional .NET runtime DLLs
           $dlls = @(
@@ -64,12 +76,8 @@ jobs:
             }
           }
 
-          # Create empty placeholder for System.IO.FileSystem.AccessControl if not found
-          if (-not (Test-Path "System.IO.FileSystem.AccessControl.dll")) {
-            Write-Host "Note: System.IO.FileSystem.AccessControl.dll not found, may not be needed"
-          }
-
-          # List DLLs
+          # List DLLs in root
+          Write-Host "=== DLLs in root ==="
           Get-ChildItem -Filter "*.dll" | ForEach-Object { Write-Host $_.Name }
         shell: pwsh
 
