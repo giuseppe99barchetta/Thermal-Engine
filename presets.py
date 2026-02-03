@@ -21,7 +21,9 @@ from settings import get_setting, set_setting
 
 # Thumbnail dimensions (maintain aspect ratio of display)
 THUMBNAIL_WIDTH = 150
-THUMBNAIL_HEIGHT = int(THUMBNAIL_WIDTH * DISPLAY_HEIGHT / DISPLAY_WIDTH)
+THUMBNAIL_HEIGHT = int(THUMBNAIL_WIDTH * DISPLAY_HEIGHT / DISPLAY_WIDTH)  # ~56 for 1280x480
+LABEL_HEIGHT = 20
+WIDGET_HEIGHT = THUMBNAIL_HEIGHT + LABEL_HEIGHT  # Total widget height
 
 
 # Default theme elements (same as main_window.py)
@@ -62,7 +64,7 @@ class PresetThumbnail(QWidget):
         if thumbnail_path and os.path.exists(thumbnail_path):
             self.thumbnail_pixmap = QPixmap(thumbnail_path)
 
-        self.setFixedSize(150, 100)
+        self.setFixedSize(THUMBNAIL_WIDTH, WIDGET_HEIGHT)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         tooltip = f"Click to load: {preset_name}"
         if is_default:
@@ -73,36 +75,33 @@ class PresetThumbnail(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        preview_height = self.height() - 20
+        preview_height = THUMBNAIL_HEIGHT
 
         # Use saved thumbnail if available, otherwise generate preview
         if self.thumbnail_pixmap and not self.thumbnail_pixmap.isNull():
-            # Draw the saved thumbnail scaled to fit
+            # Draw the saved thumbnail scaled to fill the preview area exactly
             scaled_pixmap = self.thumbnail_pixmap.scaled(
-                self.width(), preview_height,
-                Qt.AspectRatioMode.KeepAspectRatio,
+                THUMBNAIL_WIDTH, preview_height,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
-            # Center the scaled pixmap
-            x_offset = (self.width() - scaled_pixmap.width()) // 2
-            y_offset = (preview_height - scaled_pixmap.height()) // 2
-            painter.drawPixmap(x_offset, y_offset, scaled_pixmap)
+            painter.drawPixmap(0, 0, scaled_pixmap)
 
             # Draw border
             painter.setPen(QPen(QColor(60, 60, 80), 2))
-            painter.drawRect(0, 0, self.width(), preview_height)
+            painter.drawRect(0, 0, THUMBNAIL_WIDTH, preview_height)
         else:
             # Fall back to generated preview
             # Draw background
             bg_color = QColor(self.preset_data.get("background_color", "#0f0f19"))
-            painter.fillRect(0, 0, self.width(), preview_height, bg_color)
+            painter.fillRect(0, 0, THUMBNAIL_WIDTH, preview_height, bg_color)
 
             # Draw border
             painter.setPen(QPen(QColor(60, 60, 80), 2))
-            painter.drawRect(0, 0, self.width(), preview_height)
+            painter.drawRect(0, 0, THUMBNAIL_WIDTH, preview_height)
 
             # Scale factor for preview
-            scale_x = self.width() / DISPLAY_WIDTH
+            scale_x = THUMBNAIL_WIDTH / DISPLAY_WIDTH
             scale_y = preview_height / DISPLAY_HEIGHT
 
             # Draw simplified element previews
@@ -126,7 +125,8 @@ class PresetThumbnail(QWidget):
                     painter.drawRect(x, y, max(width, 3), max(height, 3))
 
         # Draw name label at bottom
-        painter.fillRect(0, self.height() - 20, self.width(), 20, QColor(35, 35, 40))
+        label_y = THUMBNAIL_HEIGHT
+        painter.fillRect(0, label_y, THUMBNAIL_WIDTH, LABEL_HEIGHT, QColor(35, 35, 40))
         painter.setPen(QPen(QColor(200, 200, 200)))
         font = QFont()
         font.setPixelSize(11)
@@ -137,21 +137,21 @@ class PresetThumbnail(QWidget):
         if len(display_name) > 18:
             display_name = display_name[:15] + "..."
 
-        painter.drawText(5, self.height() - 5, display_name)
+        painter.drawText(5, label_y + LABEL_HEIGHT - 5, display_name)
 
         # Draw indicators on the right side
-        indicator_x = self.width() - 15
+        indicator_x = THUMBNAIL_WIDTH - 15
 
         # Draw checkmark for default preset
         if self.is_default:
             painter.setPen(QPen(QColor(0, 255, 150)))
-            painter.drawText(indicator_x, self.height() - 5, "✓")
+            painter.drawText(indicator_x, label_y + LABEL_HEIGHT - 5, "✓")
             indicator_x -= 15
 
         # Draw star for built-in presets
         if self.is_builtin:
             painter.setPen(QPen(QColor(255, 200, 0)))
-            painter.drawText(indicator_x, self.height() - 5, "★")
+            painter.drawText(indicator_x, label_y + LABEL_HEIGHT - 5, "★")
 
         painter.end()
 
