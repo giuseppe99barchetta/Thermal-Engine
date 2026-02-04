@@ -71,3 +71,13 @@ presets/*
 # Old/backup files
 *_old.py
 *.disabled
+
+# Local build artifacts (build-local.ps1 script IS tracked for other contributors)
+lhm/
+lhm_extract/
+hidsharp_extract/
+*_extract/
+*.nupkg
+dist_helper/
+ThermalEngine-*.zip
+ThermalEngine-*-Setup.exe
