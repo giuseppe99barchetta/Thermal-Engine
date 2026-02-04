@@ -125,12 +125,47 @@ class CanvasPreview(QWidget):
         self._glass_cache_valid = False  # Track if glass cache needs rebuild
         self._has_glass_cache = None  # Cache result of _has_glass_elements()
 
+        # Performance: Cache scaled images and fonts
+        self._image_cache = {}  # {(path, width, height, proportional): QPixmap}
+        self._font_cache = {}  # {(family, size, bold, italic): QFont}
+
         self.setFixedSize(
             int(DISPLAY_WIDTH * self.scale),
             int(DISPLAY_HEIGHT * self.scale)
         )
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Enable keyboard input
+
+    def _get_cached_font(self, family, size, bold=False, italic=False):
+        """Get or create a cached font."""
+        key = (family, size, bold, italic)
+        if key not in self._font_cache:
+            font = QFont(family)
+            font.setPixelSize(size)
+            font.setBold(bold)
+            font.setItalic(italic)
+            self._font_cache[key] = font
+        return self._font_cache[key]
+
+    def _get_cached_image(self, path, width, height, proportional):
+        """Get or create a cached scaled image."""
+        key = (path, width, height, proportional)
+        if key not in self._image_cache:
+            pixmap = QPixmap(path)
+            if proportional:
+                pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            else:
+                pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self._image_cache[key] = pixmap
+            # Limit cache size
+            if len(self._image_cache) > 50:
+                oldest = next(iter(self._image_cache))
+                del self._image_cache[oldest]
+        return self._image_cache[key]
+
+    def clear_image_cache(self):
+        """Clear the image cache (call when images change)."""
+        self._image_cache.clear()
 
     def set_elements(self, elements):
         self.elements = elements
@@ -328,17 +363,14 @@ class CanvasPreview(QWidget):
             )
 
         painter.setPen(QPen(QColor(255, 255, 255)))
-        font = QFont(element.font_family)
-        font.setPixelSize(int(element.font_size * self.scale * 0.8))
-        font.setBold(element.font_bold)
-        font.setItalic(element.font_italic)
+        font = self._get_cached_font(element.font_family, int(element.font_size * self.scale * 0.8), element.font_bold, element.font_italic)
         painter.setFont(font)
 
         text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
         text_rect = QRectF(x - radius, y - radius / 2, radius * 2, radius)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
-        font.setPixelSize(int(element.font_size * self.scale * 0.5))
+        font = self._get_cached_font(element.font_family, int(element.font_size * self.scale * 0.5), element.font_bold, element.font_italic)
         painter.setFont(font)
         painter.setPen(QPen(get_text_color(element)))
         label_rect = QRectF(x - radius, y + radius / 4, radius * 2, radius / 2)
@@ -390,10 +422,7 @@ class CanvasPreview(QWidget):
 
         if bar_text_mode != 'none':
             painter.setPen(QPen(get_text_color(element)))
-            font = QFont(element.font_family)
-            font.setPixelSize(int(element.font_size * self.scale * 0.6))
-            font.setBold(element.font_bold)
-            font.setItalic(element.font_italic)
+            font = self._get_cached_font(element.font_family, int(element.font_size * self.scale * 0.6), element.font_bold, element.font_italic)
             painter.setFont(font)
 
             value_text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
@@ -416,10 +445,7 @@ class CanvasPreview(QWidget):
         color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
 
         painter.setPen(QPen(color))
-        font = QFont(element.font_family)
-        font.setPixelSize(int(element.font_size * self.scale))
-        font.setBold(element.font_bold)
-        font.setItalic(element.font_italic)
+        font = self._get_cached_font(element.font_family, int(element.font_size * self.scale), element.font_bold, element.font_italic)
         painter.setFont(font)
 
         # Determine text to display based on source
@@ -529,10 +555,7 @@ class CanvasPreview(QWidget):
         color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
 
         painter.setPen(QPen(color))
-        font = QFont(element.font_family)
-        font.setPixelSize(int(element.font_size * self.scale))
-        font.setBold(element.font_bold)
-        font.setItalic(element.font_italic)
+        font = self._get_cached_font(element.font_family, int(element.font_size * self.scale), element.font_bold, element.font_italic)
         painter.setFont(font)
 
         # Build time format string based on element settings
@@ -615,8 +638,7 @@ class CanvasPreview(QWidget):
         # Draw tick marks or numbers
         text_color = get_text_color(element)
         painter.setPen(QPen(text_color, 1 * self.scale))
-        font = QFont(getattr(element, 'font_family', 'Arial'))
-        font.setPixelSize(int(getattr(element, 'font_size', 14) * self.scale * 0.8))
+        font = self._get_cached_font(getattr(element, 'font_family', 'Arial'), int(getattr(element, 'font_size', 14) * self.scale * 0.8), False, False)
         painter.setFont(font)
 
         for i in range(12):
@@ -694,13 +716,7 @@ class CanvasPreview(QWidget):
         height = int(element.height * self.scale)
 
         if element.image_path and os.path.exists(element.image_path):
-            pixmap = QPixmap(element.image_path)
-            if element.scale_proportionally:
-                # Maintain aspect ratio - fit within bounds
-                pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            else:
-                # Stretch to fill exact dimensions
-                pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            pixmap = self._get_cached_image(element.image_path, width, height, element.scale_proportionally)
             painter.drawPixmap(x, y, pixmap)
         else:
             painter.fillRect(x, y, width, height, QColor(40, 40, 60))
