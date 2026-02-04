@@ -27,7 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install nuitka ordered-set zstandard
 
       - name: Download LibreHardwareMonitor DLLs
         run: |
@@ -118,8 +118,30 @@ jobs:
           }
         shell: pwsh
 
-      - name: Build with PyInstaller
-        run: pyinstaller ThermalEngine.spec
+      - name: Build with Nuitka
+        run: |
+          python -m nuitka `
+            --standalone `
+            --windows-console-mode=disable `
+            --windows-icon-from-ico=icon.ico `
+            --enable-plugin=pyside6 `
+            --include-data-dir=presets=presets `
+            --include-data-dir=elements=elements `
+            --include-data-files=icon.ico=icon.ico `
+            --include-data-files=icon.png=icon.png `
+            --assume-yes-for-downloads `
+            --output-dir=dist `
+            --output-filename=ThermalEngine.exe `
+            main.py
+
+          # Rename output folder to match expected structure
+          if (Test-Path "dist/main.dist") {
+            Rename-Item "dist/main.dist" "dist/ThermalEngine"
+          }
+
+          Write-Host "=== Nuitka build output ==="
+          Get-ChildItem "dist/ThermalEngine" | ForEach-Object { Write-Host $_.Name }
+        shell: pwsh
 
       - name: Copy SensorHelper to dist
         run: |
