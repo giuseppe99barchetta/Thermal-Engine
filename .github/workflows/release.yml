@@ -122,7 +122,7 @@ jobs:
         run: |
           python -m nuitka `
             --standalone `
-            --windows-console-mode=force `
+            --windows-console-mode=disable `
             --windows-icon-from-ico=icon.ico `
             --windows-uac-admin `
             --enable-plugin=pyside6 `
