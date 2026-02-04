@@ -102,7 +102,7 @@ Build a standalone executable locally (mirrors the GitHub Actions release build)
 
 **Clean up test build:**
 ```powershell
-Remove-Item -Recurse -Force dist, dist_helper, lhm -ErrorAction SilentlyContinue
+.\clean-local.ps1
 ```
 
 ## Usage
@@ -190,6 +190,7 @@ Thermal-Engine/
 ├── video_background.py  # Video background support
 ├── constants.py         # Configuration constants
 ├── build-local.ps1      # Local build script (mirrors GitHub Actions)
+├── clean-local.ps1      # Clean up build artifacts
 ├── SensorHelperApp/     # Sensor helper source code (.NET)
 │   ├── Program.cs
 │   └── SensorHelperApp.csproj
