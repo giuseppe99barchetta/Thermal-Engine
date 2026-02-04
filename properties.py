@@ -1197,6 +1197,7 @@ class PropertiesPanel(QWidget):
 
         self.multi_widget = QWidget()
         self.multi_widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.multi_widget.setMaximumWidth(310)
         self.multi_layout = QVBoxLayout(self.multi_widget)
         self.multi_layout.setSpacing(8)
         self.multi_layout.setContentsMargins(4, 4, 4, 4)
