@@ -118,6 +118,11 @@ jobs:
           }
         shell: pwsh
 
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        shell: bash
+
       - name: Build with Nuitka
         run: |
           # Extract version number from tag (remove 'v' prefix)
@@ -212,11 +217,6 @@ jobs:
             exit 1
           }
         shell: pwsh
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-        shell: bash
 
       - name: Create ZIP archive
         run: Compress-Archive -Path "dist/ThermalEngine/*" -DestinationPath "ThermalEngine-${{ steps.version.outputs.VERSION }}.zip"
