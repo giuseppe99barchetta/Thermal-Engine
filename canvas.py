@@ -300,20 +300,32 @@ class CanvasPreview(QWidget):
         )
 
         use_gradient = getattr(element, 'gradient_fill', False)
-        if use_gradient:
-            # Get the color for current value from gradient stops
+        sweep = int(-270 * (element.value / 100) * 16)
+
+        if use_gradient and element.value > 0:
+            # Draw gradient arc using multiple small segments
+            from PySide6.QtGui import QColor as QC
             gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
-            value_pos = element.value / 100.0
-            fill_color = interpolate_gradient_color(gradient_stops, value_pos)
+            pen_width = int(15 * self.scale)
+            # Draw in small increments for smooth gradient
+            num_segments = max(1, int(element.value * 2.7))  # ~2.7 segments per percent (270 degrees / 100)
+            for i in range(num_segments):
+                t = i / (270.0)  # Position along full arc range (0 to 1 for full 270 degrees)
+                segment_color = interpolate_gradient_color(gradient_stops, t)
+                painter.setPen(QPen(QC(segment_color), pen_width))
+                segment_start = 225 * 16 - int(i * 16)
+                segment_sweep = -16  # 1 degree at a time
+                painter.drawArc(
+                    x - radius, y - radius, radius * 2, radius * 2,
+                    segment_start, segment_sweep
+                )
         else:
             fill_color = color
-
-        painter.setPen(QPen(fill_color, int(15 * self.scale)))
-        sweep = int(-270 * (element.value / 100) * 16)
-        painter.drawArc(
-            x - radius, y - radius, radius * 2, radius * 2,
-            225 * 16, sweep
-        )
+            painter.setPen(QPen(fill_color, int(15 * self.scale)))
+            painter.drawArc(
+                x - radius, y - radius, radius * 2, radius * 2,
+                225 * 16, sweep
+            )
 
         painter.setPen(QPen(QColor(255, 255, 255)))
         font = QFont(element.font_family)

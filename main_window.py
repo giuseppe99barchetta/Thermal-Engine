@@ -30,7 +30,7 @@ PBT_APMRESUMEAUTOMATIC = 0x0012
 PBT_APMRESUMESUSPEND = 0x0007
 PBT_APMSUSPEND = 0x0004
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageChops
 
 from security import validate_preset_schema, is_safe_path
 
@@ -2141,17 +2141,35 @@ class ThemeEditorWindow(QMainWindow):
             fill=bg_rgba, width=arc_width
         )
 
-        # Draw value arc - single thick arc
-        color_rgba = hex_to_rgba(color, color_opacity)
+        # Draw value arc
         sweep = int(270 * min(value, 100) / 100)
         end_angle = 135 + sweep
 
         if sweep > 0:
-            draw.arc(
-                [x - arc_radius, y - arc_radius, x + arc_radius, y + arc_radius],
-                start=135, end=end_angle,
-                fill=color_rgba, width=arc_width
-            )
+            if use_gradient:
+                # Draw gradient arc using multiple small segments
+                gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
+                # Draw in 2-degree increments for smooth gradient
+                step = 2
+                for i in range(0, sweep, step):
+                    segment_start = 135 + i
+                    segment_end = min(135 + i + step, end_angle)
+                    # Calculate gradient position (0 to 1) based on arc position
+                    t = i / 270.0  # Position along full arc range
+                    grad_color = self.interpolate_gradient_color(gradient_stops, t)
+                    segment_rgba = hex_to_rgba(grad_color, color_opacity)
+                    draw.arc(
+                        [x - arc_radius, y - arc_radius, x + arc_radius, y + arc_radius],
+                        start=segment_start, end=segment_end,
+                        fill=segment_rgba, width=arc_width
+                    )
+            else:
+                color_rgba = hex_to_rgba(color, color_opacity)
+                draw.arc(
+                    [x - arc_radius, y - arc_radius, x + arc_radius, y + arc_radius],
+                    start=135, end=end_angle,
+                    fill=color_rgba, width=arc_width
+                )
 
         # Draw value text
         value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
@@ -2234,14 +2252,38 @@ class ThemeEditorWindow(QMainWindow):
                 gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
                 alpha = int(255 * color_opacity / 100)
 
-                for i in range(fill_width):
-                    # Position along entire bar width (0 to 1)
-                    t = i / (width - 1) if width > 1 else 0
-                    grad_color = self.interpolate_gradient_color(gradient_stops, t)
-                    r = int(grad_color[1:3], 16)
-                    g = int(grad_color[3:5], 16)
-                    b = int(grad_color[5:7], 16)
-                    draw.line([(x + i, y), (x + i, y + height - 1)], fill=(r, g, b, alpha))
+                if rounded and fill_width > 0:
+                    # Create gradient on temporary image, then mask with rounded rect
+                    gradient_layer = Image.new('RGBA', (fill_width, height), (0, 0, 0, 0))
+                    gradient_draw = ImageDraw.Draw(gradient_layer)
+
+                    for i in range(fill_width):
+                        t = i / (width - 1) if width > 1 else 0
+                        grad_color = self.interpolate_gradient_color(gradient_stops, t)
+                        r = int(grad_color[1:3], 16)
+                        g = int(grad_color[3:5], 16)
+                        b = int(grad_color[5:7], 16)
+                        gradient_draw.line([(i, 0), (i, height - 1)], fill=(r, g, b, alpha))
+
+                    # Create rounded rectangle mask
+                    mask = Image.new('L', (fill_width, height), 0)
+                    mask_draw = ImageDraw.Draw(mask)
+                    mask_draw.rounded_rectangle([0, 0, fill_width, height], radius=corner_radius, fill=255)
+
+                    # Apply mask to gradient
+                    gradient_layer.putalpha(ImageChops.multiply(gradient_layer.split()[3], mask))
+
+                    # Paste onto overlay
+                    overlay.paste(gradient_layer, (x, y), gradient_layer)
+                else:
+                    # No rounded corners, draw lines directly
+                    for i in range(fill_width):
+                        t = i / (width - 1) if width > 1 else 0
+                        grad_color = self.interpolate_gradient_color(gradient_stops, t)
+                        r = int(grad_color[1:3], 16)
+                        g = int(grad_color[3:5], 16)
+                        b = int(grad_color[5:7], 16)
+                        draw.line([(x + i, y), (x + i, y + height - 1)], fill=(r, g, b, alpha))
             else:
                 fill_rgba = hex_to_rgba(color, color_opacity)
                 if rounded:
