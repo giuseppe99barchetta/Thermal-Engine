@@ -32,8 +32,8 @@ A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom 
 ## Requirements
 
 - Windows 10/11
-- Python 3.10 or later
 - Administrator rights (for hardware sensor access)
+- Python 3.10+ (only if running from source)
 
 ### Hardware Sensor Support
 
@@ -44,12 +44,21 @@ This application uses [LibreHardwareMonitor](https://github.com/LibreHardwareMon
 
 **Important notes:**
 
-1. **Run as Administrator** - Hardware sensor access requires admin privileges. Without it, sensor values may show as 0.
-2. **Antivirus software** - Some antivirus programs may flag the sensor helper. You may need to add the `lhm/` folder to your antivirus exclusions.
+1. **Run as Administrator** - Hardware sensor access requires admin privileges. The installer version requests admin automatically.
+2. **Antivirus software** - Some antivirus programs may flag the sensor helper. You may need to add the `SensorHelper/` folder to your antivirus exclusions.
 
 ## Installation
 
-### Quick Install
+### Download (Recommended)
+
+1. Go to [Releases](https://github.com/yourusername/ThermalEngine/releases)
+2. Download `ThermalEngine-vX.X.X-Setup.exe`
+3. Run the installer
+4. Launch ThermalEngine from the Start Menu or Desktop shortcut
+
+The app will automatically request administrator privileges when launched.
+
+### From Source
 
 1. Clone this repository:
    ```bash
@@ -57,24 +66,12 @@ This application uses [LibreHardwareMonitor](https://github.com/LibreHardwareMon
    cd ThermalEngine
    ```
 
-2. Run the install script:
-   ```bash
-   install.bat
-   ```
-
-3. Run the editor (as Administrator):
-   ```bash
-   run.bat
-   ```
-
-### Manual Install
-
-1. Install Python dependencies:
+2. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. Run the editor (as Administrator):
+3. Run the editor (as Administrator):
    ```bash
    python main.py
    ```
@@ -135,9 +132,9 @@ This application uses [LibreHardwareMonitor](https://github.com/LibreHardwareMon
 - Restart the editor
 
 ### Sensors showing 0
-- **Run as Administrator** - This is the most common cause
-- Check that the `lhm/` folder exists and contains `SensorHelperApp.exe`
-- Add the `lhm/` folder to your antivirus exclusions if sensors still don't work
+- **Run as Administrator** - This is the most common cause (installer version requests admin automatically)
+- Check that the `SensorHelper/` folder exists and contains `SensorHelperApp.exe`
+- Add the `SensorHelper/` folder to your antivirus exclusions if sensors still don't work
 - Go to Display > Diagnose Sensors to check sensor status
 
 ### Sensors stop working after sleep
@@ -163,10 +160,10 @@ ThermalEngine/
 ├── sensors.py           # Hardware sensor polling (with auto-recovery)
 ├── video_background.py  # Video background support
 ├── constants.py         # Configuration constants
-├── lhm/                 # LibreHardwareMonitor + SensorHelperApp
+├── SensorHelper/        # Sensor helper (in release build)
 │   ├── SensorHelperApp.exe  # Sensor helper process
 │   └── LibreHardwareMonitorLib.dll
-├── SensorHelperApp/     # Sensor helper source code
+├── SensorHelperApp/     # Sensor helper source code (.NET)
 │   ├── Program.cs
 │   └── SensorHelperApp.csproj
 ├── elements/            # Custom element plugins
@@ -181,8 +178,7 @@ If you need to rebuild the sensor helper (requires .NET SDK):
 
 ```bash
 cd SensorHelperApp
-dotnet build -c Release
-copy bin\Release\net10.0-windows\SensorHelperApp.exe ..\lhm\
+dotnet publish -c Release -o ../SensorHelper
 ```
 
 ## Custom Elements
