@@ -58,13 +58,13 @@ DATA_SOURCES_CATEGORIZED = {
         ("static", "Static Value", "percent", "%"),
     ],
     "CPU": [
-        ("cpu_percent", "CPU Load", "percent", "%"),
+        ("cpu_percent", "CPU Utilization", "percent", "%"),
         ("cpu_temp", "CPU Temperature", "temp", "°C"),
         ("cpu_clock", "CPU Clock Speed", "clock", "MHz"),
         ("cpu_power", "CPU Power", "power", "W"),
     ],
     "GPU": [
-        ("gpu_percent", "GPU Load", "percent", "%"),
+        ("gpu_percent", "GPU Utilization", "percent", "%"),
         ("gpu_temp", "GPU Temperature", "temp", "°C"),
         ("gpu_clock", "GPU Clock Speed", "clock", "MHz"),
         ("gpu_memory_percent", "GPU Memory", "percent", "%"),

@@ -304,6 +304,32 @@ _latest_sensor_data = {
     "gpu_power": 0,
 }
 
+# Smoothing configuration
+# Sensors that benefit from smoothing (rapidly fluctuating values)
+_SMOOTHED_SENSORS = {"gpu_percent", "cpu_percent", "gpu_clock", "cpu_clock"}
+_SMOOTHING_FACTOR = 0.3  # 0.3 = 30% new value, 70% old value (more smoothing)
+_smoothed_values = {}
+
+
+def _apply_smoothing(raw_data):
+    """Apply exponential smoothing to sensor values that fluctuate rapidly."""
+    global _smoothed_values
+
+    smoothed = raw_data.copy()
+
+    for key in _SMOOTHED_SENSORS:
+        if key in raw_data:
+            raw_value = raw_data[key]
+            if key in _smoothed_values and _smoothed_values[key] > 0:
+                # Exponential smoothing: new = old * (1 - factor) + raw * factor
+                smoothed[key] = _smoothed_values[key] * (1 - _SMOOTHING_FACTOR) + raw_value * _SMOOTHING_FACTOR
+            else:
+                # First reading, no smoothing
+                smoothed[key] = raw_value
+            _smoothed_values[key] = smoothed[key]
+
+    return smoothed
+
 
 def _sensor_polling_thread():
     """Background thread that continuously polls sensors with health monitoring."""
@@ -342,8 +368,10 @@ def _sensor_polling_thread():
             # Normal sensor read
             data = _sensor_process.read()
             if data:
+                # Apply smoothing to reduce erratic fluctuations
+                smoothed_data = _apply_smoothing(data)
                 with _sensor_data_lock:
-                    _latest_sensor_data = data.copy()
+                    _latest_sensor_data = smoothed_data
 
         except Exception as e:
             print(f"[Sensors] Background poll error: {e}")

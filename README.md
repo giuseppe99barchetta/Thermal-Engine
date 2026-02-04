@@ -7,7 +7,7 @@ A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom 
 ## Features
 
 - **Visual drag-and-drop editor** with live preview
-- **Real-time sensor data**: CPU/GPU temperature, load, clock speed, power
+- **Real-time sensor data**: CPU/GPU temperature, utilization, clock speed, power
 - **Auto-recovery**: Sensors automatically reconnect after sleep/wake
 - **Element types**:
   - Circle gauges with auto-color thresholds
