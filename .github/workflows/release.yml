@@ -124,12 +124,14 @@ jobs:
             --standalone `
             --windows-console-mode=force `
             --windows-icon-from-ico=icon.ico `
+            --windows-uac-admin `
             --enable-plugin=pyside6 `
             --include-package=cv2 `
             --include-package=numpy `
             --include-package=PIL `
             --include-package=psutil `
             --include-package=hidapi `
+            --include-package=elements `
             --include-data-dir=presets=presets `
             --include-data-dir=elements=elements `
             --include-data-files=icon.ico=icon.ico `
@@ -138,6 +140,20 @@ jobs:
             --output-dir=dist `
             --output-filename=ThermalEngine.exe `
             main.py
+
+          # Verify elements folder was included
+          Write-Host "=== Checking data directories ==="
+          if (Test-Path "dist\main.dist\elements") {
+            Write-Host "elements folder exists"
+            Get-ChildItem "dist\main.dist\elements" | ForEach-Object { Write-Host "  $_" }
+          } else {
+            Write-Host "WARNING: elements folder missing!"
+          }
+          if (Test-Path "dist\main.dist\presets") {
+            Write-Host "presets folder exists"
+          } else {
+            Write-Host "WARNING: presets folder missing!"
+          }
 
           # Rename output folder to match expected structure
           if (Test-Path "dist\main.dist") {

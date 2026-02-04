@@ -25,8 +25,13 @@ SAFE_FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+\.py$')
 def get_elements_dir():
     """Get the elements directory (works for both script and frozen exe)."""
     if getattr(sys, 'frozen', False):
-        # Running as compiled executable - files are in _MEIPASS temp folder
-        base_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+        # Running as compiled executable
+        # PyInstaller uses _MEIPASS, Nuitka puts files next to executable
+        if hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            # Nuitka: files are relative to executable directory
+            base_path = os.path.dirname(sys.executable)
         return os.path.join(base_path, 'elements')
     else:
         # Running as script
