@@ -498,6 +498,34 @@ class CanvasPreview(QWidget):
             else:
                 painter.fillRect(x, y, fill_width, height, fill_brush)
 
+        # Draw border if enabled
+        bar_border = getattr(element, 'bar_border', False)
+        if bar_border:
+            border_width = int(getattr(element, 'bar_border_width', 2) * self.scale)
+            border_color = getattr(element, 'bar_border_color', '#ffffff')
+            border_opacity = getattr(element, 'bar_border_opacity', 100)
+            border_qcolor = apply_opacity(border_color, border_opacity)
+
+            border_pen = QPen(border_qcolor, border_width)
+            painter.setPen(border_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+
+            # Offset for border to be drawn inside the bar
+            half_border = border_width / 2
+            if rounded:
+                border_path = QPainterPath()
+                border_path.addRoundedRect(
+                    x + half_border, y + half_border,
+                    width - border_width, height - border_width,
+                    max(0, corner_radius - half_border), max(0, corner_radius - half_border)
+                )
+                painter.drawPath(border_path)
+            else:
+                painter.drawRect(
+                    int(x + half_border), int(y + half_border),
+                    int(width - border_width), int(height - border_width)
+                )
+
         # Draw text based on bar_text_mode and bar_text_position
         bar_text_mode = getattr(element, 'bar_text_mode', 'full')
         bar_text_position = getattr(element, 'bar_text_position', 'inside')

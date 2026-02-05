@@ -1197,6 +1197,38 @@ class PropertiesPanel(QWidget):
         self.rounded_corners_label = QLabel("")
         options_layout.addRow(self.rounded_corners_label, self.rounded_corners_check)
 
+        # Bar gauge border options
+        self.bar_border_check = QCheckBox("Show Border")
+        self.bar_border_check.stateChanged.connect(self.on_bar_border_changed)
+        self.bar_border_label = QLabel("")
+        options_layout.addRow(self.bar_border_label, self.bar_border_check)
+
+        self.bar_border_width_spin = NoScrollSpinBox()
+        self.bar_border_width_spin.setRange(1, 20)
+        self.bar_border_width_spin.setValue(2)
+        self.bar_border_width_spin.valueChanged.connect(self.on_property_changed)
+        self.bar_border_width_label = self.create_label("Border Width:")
+        options_layout.addRow(self.bar_border_width_label, self.bar_border_width_spin)
+
+        # Border color with opacity
+        border_color_layout = QHBoxLayout()
+        self.bar_border_color_btn = QPushButton()
+        self.bar_border_color_btn.setFixedSize(30, 25)
+        self.bar_border_color_btn.setStyleSheet("background-color: #ffffff;")
+        self.bar_border_color_btn.clicked.connect(self.choose_bar_border_color)
+        border_color_layout.addWidget(self.bar_border_color_btn)
+
+        self.bar_border_opacity_spin = NoScrollSpinBox()
+        self.bar_border_opacity_spin.setRange(0, 100)
+        self.bar_border_opacity_spin.setValue(100)
+        self.bar_border_opacity_spin.setSuffix("%")
+        self.bar_border_opacity_spin.valueChanged.connect(self.on_property_changed)
+        border_color_layout.addWidget(self.bar_border_opacity_spin)
+        border_color_layout.addStretch()
+
+        self.bar_border_color_label = self.create_label("Border Color:")
+        options_layout.addRow(self.bar_border_color_label, border_color_layout)
+
         # Temperature display option
         self.temp_hide_unit_check = QCheckBox("Hide unit letter (show ° only)")
         self.temp_hide_unit_check.setToolTip("Show 45° instead of 45°C for temperature")
@@ -1649,7 +1681,8 @@ class PropertiesPanel(QWidget):
                 "show_background": False, "show_label": False, "show_gradient": False,
                 "rounded_corners": True, "gradient_fill": True,
                 "auto_color_change": True, "animate_gauge": True,
-                "bar_text_mode": True, "bar_text_position": True
+                "bar_text_mode": True, "bar_text_position": True,
+                "bar_border": True
             },
             "analog_clock": {
                 "width": False, "height": False, "radius": True,
@@ -1837,6 +1870,18 @@ class PropertiesPanel(QWidget):
         self.smooth_check.setVisible(smooth_visible)
         self.rounded_corners_label.setVisible(rounded_corners_visible)
         self.rounded_corners_check.setVisible(rounded_corners_visible)
+
+        # Bar border options - visible for bar gauge, sub-options depend on checkbox
+        bar_border_visible = visibility.get("bar_border", False)
+        bar_border_enabled = self.bar_border_check.isChecked() if bar_border_visible else False
+        self.bar_border_label.setVisible(bar_border_visible)
+        self.bar_border_check.setVisible(bar_border_visible)
+        self.bar_border_width_label.setVisible(bar_border_visible and bar_border_enabled)
+        self.bar_border_width_spin.setVisible(bar_border_visible and bar_border_enabled)
+        self.bar_border_color_label.setVisible(bar_border_visible and bar_border_enabled)
+        self.bar_border_color_btn.setVisible(bar_border_visible and bar_border_enabled)
+        self.bar_border_opacity_spin.setVisible(bar_border_visible and bar_border_enabled)
+
         # Temperature hide unit option - visible only for temperature sources
         temp_sources = ["cpu_temp", "gpu_temp"]
         current_source = getattr(self.current_element, 'source', 'static') if self.current_element else 'static'
@@ -1935,6 +1980,9 @@ class PropertiesPanel(QWidget):
         self.line_thickness_spin.blockSignals(True)
         self.smooth_check.blockSignals(True)
         self.rounded_corners_check.blockSignals(True)
+        self.bar_border_check.blockSignals(True)
+        self.bar_border_width_spin.blockSignals(True)
+        self.bar_border_opacity_spin.blockSignals(True)
         self.gradient_fill_check.blockSignals(True)
         self.auto_color_change_check.blockSignals(True)
         self.animate_gauge_check.blockSignals(True)
@@ -1980,6 +2028,12 @@ class PropertiesPanel(QWidget):
         self.line_thickness_spin.setValue(getattr(element, 'line_thickness', 2))
         self.smooth_check.setChecked(getattr(element, 'smooth', False))
         self.rounded_corners_check.setChecked(element.rounded_corners)
+        # Load bar border settings
+        self.bar_border_check.setChecked(getattr(element, 'bar_border', False))
+        self.bar_border_width_spin.setValue(getattr(element, 'bar_border_width', 2))
+        bar_border_color = getattr(element, 'bar_border_color', '#ffffff')
+        self.bar_border_color_btn.setStyleSheet(f"background-color: {bar_border_color};")
+        self.bar_border_opacity_spin.setValue(getattr(element, 'bar_border_opacity', 100))
         self.gradient_fill_check.setChecked(element.gradient_fill)
         # Load gradient stops
         gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
@@ -2083,6 +2137,9 @@ class PropertiesPanel(QWidget):
         self.line_thickness_spin.blockSignals(False)
         self.smooth_check.blockSignals(False)
         self.rounded_corners_check.blockSignals(False)
+        self.bar_border_check.blockSignals(False)
+        self.bar_border_width_spin.blockSignals(False)
+        self.bar_border_opacity_spin.blockSignals(False)
         self.gradient_fill_check.blockSignals(False)
         self.auto_color_change_check.blockSignals(False)
         self.animate_gauge_check.blockSignals(False)
@@ -2166,6 +2223,10 @@ class PropertiesPanel(QWidget):
 
         # Bar gauge options
         self.rounded_corners_check.setEnabled(enabled)
+        self.bar_border_check.setEnabled(enabled)
+        self.bar_border_width_spin.setEnabled(enabled)
+        self.bar_border_color_btn.setEnabled(enabled)
+        self.bar_border_opacity_spin.setEnabled(enabled)
         self.gradient_fill_check.setEnabled(enabled)
         self.bar_text_mode_combo.setEnabled(enabled)
         self.bar_text_position_combo.setEnabled(enabled)
@@ -2246,6 +2307,9 @@ class PropertiesPanel(QWidget):
 
         # Bar gauge options
         self.current_element.rounded_corners = self.rounded_corners_check.isChecked()
+        self.current_element.bar_border = self.bar_border_check.isChecked()
+        self.current_element.bar_border_width = self.bar_border_width_spin.value()
+        self.current_element.bar_border_opacity = self.bar_border_opacity_spin.value()
         self.current_element.gradient_fill = self.gradient_fill_check.isChecked()
         self.current_element.bar_text_mode = self.bar_text_mode_combo.currentData() or 'full'
         self.current_element.bar_text_position = self.bar_text_position_combo.currentData() or 'inside'
@@ -2400,6 +2464,50 @@ class PropertiesPanel(QWidget):
             gradient_stops = getattr(self.current_element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
             self.current_element.gradient_stops = gradient_stops
             self.gradient_preview.set_gradient(gradient_stops)
+
+        self.setUpdatesEnabled(True)
+        self.property_changed.emit()
+
+    def choose_bar_border_color(self):
+        if self.current_element is None:
+            return
+        if self.current_element.locked:
+            return
+
+        border_color = getattr(self.current_element, 'bar_border_color', '#ffffff')
+        opacity = getattr(self.current_element, 'bar_border_opacity', 100)
+        dialog = ColorPickerDialog(
+            border_color, opacity, "Select Border Color", self
+        )
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            color = dialog.get_color()
+            self.current_element.bar_border_color = color.name()
+            self.current_element.bar_border_opacity = dialog.get_opacity()
+            self.bar_border_color_btn.setStyleSheet(f"background-color: {color.name()};")
+            self.bar_border_opacity_spin.blockSignals(True)
+            self.bar_border_opacity_spin.setValue(dialog.get_opacity())
+            self.bar_border_opacity_spin.blockSignals(False)
+            self.property_changed.emit()
+
+    def on_bar_border_changed(self, state):
+        if self.current_element is None:
+            return
+        if self.current_element.locked:
+            return
+
+        show_border = state == Qt.CheckState.Checked.value
+        self.current_element.bar_border = show_border
+
+        # Batch visibility updates to prevent flicker
+        self.setUpdatesEnabled(False)
+
+        # Show/hide border options based on checkbox state
+        self.bar_border_width_label.setVisible(show_border)
+        self.bar_border_width_spin.setVisible(show_border)
+        self.bar_border_color_label.setVisible(show_border)
+        self.bar_border_color_btn.setVisible(show_border)
+        self.bar_border_opacity_spin.setVisible(show_border)
 
         self.setUpdatesEnabled(True)
         self.property_changed.emit()

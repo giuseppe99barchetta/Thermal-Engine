@@ -53,6 +53,11 @@ class ThemeElement:
         # Default text position: "top" for bar gauge, "inside" for others
         default_bar_text_position = "top" if element_type == "bar_gauge" else "inside"
         self.bar_text_position = kwargs.get("bar_text_position", default_bar_text_position)
+        # Bar gauge border options
+        self.bar_border = kwargs.get("bar_border", False)  # Show border around bar
+        self.bar_border_width = kwargs.get("bar_border_width", 2)  # Border stroke width
+        self.bar_border_color = kwargs.get("bar_border_color", "#ffffff")  # Border color
+        self.bar_border_opacity = kwargs.get("bar_border_opacity", 100)  # Border opacity 0-100
 
         # Gauge options
         self.auto_color_change = kwargs.get("auto_color_change", False)  # Change color at thresholds
@@ -136,6 +141,10 @@ class ThemeElement:
             "gradient_stops": self.gradient_stops,
             "bar_text_mode": self.bar_text_mode,
             "bar_text_position": self.bar_text_position,
+            "bar_border": self.bar_border,
+            "bar_border_width": self.bar_border_width,
+            "bar_border_color": self.bar_border_color,
+            "bar_border_opacity": self.bar_border_opacity,
             "auto_color_change": self.auto_color_change,
             "animate_gauge": self.animate_gauge,
             "animation_speed": self.animation_speed,

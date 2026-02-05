@@ -2531,6 +2531,43 @@ class ThemeEditorWindow(QMainWindow):
             # Composite fill layer onto overlay
             overlay.alpha_composite(fill_layer)
 
+        # Draw border if enabled
+        bar_border = getattr(element, 'bar_border', False)
+        if bar_border:
+            border_width = getattr(element, 'bar_border_width', 2)
+            border_color = getattr(element, 'bar_border_color', '#ffffff')
+            border_opacity = getattr(element, 'bar_border_opacity', 100)
+
+            # Create border layer for proper opacity handling
+            border_layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            border_draw = ImageDraw.Draw(border_layer)
+            border_rgb = hex_to_rgba(border_color, 100)  # Full opacity for drawing
+
+            # Draw border (outline only)
+            if rounded:
+                # For rounded rectangles, use rounded_rectangle with outline
+                border_draw.rounded_rectangle(
+                    [x, y, x + width, y + height],
+                    radius=corner_radius,
+                    outline=border_rgb,
+                    width=border_width
+                )
+            else:
+                border_draw.rectangle(
+                    [x, y, x + width, y + height],
+                    outline=border_rgb,
+                    width=border_width
+                )
+
+            # Apply border opacity
+            if border_opacity < 100:
+                r, g, b, a = border_layer.split()
+                a = a.point(lambda px: int(px * border_opacity / 100))
+                border_layer = Image.merge('RGBA', (r, g, b, a))
+
+            # Composite border layer onto overlay
+            overlay.alpha_composite(border_layer)
+
         # Now use overlay's draw for text (text doesn't need the layer approach)
         draw = ImageDraw.Draw(overlay)
 
@@ -2962,6 +2999,26 @@ class ThemeEditorWindow(QMainWindow):
                         [x, y, x + fill_width, y + height],
                         fill=color
                     )
+
+        # Draw border if enabled
+        bar_border = getattr(element, 'bar_border', False)
+        if bar_border:
+            border_width = getattr(element, 'bar_border_width', 2)
+            border_color = getattr(element, 'bar_border_color', '#ffffff')
+
+            if rounded:
+                draw.rounded_rectangle(
+                    [x, y, x + width, y + height],
+                    radius=corner_radius,
+                    outline=border_color,
+                    width=border_width
+                )
+            else:
+                draw.rectangle(
+                    [x, y, x + width, y + height],
+                    outline=border_color,
+                    width=border_width
+                )
 
         # Draw text based on bar_text_mode and bar_text_position
         bar_text_mode = getattr(element, 'bar_text_mode', 'full')
