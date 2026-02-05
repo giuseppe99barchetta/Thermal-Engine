@@ -39,9 +39,16 @@ _latest_sensor_data = {
 }
 
 # Smoothing configuration
-_SMOOTHED_SENSORS = {"gpu_percent", "cpu_percent", "gpu_clock", "cpu_clock"}
-_SMOOTHING_FACTOR = 0.3
+# Lower factor = smoother but slower response, higher = faster but jumpier
+_SMOOTHING_FACTOR = 0.15  # 15% new value, 85% previous (smooth transitions)
 _smoothed_values = {}
+
+# All sensors get smoothed for consistent visual appearance
+_SMOOTHED_SENSORS = {
+    "cpu_temp", "cpu_clock", "cpu_power", "cpu_percent",
+    "gpu_temp", "gpu_clock", "gpu_power", "gpu_percent",
+    "gpu_memory_clock", "gpu_memory_percent",
+}
 
 
 def _apply_smoothing(raw_data):
