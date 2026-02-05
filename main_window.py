@@ -2286,7 +2286,7 @@ class ThemeEditorWindow(QMainWindow):
                 gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
                 # Draw in 2-degree increments for smooth gradient
                 step = 2
-                for i in range(0, sweep, step):
+                for i in range(0, int(sweep), step):
                     segment_start = 135 + i
                     segment_end = min(135 + i + step, end_angle)
                     # Calculate gradient position (0 to 1) based on arc position
@@ -2893,11 +2893,12 @@ class ThemeEditorWindow(QMainWindow):
                 gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
 
                 # Create full-width gradient once and crop to fill_width
-                gradient_img = self.create_horizontal_gradient(width, height, gradient_stops, color_opacity)
+                gradient_img = self.create_horizontal_gradient(width, height, gradient_stops, 100)
                 # Crop to fill_width and paste
                 if fill_width < width:
-                    gradient_img = gradient_img.crop((0, 0, fill_width, height))
-                img.paste(gradient_img, (x, y), gradient_img)
+                    gradient_img = gradient_img.crop((0, 0, int(fill_width), int(height)))
+                # Access underlying image from draw object
+                draw._image.paste(gradient_img, (int(x), int(y)), gradient_img)
 
             else:
                 if rounded:
