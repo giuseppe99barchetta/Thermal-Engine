@@ -34,20 +34,27 @@ A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom 
 ## Requirements
 
 - Windows 10/11
-- Administrator rights (for hardware sensor access)
+- **HWiNFO** (for hardware sensor data) - [Download here](https://www.hwinfo.com/)
 - Python 3.10+ (only if running from source)
 
 ### Hardware Sensor Support
 
-This application uses [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) via a helper process (`SensorHelperApp.exe`) to read hardware sensors. Supported hardware includes:
+ThermalEngine uses **HWiNFO Shared Memory** to read hardware sensors. This approach avoids Windows Defender driver blocklist issues that affect other monitoring tools.
 
-- **CPUs**: Intel Core (all generations), AMD Ryzen (including Zen 4/5)
-- **GPUs**: NVIDIA GeForce, AMD Radeon (discrete GPUs prioritized over integrated)
+**Supported hardware** (via HWiNFO):
+- **CPUs**: Intel Core (all generations), AMD Ryzen (all generations)
+- **GPUs**: NVIDIA GeForce, AMD Radeon
 
-**Important notes:**
+**Setup HWiNFO for ThermalEngine:**
 
-1. **Run as Administrator** - Hardware sensor access requires admin privileges. The installer version requests admin automatically.
-2. **Antivirus software** - Some antivirus programs may flag the sensor helper. You may need to add the `SensorHelper/` folder to your antivirus exclusions.
+1. Download and install [HWiNFO](https://www.hwinfo.com/)
+2. Run HWiNFO and select "Sensors-only" mode
+3. Go to **Settings** (gear icon)
+4. Check **"Shared Memory Support"**
+5. Click OK
+6. Keep HWiNFO running while using ThermalEngine
+
+> **Tip:** You can configure HWiNFO to start with Windows and run minimized to tray.
 
 ## Installation
 
@@ -57,8 +64,7 @@ This application uses [LibreHardwareMonitor](https://github.com/LibreHardwareMon
 2. Download `ThermalEngine-vX.X.X-Setup.exe`
 3. Run the installer
 4. Launch ThermalEngine from the Start Menu or Desktop shortcut
-
-The app will automatically request administrator privileges when launched.
+5. Make sure HWiNFO is running with Shared Memory enabled
 
 ### From Source
 
@@ -73,14 +79,14 @@ The app will automatically request administrator privileges when launched.
    pip install -r requirements.txt
    ```
 
-3. Run the editor (as Administrator):
+3. Run the editor:
    ```bash
    python main.py
    ```
 
 ### Local Test Build
 
-Build a standalone executable locally (mirrors the GitHub Actions release build):
+Build a standalone executable locally:
 
 ```powershell
 # Basic build
@@ -99,7 +105,6 @@ Build a standalone executable locally (mirrors the GitHub Actions release build)
 
 **Requirements:**
 - Python 3.11+
-- .NET SDK (for SensorHelperApp)
 - Inno Setup (optional, for installer)
 
 **Clean up test build:**
@@ -112,8 +117,16 @@ Build a standalone executable locally (mirrors the GitHub Actions release build)
 ### Connecting to Display
 
 1. **Close any manufacturer software** (e.g., TRCC) if running - it locks the display
-2. Launch the editor **as Administrator**
+2. Launch the editor
 3. The editor will auto-connect, or click "Connect" in the toolbar
+
+### Setting Up Sensors
+
+1. **Start HWiNFO** with "Sensors-only" mode
+2. **Enable Shared Memory** in HWiNFO Settings
+3. Launch ThermalEngine - it will automatically detect HWiNFO
+
+Go to **Display > Diagnose Sensors** to verify sensor connection.
 
 ### Creating a Theme
 
@@ -162,15 +175,10 @@ Build a standalone executable locally (mirrors the GitHub Actions release build)
 - Check USB connection
 - Restart the editor
 
-### Sensors showing 0
-- **Run as Administrator** - This is the most common cause (installer version requests admin automatically)
-- Check that the `SensorHelper/` folder exists and contains `SensorHelperApp.exe`
-- Add the `SensorHelper/` folder to your antivirus exclusions if sensors still don't work
-- Go to Display > Diagnose Sensors to check sensor status
-
-### Sensors stop working after sleep
-- The application automatically recovers sensors after sleep/wake
-- If sensors don't recover, restart the application
+### Sensors showing 0 or not working
+1. **Check HWiNFO is running** - ThermalEngine requires HWiNFO for sensor data
+2. **Enable Shared Memory** in HWiNFO Settings
+3. Go to **Display > Diagnose Sensors** to check connection status
 
 ### Low FPS / Performance issues
 - Reduce target FPS (10 FPS is usually sufficient)
@@ -188,42 +196,23 @@ Thermal-Engine/
 ├── element_list.py      # Element list panel
 ├── presets.py           # Preset management
 ├── element.py           # Theme element data model
-├── sensors.py           # Hardware sensor polling (with auto-recovery)
+├── sensors.py           # HWiNFO sensor integration
+├── hwinfo_reader.py     # HWiNFO shared memory reader
 ├── video_background.py  # Video background support
 ├── constants.py         # Configuration constants
 ├── scripts/             # Build and utility scripts
-│   ├── build-local.ps1  # Local build script (mirrors GitHub Actions)
+│   ├── build-local.ps1  # Local build script
 │   ├── clean-local.ps1  # Clean up build artifacts
 │   └── create_icon.py   # Icon generation utility
 ├── assets/              # Icons and images
 │   ├── icon.ico
 │   └── icon.png
-├── SensorHelperApp/     # Sensor helper source code (.NET)
-│   ├── Program.cs
-│   └── SensorHelperApp.csproj
 ├── elements/            # Custom element plugins
 │   ├── line_chart.py
 │   └── gif.py
 ├── presets/             # Saved presets
 └── .github/workflows/   # CI/CD workflows
     └── release.yml      # Automated release build
-```
-
-**Build output (not tracked):**
-```
-dist/ThermalEngine/      # Standalone build output
-└── SensorHelper/        # Sensor helper (built from SensorHelperApp/)
-    ├── SensorHelperApp.exe
-    └── LibreHardwareMonitorLib.dll
-```
-
-## Building SensorHelperApp
-
-If you need to rebuild the sensor helper (requires .NET SDK):
-
-```bash
-cd SensorHelperApp
-dotnet publish -c Release -o ../SensorHelper
 ```
 
 ## Custom Elements
@@ -236,7 +225,7 @@ MIT License - See LICENSE file for details.
 
 ## Credits
 
-- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) - Hardware sensor library
+- [HWiNFO](https://www.hwinfo.com/) - Hardware sensor data provider
 - [PySide6](https://www.qt.io/qt-for-python) - Qt GUI framework
 - [Pillow](https://pillow.readthedocs.io/) - Image processing
 

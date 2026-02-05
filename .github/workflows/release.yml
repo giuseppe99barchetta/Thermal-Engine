@@ -29,95 +29,6 @@ jobs:
           pip install -r requirements.txt
           pip install nuitka ordered-set zstandard
 
-      - name: Download LibreHardwareMonitor DLLs
-        run: |
-          # Create lhm directory for SensorHelperApp
-          New-Item -ItemType Directory -Force -Path "lhm"
-
-          # Download and extract LibreHardwareMonitor NuGet package
-          Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/LibreHardwareMonitorLib/0.9.3" -OutFile "lhm.nupkg"
-          Expand-Archive -Path "lhm.nupkg" -DestinationPath "lhm_extract" -Force
-
-          # Debug: Show package contents
-          Write-Host "=== LibreHardwareMonitor package contents ==="
-          Get-ChildItem -Path "lhm_extract" -Recurse | ForEach-Object { Write-Host $_.FullName }
-
-          # Find and copy LibreHardwareMonitorLib.dll
-          $lhmDll = Get-ChildItem -Path "lhm_extract" -Filter "LibreHardwareMonitorLib.dll" -Recurse | Select-Object -First 1
-          if ($lhmDll) {
-            Copy-Item $lhmDll.FullName -Destination "lhm/" -Force
-            Copy-Item $lhmDll.FullName -Destination "." -Force
-            Write-Host "Copied LibreHardwareMonitorLib.dll from $($lhmDll.FullName)"
-          }
-
-          # Find and copy HidSharp.dll (may be in LHM package or need separate download)
-          $hidDll = Get-ChildItem -Path "lhm_extract" -Filter "HidSharp.dll" -Recurse | Select-Object -First 1
-          if ($hidDll) {
-            Copy-Item $hidDll.FullName -Destination "lhm/" -Force
-            Copy-Item $hidDll.FullName -Destination "." -Force
-            Write-Host "Copied HidSharp.dll from $($hidDll.FullName)"
-          } else {
-            # Download HidSharp separately
-            Write-Host "HidSharp not in LHM package, downloading separately..."
-            Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/HidSharp/2.1.0" -OutFile "hidsharp.nupkg"
-            Expand-Archive -Path "hidsharp.nupkg" -DestinationPath "hidsharp_extract" -Force
-            $hidDll = Get-ChildItem -Path "hidsharp_extract" -Filter "HidSharp.dll" -Recurse | Select-Object -First 1
-            if ($hidDll) {
-              Copy-Item $hidDll.FullName -Destination "lhm/" -Force
-              Copy-Item $hidDll.FullName -Destination "." -Force
-              Write-Host "Copied HidSharp.dll from $($hidDll.FullName)"
-            } else {
-              Write-Host "ERROR: Could not find HidSharp.dll"
-              exit 1
-            }
-          }
-
-          # Download additional .NET runtime DLLs
-          $dlls = @(
-            @{name="Microsoft.Win32.Registry"; version="5.0.0"},
-            @{name="System.Security.AccessControl"; version="6.0.0"},
-            @{name="System.Security.Principal.Windows"; version="5.0.0"},
-            @{name="System.IO.FileSystem.AccessControl"; version="5.0.0"}
-          )
-
-          foreach ($dll in $dlls) {
-            $url = "https://www.nuget.org/api/v2/package/$($dll.name)/$($dll.version)"
-            $outFile = "$($dll.name).nupkg"
-            Invoke-WebRequest -Uri $url -OutFile $outFile
-            Expand-Archive -Path $outFile -DestinationPath "$($dll.name)_extract" -Force
-
-            # Try to find and copy the DLL
-            $dllFile = Get-ChildItem -Path "$($dll.name)_extract" -Filter "*.dll" -Recurse | Where-Object { $_.Name -like "$($dll.name).dll" } | Select-Object -First 1
-            if ($dllFile) {
-              Copy-Item $dllFile.FullName -Destination "." -Force
-              Write-Host "Copied $($dllFile.Name)"
-            }
-          }
-
-          # List DLLs in root
-          Write-Host "=== DLLs in root ==="
-          Get-ChildItem -Filter "*.dll" | ForEach-Object { Write-Host $_.Name }
-        shell: pwsh
-
-      - name: Build SensorHelperApp
-        run: |
-          cd SensorHelperApp
-          # Restore NuGet packages and build self-contained (no .NET runtime needed)
-          dotnet restore
-          dotnet publish -c Release -o ../dist_helper
-
-          # Debug: Show what was published
-          Write-Host "=== SensorHelperApp publish output ==="
-          Get-ChildItem "../dist_helper" | ForEach-Object { Write-Host $_.Name }
-        shell: pwsh
-
-      - name: Copy SensorHelper to root
-        run: |
-          if (Test-Path "dist_helper/SensorHelperApp.exe") {
-            Copy-Item "dist_helper/SensorHelperApp.exe" "." -Force
-          }
-        shell: pwsh
-
       - name: Get version from tag
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
@@ -125,7 +36,6 @@ jobs:
 
       - name: Build with Nuitka
         run: |
-          # Extract version number from tag (remove 'v' prefix)
           $version = "${{ steps.version.outputs.VERSION }}".TrimStart('v')
           python -m nuitka `
             --standalone `
@@ -135,7 +45,6 @@ jobs:
             --windows-product-name="ThermalEngine" `
             --windows-product-version="$version" `
             --windows-file-version="$version" `
-            --windows-uac-admin `
             --enable-plugin=pyside6 `
             --include-package=cv2 `
             --include-package=numpy `
@@ -177,47 +86,6 @@ jobs:
           Get-ChildItem "dist\ThermalEngine" | ForEach-Object { Write-Host $_.Name }
         shell: pwsh
 
-      - name: Copy SensorHelper to dist
-        run: |
-          # Create SensorHelper subfolder
-          New-Item -ItemType Directory -Force -Path "dist/ThermalEngine/SensorHelper"
-
-          # Copy all SensorHelper files (self-contained .NET app with all dependencies)
-          Copy-Item "dist_helper/*" "dist/ThermalEngine/SensorHelper/" -Recurse -Force
-          Write-Host "Copied SensorHelper files to dist/ThermalEngine/SensorHelper/"
-
-          # Find and copy native driver files from NuGet cache or package
-          # LibreHardwareMonitor needs WinRing0 driver for CPU temps/power
-          $nugetCache = "$env:USERPROFILE\.nuget\packages\librehardwaremonitorlib"
-          Write-Host "=== Searching for native files in NuGet cache ==="
-
-          # Look for runtimes folder with native binaries
-          $nativeFiles = Get-ChildItem -Path $nugetCache -Recurse -Include "*.sys","*.dll" -ErrorAction SilentlyContinue |
-                         Where-Object { $_.FullName -like "*runtimes*" -or $_.FullName -like "*native*" }
-
-          foreach ($file in $nativeFiles) {
-            Write-Host "Found native file: $($file.FullName)"
-            Copy-Item $file.FullName -Destination "dist/ThermalEngine/SensorHelper/" -Force
-          }
-
-          # Also check the lhm_extract folder from earlier download
-          $lhmNative = Get-ChildItem -Path "lhm_extract" -Recurse -Include "*.sys" -ErrorAction SilentlyContinue
-          foreach ($file in $lhmNative) {
-            Write-Host "Found driver in lhm_extract: $($file.FullName)"
-            Copy-Item $file.FullName -Destination "dist/ThermalEngine/SensorHelper/" -Force
-          }
-
-          # List SensorHelper contents to verify
-          Write-Host "=== SensorHelper folder contents ==="
-          Get-ChildItem "dist/ThermalEngine/SensorHelper" | ForEach-Object { Write-Host $_.Name }
-
-          # Verify critical DLLs are present
-          if (-not (Test-Path "dist/ThermalEngine/SensorHelper/LibreHardwareMonitorLib.dll")) {
-            Write-Host "ERROR: LibreHardwareMonitorLib.dll not found in publish output!"
-            exit 1
-          }
-        shell: pwsh
-
       - name: Create ZIP archive
         run: Compress-Archive -Path "dist/ThermalEngine/*" -DestinationPath "ThermalEngine-${{ steps.version.outputs.VERSION }}.zip"
         shell: pwsh
@@ -228,11 +96,9 @@ jobs:
 
       - name: Build Installer with Inno Setup
         run: |
-          # Build installer with version from tag
           $version = "${{ steps.version.outputs.VERSION }}"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" "installer.iss"
 
-          # List output files
           Write-Host "=== Installer output ==="
           Get-ChildItem -Filter "*.exe" | Where-Object { $_.Name -like "*Setup*" } | ForEach-Object { Write-Host $_.Name }
         shell: pwsh

@@ -1215,72 +1215,42 @@ class ThemeEditorWindow(QMainWindow):
         """Show diagnostic information about available sensors."""
         info = []
         info.append("=== Sensor Diagnostic ===\n")
-        info.append(f"LibreHardwareMonitor (subprocess): {sensors.HAS_LHM}")
 
-        # Check SensorHelper directory where DLLs actually live
-        app_dir = os.path.dirname(os.path.abspath(__file__))
-        sensor_helper_dir = os.path.join(app_dir, "SensorHelper")
-
-        dll_path = os.path.join(sensor_helper_dir, "LibreHardwareMonitorLib.dll")
-        info.append(f"SensorHelper path: {sensor_helper_dir}")
-        info.append(f"SensorHelper exists: {os.path.isdir(sensor_helper_dir)}")
-        info.append(f"LibreHardwareMonitorLib.dll exists: {os.path.exists(dll_path)}")
-
-        hidsharp_path = os.path.join(sensor_helper_dir, "HidSharp.dll")
-        info.append(f"HidSharp.dll exists: {os.path.exists(hidsharp_path)}")
+        # Show active sensor source
+        source = sensors.get_sensor_source_display() if hasattr(sensors, 'get_sensor_source_display') else "Unknown"
+        info.append(f"Sensor source: {source}")
         info.append("")
 
-        if sensors.HAS_LHM:
-            info.append("Subprocess sensor query (fresh poll):")
+        # HWiNFO status
+        has_hwinfo = getattr(sensors, 'HAS_HWINFO', False)
+        info.append(f"HWiNFO connected: {has_hwinfo}")
+        info.append("")
+
+        if has_hwinfo:
+            info.append("Sensor readings from HWiNFO:")
             info.append("-" * 40)
             try:
-                # Use sync version for diagnostics to get fresh data
-                lhm_data = get_lhm_sensors_sync()
-                if lhm_data:
-                    for key, value in lhm_data.items():
+                sensor_data = get_lhm_sensors_sync()
+                if sensor_data:
+                    for key, value in sensor_data.items():
                         info.append(f"  {key}: {value}")
-
-                    # Check for CPU sensors returning 0 (common issue)
-                    cpu_temp = lhm_data.get('cpu_temp', 0)
-                    cpu_clock = lhm_data.get('cpu_clock', 0)
-                    cpu_power = lhm_data.get('cpu_power', 0)
-                    gpu_temp = lhm_data.get('gpu_temp', 0)
-
-                    if cpu_temp == 0 and cpu_clock == 0 and cpu_power == 0:
-                        info.append("")
-                        info.append("WARNING: CPU sensors returning 0!")
-                        if gpu_temp > 0:
-                            info.append("(GPU sensors work, so this is CPU-specific)")
-                        info.append("")
-                        info.append("Possible causes:")
-                        info.append("  1. App not running as Administrator")
-                        info.append("     - Right-click ThermalEngine > Run as administrator")
-                        info.append("  2. Antivirus blocking the hardware driver")
-                        info.append("     - Add ThermalEngine folder to your antivirus exclusions")
-                        info.append("  3. CPU not supported by LibreHardwareMonitor")
                 else:
                     info.append("  (no data returned)")
             except Exception as e:
                 info.append(f"  Error: {e}")
         else:
-            info.append("\nLibreHardwareMonitor not working!")
-            if sensors.LHM_ERROR:
-                info.append(f"\nError: {sensors.LHM_ERROR}")
-
-            if sys.platform != "win32":
-                info.append("\nNote: Hardware sensor reading requires Windows.")
-                info.append("The application can still be used for creating themes,")
-                info.append("but CPU/GPU temperatures will show placeholder values.")
-            else:
-                info.append("\nTo fix this:")
-                info.append("1. Install: pip install pythonnet clr-loader")
-                info.append("2. Download LibreHardwareMonitor from:")
-                info.append("   https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases")
-                info.append("3. Extract and copy LibreHardwareMonitorLib.dll to:")
-                info.append(f"   {os.path.dirname(os.path.abspath(__file__))}")
-                info.append("4. Also copy HidSharp.dll to the same folder")
-                info.append("5. Unblock both DLLs (right-click > Properties > Unblock)")
-                info.append("6. Restart this application AS ADMINISTRATOR")
+            info.append("HWiNFO not connected!")
+            info.append("")
+            info.append("To enable sensor monitoring:")
+            info.append("  1. Download HWiNFO from: https://www.hwinfo.com/")
+            info.append("  2. Install and run HWiNFO")
+            info.append("  3. Go to Settings (gear icon)")
+            info.append("  4. Enable 'Shared Memory Support'")
+            info.append("  5. Click OK and run sensors")
+            info.append("  6. Restart ThermalEngine")
+            info.append("")
+            info.append("HWiNFO provides reliable sensor data without")
+            info.append("driver blocklist issues from Windows Defender.")
 
         info.append("\n" + "-" * 40)
         info.append("Current sensor values:")
