@@ -1809,6 +1809,14 @@ class PropertiesPanel(QWidget):
         self.text_label.setVisible(text_visible)
         self.text_edit.setVisible(text_visible)
         self.value_text_group.setVisible(value_text_group_visible)
+        # Only show as sub-pane (with border/title) when label group is also visible
+        # For text/clock/line_chart, show controls directly without the group box styling
+        if value_text_group_visible and not label_text_group_visible:
+            self.value_text_group.setFlat(True)
+            self.value_text_group.setTitle("")
+        else:
+            self.value_text_group.setFlat(False)
+            self.value_text_group.setTitle("Value")
         self.label_text_group.setVisible(label_text_group_visible)
 
         # Show all label options for both circle_gauge and bar_gauge
