@@ -10,15 +10,117 @@ import os
 import argparse
 import atexit
 import signal
+import webbrowser
 
-from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QMenu
-from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QBrush
+from PySide6.QtWidgets import (
+    QApplication, QMessageBox, QSystemTrayIcon, QMenu,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+)
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QBrush, QFont
 from PySide6.QtCore import Qt
 
-from sensors import init_sensors
+from sensors import init_sensors, HAS_HWINFO
 from main_window import ThemeEditorWindow
 from app_path import get_app_dir
 import settings
+
+
+class HWiNFOSetupDialog(QDialog):
+    """Dialog to help users set up HWiNFO for sensor monitoring."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sensor Setup Required")
+        self.setMinimumWidth(500)
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        # Title
+        title = QLabel("HWiNFO Required for Sensor Data")
+        title_font = QFont()
+        title_font.setPointSize(14)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        # Explanation
+        explanation = QLabel(
+            "ThermalEngine uses HWiNFO to read CPU and GPU sensor data.\n"
+            "HWiNFO is a free, trusted hardware monitoring tool used by\n"
+            "millions of users worldwide."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+
+        # Download button
+        download_btn = QPushButton("Download HWiNFO (Free)")
+        download_btn.setMinimumHeight(40)
+        download_btn.clicked.connect(self.open_download_page)
+        layout.addWidget(download_btn)
+
+        # Setup instructions
+        instructions_title = QLabel("After installing HWiNFO:")
+        instructions_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        layout.addWidget(instructions_title)
+
+        instructions = QLabel(
+            "1. Run HWiNFO and select 'Sensors-only' mode\n"
+            "2. Click the Settings button (gear icon)\n"
+            "3. Check 'Shared Memory Support'\n"
+            "4. Click OK\n"
+            "5. Keep HWiNFO running in the background"
+        )
+        instructions.setStyleSheet("margin-left: 20px;")
+        layout.addWidget(instructions)
+
+        # Tip
+        tip = QLabel(
+            "Tip: Configure HWiNFO to start with Windows and minimize to tray\n"
+            "for a seamless experience."
+        )
+        tip.setStyleSheet("color: #888; font-style: italic; margin-top: 10px;")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        check_again_btn = QPushButton("Check Again")
+        check_again_btn.clicked.connect(self.check_again)
+        button_layout.addWidget(check_again_btn)
+
+        continue_btn = QPushButton("Continue Without Sensors")
+        continue_btn.clicked.connect(self.accept)
+        button_layout.addWidget(continue_btn)
+
+        layout.addLayout(button_layout)
+
+    def open_download_page(self):
+        """Open HWiNFO download page in browser."""
+        webbrowser.open("https://www.hwinfo.com/download/")
+
+    def check_again(self):
+        """Re-check if HWiNFO is now available."""
+        from hwinfo_reader import is_hwinfo_available
+
+        if is_hwinfo_available():
+            QMessageBox.information(
+                self,
+                "HWiNFO Detected",
+                "HWiNFO is now connected! Sensor data will be available."
+            )
+            self.accept()
+        else:
+            QMessageBox.warning(
+                self,
+                "HWiNFO Not Found",
+                "HWiNFO shared memory not detected.\n\n"
+                "Make sure HWiNFO is running and 'Shared Memory Support'\n"
+                "is enabled in Settings."
+            )
 
 
 def create_tray_icon():
@@ -53,10 +155,7 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Keep running when minimized to tray
 
-    # Initialize sensors (uses HWiNFO shared memory - no admin required)
-    init_sensors()
-
-    # Apply dark theme
+    # Apply dark theme first (so dialog looks correct)
     app.setStyle("Fusion")
 
     palette = app.palette()
@@ -73,6 +172,17 @@ def main():
     palette.setColor(palette.ColorRole.Highlight, QColor(0, 120, 215))
     palette.setColor(palette.ColorRole.HighlightedText, QColor(255, 255, 255))
     app.setPalette(palette)
+
+    # Initialize sensors (uses HWiNFO shared memory)
+    init_sensors()
+
+    # Show HWiNFO setup dialog if not connected
+    from sensors import HAS_HWINFO
+    if not HAS_HWINFO:
+        dialog = HWiNFOSetupDialog()
+        dialog.exec()
+        # Re-initialize sensors in case user set up HWiNFO
+        init_sensors()
 
     # Create main window
     window = ThemeEditorWindow()
