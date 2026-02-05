@@ -10,7 +10,8 @@ A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom 
 
 - **Visual drag-and-drop editor** with live preview
 - **Real-time sensor data**: CPU/GPU temperature, utilization, clock speed, power
-- **Auto-recovery**: Sensors automatically reconnect after sleep/wake
+- **No admin required** - runs as a standard user application
+- **Auto-recovery**: Sensors automatically reconnect after sleep/wake or if HWiNFO restarts
 - **Element types**:
   - Circle gauges with auto-color thresholds
   - Bar gauges with rounded corners and gradient fill
@@ -39,7 +40,10 @@ A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom 
 
 ### Hardware Sensor Support
 
-ThermalEngine uses **HWiNFO Shared Memory** to read hardware sensors. This approach avoids Windows Defender driver blocklist issues that affect other monitoring tools.
+ThermalEngine uses **HWiNFO Shared Memory** to read hardware sensors. This approach:
+- Requires no admin privileges
+- Has no driver blocklist issues
+- Works with all CPUs and GPUs that HWiNFO supports
 
 **Supported hardware** (via HWiNFO):
 - **CPUs**: Intel Core (all generations), AMD Ryzen (all generations)
@@ -47,23 +51,23 @@ ThermalEngine uses **HWiNFO Shared Memory** to read hardware sensors. This appro
 
 **Setup HWiNFO for ThermalEngine:**
 
-1. Download and install [HWiNFO](https://www.hwinfo.com/)
+1. Download [HWiNFO](https://www.hwinfo.com/) (installer or portable)
 2. Run HWiNFO and select "Sensors-only" mode
 3. Go to **Settings** (gear icon)
 4. Check **"Shared Memory Support"**
 5. Click OK
 6. Keep HWiNFO running while using ThermalEngine
 
-> **Tip:** You can configure HWiNFO to start with Windows and run minimized to tray.
+> **Tip:** Configure HWiNFO to start with Windows and run minimized to tray. ThermalEngine will automatically connect when HWiNFO becomes available.
 
 ## Installation
 
 ### Download (Recommended)
 
 1. Go to [Releases](https://github.com/nathanielhernandez/ThermalEngine/releases)
-2. Download `ThermalEngine-vX.X.X-Setup.exe`
-3. Run the installer
-4. Launch ThermalEngine from the Start Menu or Desktop shortcut
+2. Download `ThermalEngine-vX.X.X.zip` (portable) or `ThermalEngine-vX.X.X-Setup.exe` (installer)
+3. **Portable**: Extract the ZIP and run `ThermalEngine.exe`
+4. **Installer**: Run the setup and launch from Start Menu
 5. Make sure HWiNFO is running with Shared Memory enabled
 
 ### From Source
@@ -89,7 +93,7 @@ ThermalEngine uses **HWiNFO Shared Memory** to read hardware sensors. This appro
 Build a standalone executable locally:
 
 ```powershell
-# Basic build
+# Basic build (ZIP only)
 .\scripts\build-local.ps1 -SkipInstaller
 
 # Clean build (removes previous artifacts first)
@@ -102,10 +106,6 @@ Build a standalone executable locally:
 **Output:**
 - `dist\ThermalEngine\ThermalEngine.exe` - Run directly to test
 - `ThermalEngine-local-dev.zip` - Portable distribution
-
-**Requirements:**
-- Python 3.11+
-- Inno Setup (optional, for installer)
 
 **Clean up test build:**
 ```powershell
@@ -125,6 +125,8 @@ Build a standalone executable locally:
 1. **Start HWiNFO** with "Sensors-only" mode
 2. **Enable Shared Memory** in HWiNFO Settings
 3. Launch ThermalEngine - it will automatically detect HWiNFO
+
+ThermalEngine and HWiNFO can start in any order - sensors will connect automatically when both are running.
 
 Go to **Display > Diagnose Sensors** to verify sensor connection.
 
@@ -179,6 +181,7 @@ Go to **Display > Diagnose Sensors** to verify sensor connection.
 1. **Check HWiNFO is running** - ThermalEngine requires HWiNFO for sensor data
 2. **Enable Shared Memory** in HWiNFO Settings
 3. Go to **Display > Diagnose Sensors** to check connection status
+4. Sensors will auto-connect when HWiNFO becomes available
 
 ### Low FPS / Performance issues
 - Reduce target FPS (10 FPS is usually sufficient)
@@ -196,14 +199,13 @@ Thermal-Engine/
 ├── element_list.py      # Element list panel
 ├── presets.py           # Preset management
 ├── element.py           # Theme element data model
-├── sensors.py           # HWiNFO sensor integration
+├── sensors.py           # Sensor polling and smoothing
 ├── hwinfo_reader.py     # HWiNFO shared memory reader
 ├── video_background.py  # Video background support
 ├── constants.py         # Configuration constants
 ├── scripts/             # Build and utility scripts
 │   ├── build-local.ps1  # Local build script
-│   ├── clean-local.ps1  # Clean up build artifacts
-│   └── create_icon.py   # Icon generation utility
+│   └── clean-local.ps1  # Clean up build artifacts
 ├── assets/              # Icons and images
 │   ├── icon.ico
 │   └── icon.png
@@ -214,10 +216,6 @@ Thermal-Engine/
 └── .github/workflows/   # CI/CD workflows
     └── release.yml      # Automated release build
 ```
-
-## Custom Elements
-
-You can create custom elements by adding Python files to the `elements/` folder. See `elements/line_chart.py` for an example.
 
 ## License
 
