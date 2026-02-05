@@ -2537,7 +2537,7 @@ class ThemeEditorWindow(QMainWindow):
             border_width = getattr(element, 'bar_border_width', 2)
             border_color = getattr(element, 'bar_border_color', '#ffffff')
             border_opacity = getattr(element, 'bar_border_opacity', 100)
-            border_position = getattr(element, 'bar_border_position', 'inside')
+            border_position = getattr(element, 'bar_border_position', 'center')
 
             # Create border layer for proper opacity handling
             border_layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
@@ -2547,19 +2547,22 @@ class ThemeEditorWindow(QMainWindow):
             half_border = border_width / 2
 
             # Calculate offset based on border position
-            # PIL draws stroke centered on the path, so we adjust coordinates
+            # PIL draws stroke INSIDE the bounding box (not centered like Qt)
             if border_position == "inside":
-                bx1, by1 = int(x + half_border), int(y + half_border)
-                bx2, by2 = int(x + width - half_border), int(y + height - half_border)
-                bradius = max(0, int(corner_radius - half_border))
-            elif border_position == "center":
+                # Stroke entirely inside element - box at element boundary
                 bx1, by1 = int(x), int(y)
                 bx2, by2 = int(x + width), int(y + height)
-                bradius = int(corner_radius)
-            else:  # outside
+                bradius = corner_radius
+            elif border_position == "center":
+                # Stroke centered on element boundary - expand box by half_border
                 bx1, by1 = int(x - half_border), int(y - half_border)
                 bx2, by2 = int(x + width + half_border), int(y + height + half_border)
                 bradius = int(corner_radius + half_border)
+            else:  # outside
+                # Stroke entirely outside element - expand box by full border_width
+                bx1, by1 = int(x - border_width), int(y - border_width)
+                bx2, by2 = int(x + width + border_width), int(y + height + border_width)
+                bradius = int(corner_radius + border_width)
 
             # Draw border (outline only)
             if rounded:
@@ -3022,23 +3025,27 @@ class ThemeEditorWindow(QMainWindow):
         if bar_border:
             border_width = getattr(element, 'bar_border_width', 2)
             border_color = getattr(element, 'bar_border_color', '#ffffff')
-            border_position = getattr(element, 'bar_border_position', 'inside')
+            border_position = getattr(element, 'bar_border_position', 'center')
 
             half_border = border_width / 2
 
             # Calculate offset based on border position
+            # PIL draws stroke INSIDE the bounding box (not centered like Qt)
             if border_position == "inside":
-                bx1, by1 = int(x + half_border), int(y + half_border)
-                bx2, by2 = int(x + width - half_border), int(y + height - half_border)
-                bradius = max(0, int(corner_radius - half_border))
-            elif border_position == "center":
+                # Stroke entirely inside element - box at element boundary
                 bx1, by1 = int(x), int(y)
                 bx2, by2 = int(x + width), int(y + height)
-                bradius = int(corner_radius)
-            else:  # outside
+                bradius = corner_radius
+            elif border_position == "center":
+                # Stroke centered on element boundary - expand box by half_border
                 bx1, by1 = int(x - half_border), int(y - half_border)
                 bx2, by2 = int(x + width + half_border), int(y + height + half_border)
                 bradius = int(corner_radius + half_border)
+            else:  # outside
+                # Stroke entirely outside element - expand box by full border_width
+                bx1, by1 = int(x - border_width), int(y - border_width)
+                bx2, by2 = int(x + width + border_width), int(y + height + border_width)
+                bradius = int(corner_radius + border_width)
 
             if rounded:
                 draw.rounded_rectangle(

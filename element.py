@@ -58,7 +58,7 @@ class ThemeElement:
         self.bar_border_width = kwargs.get("bar_border_width", 2)  # Border stroke width
         self.bar_border_color = kwargs.get("bar_border_color", "#ffffff")  # Border color
         self.bar_border_opacity = kwargs.get("bar_border_opacity", 100)  # Border opacity 0-100
-        self.bar_border_position = kwargs.get("bar_border_position", "inside")  # "inside", "center", "outside"
+        self.bar_border_position = kwargs.get("bar_border_position", "center")  # "inside", "center", "outside"
 
         # Gauge options
         self.auto_color_change = kwargs.get("auto_color_change", False)  # Change color at thresholds

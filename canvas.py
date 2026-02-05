@@ -504,7 +504,7 @@ class CanvasPreview(QWidget):
             border_width = int(getattr(element, 'bar_border_width', 2) * self.scale)
             border_color = getattr(element, 'bar_border_color', '#ffffff')
             border_opacity = getattr(element, 'bar_border_opacity', 100)
-            border_position = getattr(element, 'bar_border_position', 'inside')
+            border_position = getattr(element, 'bar_border_position', 'center')
             border_qcolor = apply_opacity(border_color, border_opacity)
 
             border_pen = QPen(border_qcolor, border_width)

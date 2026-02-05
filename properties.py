@@ -2057,7 +2057,7 @@ class PropertiesPanel(QWidget):
         bar_border_color = getattr(element, 'bar_border_color', '#ffffff')
         self.bar_border_color_btn.setStyleSheet(f"background-color: {bar_border_color};")
         # Load border position
-        border_position = getattr(element, 'bar_border_position', 'inside')
+        border_position = getattr(element, 'bar_border_position', 'center')
         pos_idx = self.bar_border_position_combo.findData(border_position)
         if pos_idx >= 0:
             self.bar_border_position_combo.setCurrentIndex(pos_idx)
@@ -2338,7 +2338,7 @@ class PropertiesPanel(QWidget):
         self.current_element.rounded_corners = self.rounded_corners_check.isChecked()
         self.current_element.bar_border = self.bar_border_check.isChecked()
         self.current_element.bar_border_width = self.bar_border_width_spin.value()
-        self.current_element.bar_border_position = self.bar_border_position_combo.currentData() or 'inside'
+        self.current_element.bar_border_position = self.bar_border_position_combo.currentData() or 'center'
         self.current_element.gradient_fill = self.gradient_fill_check.isChecked()
         self.current_element.bar_text_mode = self.bar_text_mode_combo.currentData() or 'full'
         self.current_element.bar_text_position = self.bar_text_position_combo.currentData() or 'inside'
