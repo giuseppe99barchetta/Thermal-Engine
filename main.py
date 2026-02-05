@@ -176,9 +176,9 @@ def main():
     # Initialize sensors (uses HWiNFO shared memory)
     init_sensors()
 
-    # Show HWiNFO setup dialog if not connected
+    # Show HWiNFO setup dialog if not connected (skip if minimized/auto-start)
     from sensors import HAS_HWINFO
-    if not HAS_HWINFO:
+    if not HAS_HWINFO and not args.minimized:
         dialog = HWiNFOSetupDialog()
         dialog.exec()
         # Re-initialize sensors in case user set up HWiNFO
