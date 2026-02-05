@@ -60,16 +60,6 @@ if errorlevel 1 (
 )
 echo.
 
-:: Check for SensorHelperApp
-if exist "lhm\SensorHelperApp.exe" (
-    echo [OK] SensorHelperApp found
-) else (
-    echo [WARNING] lhm\SensorHelperApp.exe not found.
-    echo CPU/GPU sensor monitoring will not work.
-    echo Please ensure the lhm folder is present with SensorHelperApp.exe
-)
-echo.
-
 :: Create presets folder if it doesn't exist
 if not exist "presets" mkdir presets
 
@@ -89,6 +79,7 @@ if exist "venv\Scripts\activate.bat" (
     echo   Run: python main.py
 )
 echo.
-echo IMPORTANT: Run as Administrator for full sensor support!
+echo NOTE: For CPU/GPU sensor data, install HWiNFO from https://www.hwinfo.com/
+echo       and enable "Shared Memory Support" in HWiNFO settings.
 echo.
 pause

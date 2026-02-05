@@ -2,8 +2,6 @@
 Sensor monitoring using HWiNFO Shared Memory.
 
 Requires HWiNFO to be running with "Shared Memory Support" enabled.
-This avoids Windows Defender driver blocklist issues that affect
-LibreHardwareMonitor and similar tools.
 """
 
 import sys
@@ -23,10 +21,6 @@ _SENSOR_UPDATE_INTERVAL = 0.5
 # Track initialization state
 HAS_HWINFO = False
 HWINFO_ERROR = None
-
-# For backwards compatibility
-HAS_LHM = False  # Always False now
-LHM_ERROR = None
 
 # Background sensor thread
 _sensor_thread = None
@@ -133,20 +127,22 @@ def init_sensors(app_dir=None):
     return HAS_HWINFO
 
 
-def get_lhm_sensors():
-    """Get sensor data from background thread cache (non-blocking).
-
-    Named for backwards compatibility with existing code.
-    """
+def get_cached_sensors():
+    """Get sensor data from background thread cache (non-blocking)."""
     with _sensor_data_lock:
         return _latest_sensor_data.copy()
 
 
-def get_lhm_sensors_sync():
+def get_sensors_sync():
     """Get sensor data synchronously from HWiNFO."""
     if is_hwinfo_available():
         return get_hwinfo_sensors()
     return None
+
+
+# Aliases for backwards compatibility
+get_lhm_sensors = get_cached_sensors
+get_lhm_sensors_sync = get_sensors_sync
 
 
 def stop_sensors():

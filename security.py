@@ -5,21 +5,10 @@ Handles path validation, schema validation, and integrity checks.
 
 import os
 import re
-import hashlib
 from app_path import get_app_dir
 
 # Allowed directories for file loading (relative to app dir)
 ALLOWED_SUBDIRS = ['presets', 'elements', 'themes', 'images', 'videos']
-
-# Known DLL hashes (SHA256) - update these when DLLs are updated
-KNOWN_DLL_HASHES = {
-    "LibreHardwareMonitorLib.dll": None,  # Set to None to skip verification during dev
-    "HidSharp.dll": None,
-    "Microsoft.Win32.Registry.dll": None,
-    "System.IO.FileSystem.AccessControl.dll": None,
-    "System.Security.AccessControl.dll": None,
-    "System.Security.Principal.Windows.dll": None,
-}
 
 
 def is_safe_path(file_path, allow_absolute=False):
@@ -224,49 +213,6 @@ def is_valid_color(color):
     # Match #RGB, #RRGGBB, or #RRGGBBAA
     pattern = r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$'
     return bool(re.match(pattern, color))
-
-
-def verify_dll_integrity(dll_path):
-    """
-    Verify DLL integrity using SHA256 hash.
-
-    Returns: (is_valid: bool, error: str or None)
-    """
-    if not os.path.exists(dll_path):
-        return False, "DLL not found"
-
-    dll_name = os.path.basename(dll_path)
-    expected_hash = KNOWN_DLL_HASHES.get(dll_name)
-
-    # Skip verification if hash not set (development mode)
-    if expected_hash is None:
-        return True, None
-
-    try:
-        sha256 = hashlib.sha256()
-        with open(dll_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
-        actual_hash = sha256.hexdigest()
-
-        if actual_hash.lower() != expected_hash.lower():
-            return False, f"Hash mismatch: expected {expected_hash}, got {actual_hash}"
-
-        return True, None
-    except Exception as e:
-        return False, f"Error computing hash: {e}"
-
-
-def compute_dll_hash(dll_path):
-    """Compute SHA256 hash of a DLL file (for setting up KNOWN_DLL_HASHES)."""
-    try:
-        sha256 = hashlib.sha256()
-        with open(dll_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()
-    except Exception as e:
-        return None
 
 
 def escape_registry_path(path):

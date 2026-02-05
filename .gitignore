@@ -41,9 +41,6 @@ env/
 .ai/
 .claude/
 
-# SensorHelperApp build artifacts (source tracked, build output ignored)
-SensorHelperApp/bin/
-SensorHelperApp/obj/
 
 # OS files
 .DS_Store
@@ -70,16 +67,8 @@ presets/*
 *_old.py
 *.disabled
 
-# Local build artifacts (build-local.ps1 script IS tracked for other contributors)
-lhm/
-lhm_extract/
-hidsharp_extract/
+# Local build artifacts
 *_extract/
 *.nupkg
-lhm.zip
-hidsharp.zip
-Microsoft.*.zip
-System.*.zip
-dist_helper/
 ThermalEngine-*.zip
 ThermalEngine-*-Setup.exe

@@ -196,7 +196,7 @@ def get_value_with_unit(value, source, temp_hide_unit=False):
         return f"{value:.0f}{symbol}"
 from element import ThemeElement
 import sensors
-from sensors import init_sensors, get_lhm_sensors, get_lhm_sensors_sync, stop_sensors
+from sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
 import settings
 from app_path import get_resource_path, get_bundled_resource_path
 
@@ -1184,28 +1184,28 @@ class ThemeEditorWindow(QMainWindow):
         # Get HWiNFO sensor data from background thread (non-blocking)
         if sensors.HAS_HWINFO:
             try:
-                lhm_data = get_lhm_sensors()
-                if lhm_data:
+                hwinfo_data = get_cached_sensors()
+                if hwinfo_data:
                     # CPU sensors
-                    if lhm_data.get('cpu_temp', 0) > 0:
-                        data['cpu_temp'] = lhm_data['cpu_temp']
-                    if lhm_data.get('cpu_clock', 0) > 0:
-                        data['cpu_clock'] = lhm_data['cpu_clock']
-                    if lhm_data.get('cpu_power', 0) > 0:
-                        data['cpu_power'] = lhm_data['cpu_power']
+                    if hwinfo_data.get('cpu_temp', 0) > 0:
+                        data['cpu_temp'] = hwinfo_data['cpu_temp']
+                    if hwinfo_data.get('cpu_clock', 0) > 0:
+                        data['cpu_clock'] = hwinfo_data['cpu_clock']
+                    if hwinfo_data.get('cpu_power', 0) > 0:
+                        data['cpu_power'] = hwinfo_data['cpu_power']
                     # GPU sensors
-                    if lhm_data.get('gpu_temp', 0) > 0:
-                        data['gpu_temp'] = lhm_data['gpu_temp']
-                    if lhm_data.get('gpu_percent', 0) > 0:
-                        data['gpu_percent'] = lhm_data['gpu_percent']
-                    if lhm_data.get('gpu_clock', 0) > 0:
-                        data['gpu_clock'] = lhm_data['gpu_clock']
-                    if lhm_data.get('gpu_memory_percent', 0) > 0:
-                        data['gpu_memory_percent'] = lhm_data['gpu_memory_percent']
-                    if lhm_data.get('gpu_memory_clock', 0) > 0:
-                        data['gpu_memory_clock'] = lhm_data['gpu_memory_clock']
-                    if lhm_data.get('gpu_power', 0) > 0:
-                        data['gpu_power'] = lhm_data['gpu_power']
+                    if hwinfo_data.get('gpu_temp', 0) > 0:
+                        data['gpu_temp'] = hwinfo_data['gpu_temp']
+                    if hwinfo_data.get('gpu_percent', 0) > 0:
+                        data['gpu_percent'] = hwinfo_data['gpu_percent']
+                    if hwinfo_data.get('gpu_clock', 0) > 0:
+                        data['gpu_clock'] = hwinfo_data['gpu_clock']
+                    if hwinfo_data.get('gpu_memory_percent', 0) > 0:
+                        data['gpu_memory_percent'] = hwinfo_data['gpu_memory_percent']
+                    if hwinfo_data.get('gpu_memory_clock', 0) > 0:
+                        data['gpu_memory_clock'] = hwinfo_data['gpu_memory_clock']
+                    if hwinfo_data.get('gpu_power', 0) > 0:
+                        data['gpu_power'] = hwinfo_data['gpu_power']
             except Exception as e:
                 print(f"HWiNFO sensor read error: {e}")
 
@@ -1230,7 +1230,7 @@ class ThemeEditorWindow(QMainWindow):
             info.append("Sensor readings from HWiNFO:")
             info.append("-" * 40)
             try:
-                sensor_data = get_lhm_sensors_sync()
+                sensor_data = get_sensors_sync()
                 if sensor_data:
                     for key, value in sensor_data.items():
                         info.append(f"  {key}: {value}")
