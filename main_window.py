@@ -1181,8 +1181,8 @@ class ThemeEditorWindow(QMainWindow):
             'net_download': psutil_data['net_download'],
         }
 
-        # Get LHM sensor data from background thread (non-blocking)
-        if sensors.HAS_LHM:
+        # Get HWiNFO sensor data from background thread (non-blocking)
+        if sensors.HAS_HWINFO:
             try:
                 lhm_data = get_lhm_sensors()
                 if lhm_data:
@@ -1207,7 +1207,7 @@ class ThemeEditorWindow(QMainWindow):
                     if lhm_data.get('gpu_power', 0) > 0:
                         data['gpu_power'] = lhm_data['gpu_power']
             except Exception as e:
-                print(f"LHM sensor read error: {e}")
+                print(f"HWiNFO sensor read error: {e}")
 
         return data
 
