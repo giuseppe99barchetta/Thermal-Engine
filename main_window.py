@@ -2092,7 +2092,8 @@ class ThemeEditorWindow(QMainWindow):
         """Render circle gauge with opacity support."""
         x, y = element.x, element.y
         radius = element.radius
-        value = element.value
+        # Use animated value if available (from canvas animation), otherwise use raw value
+        value = getattr(element, '_animated_display_value', element.value)
 
         # Check for gradient fill
         use_gradient = getattr(element, 'gradient_fill', False)
@@ -2125,9 +2126,12 @@ class ThemeEditorWindow(QMainWindow):
         overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
 
+        # Check for rounded ends (pill shape)
+        rounded_ends = getattr(element, 'gauge_rounded_ends', False)
+
         # Draw background arc - single thick arc instead of multiple thin ones
         bg_rgba = hex_to_rgba(element.background_color, bg_opacity)
-        arc_width = 18
+        arc_width = 15  # Match canvas pen width
         arc_radius = radius - arc_width // 2
         draw.arc(
             [x - arc_radius, y - arc_radius, x + arc_radius, y + arc_radius],
@@ -2135,8 +2139,33 @@ class ThemeEditorWindow(QMainWindow):
             fill=bg_rgba, width=arc_width
         )
 
-        # Draw value arc
-        sweep = int(270 * min(value, 100) / 100)
+        # Draw rounded end caps for background arc
+        if rounded_ends:
+            import math
+            cap_radius = arc_width // 2
+            # Radial offset to push caps inward along the radius direction
+            radial_offset = -7
+            # Start cap at 135° (bottom-left)
+            start_angle = 135
+            start_x = x + (arc_radius + radial_offset) * math.cos(math.radians(start_angle))
+            start_y = y + (arc_radius + radial_offset) * math.sin(math.radians(start_angle))
+            draw.ellipse(
+                [start_x - cap_radius, start_y - cap_radius,
+                 start_x + cap_radius, start_y + cap_radius],
+                fill=bg_rgba
+            )
+            # End cap at 45° (bottom-right)
+            end_angle_bg = 45
+            end_x = x + (arc_radius + radial_offset) * math.cos(math.radians(end_angle_bg))
+            end_y = y + (arc_radius + radial_offset) * math.sin(math.radians(end_angle_bg))
+            draw.ellipse(
+                [end_x - cap_radius, end_y - cap_radius,
+                 end_x + cap_radius, end_y + cap_radius],
+                fill=bg_rgba
+            )
+
+        # Draw value arc - use float for smoother animation
+        sweep = 270 * min(value, 100) / 100
         end_angle = 135 + sweep
 
         if sweep > 0:
@@ -2157,6 +2186,32 @@ class ThemeEditorWindow(QMainWindow):
                         start=segment_start, end=segment_end,
                         fill=segment_rgba, width=arc_width
                     )
+                # Draw rounded end caps for gradient arc
+                if rounded_ends:
+                    import math
+                    cap_radius = arc_width // 2
+                    radial_offset = -7
+                    # Start cap (use start color)
+                    start_color = self.interpolate_gradient_color(gradient_stops, 0)
+                    start_rgba = hex_to_rgba(start_color, color_opacity)
+                    start_x = x + (arc_radius + radial_offset) * math.cos(math.radians(135))
+                    start_y = y + (arc_radius + radial_offset) * math.sin(math.radians(135))
+                    draw.ellipse(
+                        [start_x - cap_radius, start_y - cap_radius,
+                         start_x + cap_radius, start_y + cap_radius],
+                        fill=start_rgba
+                    )
+                    # End cap (use color at current position)
+                    end_t = sweep / 270.0
+                    end_color = self.interpolate_gradient_color(gradient_stops, end_t)
+                    end_rgba = hex_to_rgba(end_color, color_opacity)
+                    end_x = x + (arc_radius + radial_offset) * math.cos(math.radians(end_angle))
+                    end_y = y + (arc_radius + radial_offset) * math.sin(math.radians(end_angle))
+                    draw.ellipse(
+                        [end_x - cap_radius, end_y - cap_radius,
+                         end_x + cap_radius, end_y + cap_radius],
+                        fill=end_rgba
+                    )
             else:
                 color_rgba = hex_to_rgba(color, color_opacity)
                 draw.arc(
@@ -2164,6 +2219,27 @@ class ThemeEditorWindow(QMainWindow):
                     start=135, end=end_angle,
                     fill=color_rgba, width=arc_width
                 )
+                # Draw rounded end caps for solid color arc
+                if rounded_ends:
+                    import math
+                    cap_radius = arc_width // 2
+                    radial_offset = -7
+                    # Start cap
+                    start_x = x + (arc_radius + radial_offset) * math.cos(math.radians(135))
+                    start_y = y + (arc_radius + radial_offset) * math.sin(math.radians(135))
+                    draw.ellipse(
+                        [start_x - cap_radius, start_y - cap_radius,
+                         start_x + cap_radius, start_y + cap_radius],
+                        fill=color_rgba
+                    )
+                    # End cap
+                    end_x = x + (arc_radius + radial_offset) * math.cos(math.radians(end_angle))
+                    end_y = y + (arc_radius + radial_offset) * math.sin(math.radians(end_angle))
+                    draw.ellipse(
+                        [end_x - cap_radius, end_y - cap_radius,
+                         end_x + cap_radius, end_y + cap_radius],
+                        fill=color_rgba
+                    )
 
         # Draw value text
         value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
@@ -2198,7 +2274,8 @@ class ThemeEditorWindow(QMainWindow):
     def render_bar_gauge_rgba(self, img, element, font, color_opacity, bg_opacity):
         """Render bar gauge with opacity support."""
         x, y = element.x, element.y
-        value = element.value
+        # Use animated value if available (from canvas animation), otherwise use raw value
+        value = getattr(element, '_animated_display_value', element.value)
         width, height = element.width, element.height
 
         # Check for gradient fill
@@ -2490,7 +2567,7 @@ class ThemeEditorWindow(QMainWindow):
                 fill=element.background_color, width=2
             )
 
-        sweep = int(270 * min(value, 100) / 100)
+        sweep = 270 * min(value, 100) / 100
         end_angle = 135 + sweep
 
         for i in range(arc_width):
