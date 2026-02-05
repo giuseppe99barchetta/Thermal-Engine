@@ -20,7 +20,9 @@ class ThemeElement:
         self.background_color = kwargs.get("background_color", "#1a1a2e")
         self.background_color_opacity = kwargs.get("background_color_opacity", 100)  # 0-100
         self.use_custom_text_color = kwargs.get("use_custom_text_color", False)
-        self.text_color = kwargs.get("text_color", self.color)  # Defaults to element color
+        # Default text color: white for gauges, element color for others
+        default_text_color = "#ffffff" if element_type in ["circle_gauge", "bar_gauge"] else self.color
+        self.text_color = kwargs.get("text_color", default_text_color)
         self.text_color_opacity = kwargs.get("text_color_opacity", 100)  # 0-100
         self.text = kwargs.get("text", "Label")
         self.font_size = kwargs.get("font_size", 32)
@@ -48,12 +50,24 @@ class ThemeElement:
         self.gradient_fill = kwargs.get("gradient_fill", False)
         self.gradient_stops = kwargs.get("gradient_stops", [(0.0, "#00ff96"), (1.0, "#ff4444")])  # Gradient color stops
         self.bar_text_mode = kwargs.get("bar_text_mode", "full")  # "full", "value_only", "none"
-        self.bar_text_position = kwargs.get("bar_text_position", "inside")  # "inside", "left"
+        # Default text position: "top" for bar gauge, "inside" for others
+        default_bar_text_position = "top" if element_type == "bar_gauge" else "inside"
+        self.bar_text_position = kwargs.get("bar_text_position", default_bar_text_position)
 
         # Gauge options
-        self.auto_color_change = kwargs.get("auto_color_change", True)  # Change color at thresholds
+        self.auto_color_change = kwargs.get("auto_color_change", False)  # Change color at thresholds
         self.animate_gauge = kwargs.get("animate_gauge", False)  # Animate value changes
         self.animation_speed = kwargs.get("animation_speed", 0.05)  # Animation interpolation speed (0.02-0.15, lower=smoother)
+        self.gauge_rounded_ends = kwargs.get("gauge_rounded_ends", False)  # Circle gauge: pill-shaped arc ends
+
+        # Gauge label options (separate from value text)
+        # Default label size: 24 for gauges, 16 for others
+        default_label_font_size = 24 if element_type in ["circle_gauge", "bar_gauge"] else 16
+        self.label_font_size = kwargs.get("label_font_size", default_label_font_size)
+        self.label_font_family = kwargs.get("label_font_family", "Arial")
+        self.label_font_bold = kwargs.get("label_font_bold", False)
+        self.label_font_italic = kwargs.get("label_font_italic", False)
+        self.label_text_color = kwargs.get("label_text_color", self.color)  # Label text color
 
         # GIF options
         self.gif_path = kwargs.get("gif_path", "")
@@ -125,6 +139,12 @@ class ThemeElement:
             "auto_color_change": self.auto_color_change,
             "animate_gauge": self.animate_gauge,
             "animation_speed": self.animation_speed,
+            "gauge_rounded_ends": self.gauge_rounded_ends,
+            "label_font_size": self.label_font_size,
+            "label_font_family": self.label_font_family,
+            "label_font_bold": self.label_font_bold,
+            "label_font_italic": self.label_font_italic,
+            "label_text_color": self.label_text_color,
             "gif_path": self.gif_path,
             "scale_mode": self.scale_mode,
             "time_format": self.time_format,

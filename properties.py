@@ -7,10 +7,28 @@ from PySide6.QtWidgets import (
     QSpinBox, QDoubleSpinBox, QColorDialog, QFileDialog, QComboBox,
     QFormLayout, QScrollArea, QFrame, QCheckBox, QPushButton,
     QStyledItemDelegate, QStyle, QSlider, QDialog, QDialogButtonBox,
-    QSizePolicy
+    QSizePolicy, QGroupBox
 )
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint
 from PySide6.QtGui import QColor, QFont, QPixmap, QFontDatabase, QPainter, QLinearGradient, QPen, QBrush, QIcon
+
+
+class NoScrollComboBox(QComboBox):
+    """ComboBox that ignores wheel events to allow parent scrolling."""
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoScrollSpinBox(QSpinBox):
+    """SpinBox that ignores wheel events to allow parent scrolling."""
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoScrollDoubleSpinBox(QDoubleSpinBox):
+    """DoubleSpinBox that ignores wheel events to allow parent scrolling."""
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 def create_alignment_icon(align_type, size=20):
@@ -718,7 +736,7 @@ class PropertiesPanel(QWidget):
         position_layout = QHBoxLayout()
         position_layout.setSpacing(8)
 
-        self.x_spin = QSpinBox()
+        self.x_spin = NoScrollSpinBox()
         self.x_spin.setRange(0, DISPLAY_WIDTH)
         self.x_spin.valueChanged.connect(self.on_property_changed)
         x_container = QHBoxLayout()
@@ -728,7 +746,7 @@ class PropertiesPanel(QWidget):
         x_container.addWidget(self.x_spin)
         position_layout.addLayout(x_container)
 
-        self.y_spin = QSpinBox()
+        self.y_spin = NoScrollSpinBox()
         self.y_spin.setRange(0, DISPLAY_HEIGHT)
         self.y_spin.valueChanged.connect(self.on_property_changed)
         y_container = QHBoxLayout()
@@ -747,7 +765,7 @@ class PropertiesPanel(QWidget):
         size_layout = QHBoxLayout()
         size_layout.setSpacing(8)
 
-        self.width_spin = QSpinBox()
+        self.width_spin = NoScrollSpinBox()
         self.width_spin.setRange(10, DISPLAY_WIDTH)
         self.width_spin.valueChanged.connect(self.on_property_changed)
         w_container = QHBoxLayout()
@@ -757,7 +775,7 @@ class PropertiesPanel(QWidget):
         w_container.addWidget(self.width_spin)
         size_layout.addLayout(w_container)
 
-        self.height_spin = QSpinBox()
+        self.height_spin = NoScrollSpinBox()
         self.height_spin.setRange(10, DISPLAY_HEIGHT)
         self.height_spin.valueChanged.connect(self.on_property_changed)
         h_container = QHBoxLayout()
@@ -772,7 +790,7 @@ class PropertiesPanel(QWidget):
         self.size_label = self.create_label("Size:")
         transform_layout.addRow(self.size_label, self.size_widget)
 
-        self.radius_spin = QSpinBox()
+        self.radius_spin = NoScrollSpinBox()
         self.radius_spin.setRange(20, 300)
         self.radius_spin.valueChanged.connect(self.on_property_changed)
         self.radius_label = self.create_label("Radius:")
@@ -796,6 +814,12 @@ class PropertiesPanel(QWidget):
         self.color_label = self.create_label("Color:")
         colors_layout.addRow(self.color_label, self.color_btn)
 
+        # Gradient preview widget (shown when gradient fill is enabled, above BG color)
+        self.gradient_preview = GradientPreviewWidget()
+        self.gradient_preview.clicked.connect(self.edit_gradient)
+        self.gradient_preview_label = self.create_label("Gradient:")
+        colors_layout.addRow(self.gradient_preview_label, self.gradient_preview)
+
         # Background color
         self.bg_color_btn = QPushButton()
         self.bg_color_btn.setFixedHeight(26)
@@ -803,38 +827,17 @@ class PropertiesPanel(QWidget):
         self.bg_color_label = self.create_label("BG Color:")
         colors_layout.addRow(self.bg_color_label, self.bg_color_btn)
 
-        # Custom text color checkbox
-        self.custom_text_color_check = QCheckBox("Custom Text Color")
-        self.custom_text_color_check.stateChanged.connect(self.on_custom_text_color_changed)
-        self.custom_text_color_label = QLabel("")
-        colors_layout.addRow(self.custom_text_color_label, self.custom_text_color_check)
-
-        # Text color (shown when custom text color is enabled)
-        self.text_color_btn = QPushButton()
-        self.text_color_btn.setFixedHeight(26)
-        self.text_color_btn.clicked.connect(self.choose_text_color)
-        self.text_color_label = self.create_label("Text Color:")
-        colors_layout.addRow(self.text_color_label, self.text_color_btn)
-
-        # Gradient fill checkbox (for gauges)
+        # Gradient fill checkbox (for gauges) - at bottom of pane
         self.gradient_fill_check = QCheckBox("Use Gradient Fill")
         self.gradient_fill_check.stateChanged.connect(self.on_gradient_fill_changed)
         self.gradient_fill_label = QLabel("")
         colors_layout.addRow(self.gradient_fill_label, self.gradient_fill_check)
 
-        # Gradient preview widget (shown when gradient fill is enabled)
-        self.gradient_preview = GradientPreviewWidget()
-        self.gradient_preview.clicked.connect(self.edit_gradient)
-        self.gradient_preview_label = self.create_label("Gradient:")
-        colors_layout.addRow(self.gradient_preview_label, self.gradient_preview)
-
         self.section_fields['colors'] = [
             (self.color_label, self.color_btn),
+            (self.gradient_preview_label, self.gradient_preview),
             (self.bg_color_label, self.bg_color_btn),
-            (self.custom_text_color_label, self.custom_text_color_check),
-            (self.text_color_label, self.text_color_btn),
-            (self.gradient_fill_label, self.gradient_fill_check),
-            (self.gradient_preview_label, self.gradient_preview)
+            (self.gradient_fill_label, self.gradient_fill_check)
         ]
 
         # === APPEARANCE SECTION ===
@@ -842,7 +845,7 @@ class PropertiesPanel(QWidget):
         self.section_headers['appearance'] = appearance_frame
         self.props_layout.addWidget(appearance_frame)
 
-        self.border_radius_spin = QSpinBox()
+        self.border_radius_spin = NoScrollSpinBox()
         self.border_radius_spin.setRange(0, 500)
         self.border_radius_spin.valueChanged.connect(self.on_property_changed)
         self.border_radius_label = self.create_label("Border Radius:")
@@ -854,14 +857,14 @@ class PropertiesPanel(QWidget):
         self.glass_effect_label = self.create_label("Glass Effect:")
         appearance_layout.addRow(self.glass_effect_label, self.glass_effect_check)
 
-        self.glass_blur_spin = QSpinBox()
+        self.glass_blur_spin = NoScrollSpinBox()
         self.glass_blur_spin.setRange(1, 50)
         self.glass_blur_spin.setValue(10)
         self.glass_blur_spin.valueChanged.connect(self.on_property_changed)
         self.glass_blur_label = self.create_label("Glass Blur:")
         appearance_layout.addRow(self.glass_blur_label, self.glass_blur_spin)
 
-        self.glass_opacity_spin = QSpinBox()
+        self.glass_opacity_spin = NoScrollSpinBox()
         self.glass_opacity_spin.setRange(0, 100)
         self.glass_opacity_spin.setValue(50)
         self.glass_opacity_spin.setSuffix("%")
@@ -881,6 +884,27 @@ class PropertiesPanel(QWidget):
         self.section_headers['text'] = text_frame
         self.props_layout.addWidget(text_frame)
 
+        # === BAR GAUGE TEXT OPTIONS (at top of text section) ===
+        self.bar_text_mode_combo = NoScrollComboBox()
+        self.bar_text_mode_combo.addItem("Label + Value", "full")
+        self.bar_text_mode_combo.addItem("Value Only", "value_only")
+        self.bar_text_mode_combo.addItem("Label Only", "label_only")
+        self.bar_text_mode_combo.addItem("Hidden", "none")
+        self.bar_text_mode_combo.currentIndexChanged.connect(self.on_property_changed)
+        self.bar_text_mode_label = self.create_label("Display:")
+        text_layout.addRow(self.bar_text_mode_label, self.bar_text_mode_combo)
+
+        self.bar_text_position_combo = NoScrollComboBox()
+        self.bar_text_position_combo.addItem("Inside Bar", "inside")
+        self.bar_text_position_combo.addItem("Left of Bar", "left")
+        self.bar_text_position_combo.addItem("Right of Bar", "right")
+        self.bar_text_position_combo.addItem("Top of Bar", "top")
+        self.bar_text_position_combo.addItem("Bottom of Bar", "bottom")
+        self.bar_text_position_combo.currentIndexChanged.connect(self.on_property_changed)
+        self.bar_text_position_label = self.create_label("Position:")
+        text_layout.addRow(self.bar_text_position_label, self.bar_text_position_combo)
+
+        # === STANDALONE TEXT INPUT (for non-circle-gauge elements) ===
         self.text_edit = QLineEdit()
         self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.text_edit.setMinimumWidth(50)
@@ -888,21 +912,26 @@ class PropertiesPanel(QWidget):
         self.text_label = self.create_label("Text:")
         text_layout.addRow(self.text_label, self.text_edit)
 
-        self.font_family_combo = QComboBox()
+        # === VALUE FONT SUB-SECTION (for circle gauge value display) ===
+        self.value_text_group = QGroupBox("Value")
+        value_text_layout = QFormLayout(self.value_text_group)
+        value_text_layout.setContentsMargins(8, 8, 8, 8)
+
+        self.font_family_combo = NoScrollComboBox()
         self.font_family_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.font_family_combo.setMinimumWidth(50)
         self.font_family_combo.setItemDelegate(FontPreviewDelegate(self.font_family_combo))
         self.font_family_combo.setMaxVisibleItems(15)
-        self.load_system_fonts()
+        # load_system_fonts() called after label_font_family_combo is created
         self.font_family_combo.currentTextChanged.connect(self.on_property_changed)
         self.font_family_label = self.create_label("Font:")
-        text_layout.addRow(self.font_family_label, self.font_family_combo)
+        value_text_layout.addRow(self.font_family_label, self.font_family_combo)
 
-        self.font_size_spin = QSpinBox()
+        self.font_size_spin = NoScrollSpinBox()
         self.font_size_spin.setRange(8, 200)
         self.font_size_spin.valueChanged.connect(self.on_property_changed)
-        self.font_size_label = self.create_label("Font Size:")
-        text_layout.addRow(self.font_size_label, self.font_size_spin)
+        self.font_size_label = self.create_label("Size:")
+        value_text_layout.addRow(self.font_size_label, self.font_size_spin)
 
         font_style_layout = QHBoxLayout()
         self.bold_checkbox = QPushButton("B")
@@ -923,8 +952,76 @@ class PropertiesPanel(QWidget):
         self.font_style_widget = QWidget()
         self.font_style_widget.setLayout(font_style_layout)
         self.font_style_label = self.create_label("Style:")
-        text_layout.addRow(self.font_style_label, self.font_style_widget)
+        value_text_layout.addRow(self.font_style_label, self.font_style_widget)
 
+        # Value text color (matching Colors pane button style)
+        self.value_text_color_btn = QPushButton()
+        self.value_text_color_btn.setFixedHeight(26)
+        self.value_text_color_btn.clicked.connect(self.choose_value_text_color)
+        self.value_text_color_label = self.create_label("Color:")
+        value_text_layout.addRow(self.value_text_color_label, self.value_text_color_btn)
+
+        text_layout.addRow(self.value_text_group)
+
+        # === LABEL SUB-SECTION (for circle gauge label) ===
+        self.label_text_group = QGroupBox("Label")
+        label_text_layout = QFormLayout(self.label_text_group)
+        label_text_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Label text input (inside the Label group for circle gauge)
+        self.label_text_edit = QLineEdit()
+        self.label_text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.label_text_edit.setMinimumWidth(50)
+        self.label_text_edit.textChanged.connect(self.on_property_changed)
+        self.label_text_input_label = self.create_label("Text:")
+        label_text_layout.addRow(self.label_text_input_label, self.label_text_edit)
+
+        self.label_font_family_combo = NoScrollComboBox()
+        self.label_font_family_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.label_font_family_combo.setMinimumWidth(50)
+        self.label_font_family_combo.setItemDelegate(FontPreviewDelegate(self.label_font_family_combo))
+        self.label_font_family_combo.setMaxVisibleItems(15)
+        # Now load fonts into both combos
+        self.load_system_fonts()
+        self.label_font_family_combo.currentTextChanged.connect(self.on_property_changed)
+        self.label_font_family_label = self.create_label("Font:")
+        label_text_layout.addRow(self.label_font_family_label, self.label_font_family_combo)
+
+        self.label_font_size_spin = NoScrollSpinBox()
+        self.label_font_size_spin.setRange(8, 200)
+        self.label_font_size_spin.valueChanged.connect(self.on_property_changed)
+        self.label_font_size_label = self.create_label("Size:")
+        label_text_layout.addRow(self.label_font_size_label, self.label_font_size_spin)
+
+        label_font_style_layout = QHBoxLayout()
+        self.label_bold_checkbox = QPushButton("B")
+        self.label_bold_checkbox.setCheckable(True)
+        self.label_bold_checkbox.setFixedWidth(30)
+        self.label_bold_checkbox.setStyleSheet("font-weight: bold;")
+        self.label_bold_checkbox.clicked.connect(self.on_property_changed)
+        self.label_italic_checkbox = QPushButton("I")
+        self.label_italic_checkbox.setCheckable(True)
+        self.label_italic_checkbox.setFixedWidth(30)
+        self.label_italic_checkbox.setStyleSheet("font-style: italic;")
+        self.label_italic_checkbox.clicked.connect(self.on_property_changed)
+        label_font_style_layout.addWidget(self.label_bold_checkbox)
+        label_font_style_layout.addWidget(self.label_italic_checkbox)
+        label_font_style_layout.addStretch()
+        self.label_font_style_widget = QWidget()
+        self.label_font_style_widget.setLayout(label_font_style_layout)
+        self.label_font_style_label = self.create_label("Style:")
+        label_text_layout.addRow(self.label_font_style_label, self.label_font_style_widget)
+
+        # Label text color (matching Colors pane button style)
+        self.label_text_color_btn = QPushButton()
+        self.label_text_color_btn.setFixedHeight(26)
+        self.label_text_color_btn.clicked.connect(self.choose_label_text_color)
+        self.label_text_color_label = self.create_label("Color:")
+        label_text_layout.addRow(self.label_text_color_label, self.label_text_color_btn)
+
+        text_layout.addRow(self.label_text_group)
+
+        # === OTHER TEXT OPTIONS ===
         align_layout = QHBoxLayout()
         self.align_left_btn = QPushButton()
         self.align_left_btn.setIcon(create_alignment_icon('text_left'))
@@ -962,10 +1059,11 @@ class PropertiesPanel(QWidget):
         text_layout.addRow(self.clip_label, self.clip_checkbox)
 
         self.section_fields['text'] = [
+            (self.bar_text_mode_label, self.bar_text_mode_combo),
+            (self.bar_text_position_label, self.bar_text_position_combo),
             (self.text_label, self.text_edit),
-            (self.font_family_label, self.font_family_combo),
-            (self.font_size_label, self.font_size_spin),
-            (self.font_style_label, self.font_style_widget),
+            (self.value_text_group, None),
+            (self.label_text_group, None),
             (self.align_label, self.align_widget),
             (self.clip_label, self.clip_checkbox)
         ]
@@ -975,7 +1073,7 @@ class PropertiesPanel(QWidget):
         self.section_headers['data'] = data_frame
         self.props_layout.addWidget(data_frame)
 
-        self.source_combo = QComboBox()
+        self.source_combo = NoScrollComboBox()
         self.source_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.source_combo.setMinimumWidth(50)
         self.setup_source_combo()
@@ -983,7 +1081,7 @@ class PropertiesPanel(QWidget):
         self.source_label = self.create_label("Source:")
         data_layout.addRow(self.source_label, self.source_combo)
 
-        self.value_spin = QDoubleSpinBox()
+        self.value_spin = NoScrollDoubleSpinBox()
         self.value_spin.setRange(0, 100)
         self.value_spin.valueChanged.connect(self.on_property_changed)
         self.value_label = self.create_label("Preview Value:")
@@ -1042,7 +1140,7 @@ class PropertiesPanel(QWidget):
         self.gif_label = self.create_label("GIF:")
         media_layout.addRow(self.gif_label, self.gif_widget)
 
-        self.scale_mode_combo = QComboBox()
+        self.scale_mode_combo = NoScrollComboBox()
         self.scale_mode_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.scale_mode_combo.setMinimumWidth(50)
         self.scale_mode_combo.addItem("Fit (maintain ratio)", "fit")
@@ -1080,7 +1178,7 @@ class PropertiesPanel(QWidget):
         self.show_gradient_label = QLabel("")
         options_layout.addRow(self.show_gradient_label, self.show_gradient_check)
 
-        self.line_thickness_spin = QSpinBox()
+        self.line_thickness_spin = NoScrollSpinBox()
         self.line_thickness_spin.setRange(1, 10)
         self.line_thickness_spin.setValue(2)
         self.line_thickness_spin.valueChanged.connect(self.on_property_changed)
@@ -1099,22 +1197,6 @@ class PropertiesPanel(QWidget):
         self.rounded_corners_label = QLabel("")
         options_layout.addRow(self.rounded_corners_label, self.rounded_corners_check)
 
-        # Bar gauge text options
-        self.bar_text_mode_combo = QComboBox()
-        self.bar_text_mode_combo.addItem("Label + Value", "full")
-        self.bar_text_mode_combo.addItem("Value Only", "value_only")
-        self.bar_text_mode_combo.addItem("Hidden", "none")
-        self.bar_text_mode_combo.currentIndexChanged.connect(self.on_property_changed)
-        self.bar_text_mode_label = self.create_label("Text:")
-        options_layout.addRow(self.bar_text_mode_label, self.bar_text_mode_combo)
-
-        self.bar_text_position_combo = QComboBox()
-        self.bar_text_position_combo.addItem("Inside Bar", "inside")
-        self.bar_text_position_combo.addItem("Left of Bar", "left")
-        self.bar_text_position_combo.currentIndexChanged.connect(self.on_property_changed)
-        self.bar_text_position_label = self.create_label("Position:")
-        options_layout.addRow(self.bar_text_position_label, self.bar_text_position_combo)
-
         # Temperature display option
         self.temp_hide_unit_check = QCheckBox("Hide unit letter (show ° only)")
         self.temp_hide_unit_check.setToolTip("Show 45° instead of 45°C for temperature")
@@ -1129,14 +1211,20 @@ class PropertiesPanel(QWidget):
         self.auto_color_change_label = QLabel("")
         options_layout.addRow(self.auto_color_change_label, self.auto_color_change_check)
 
-        self.animate_gauge_check = QCheckBox("Animate Value Changes")
-        self.animate_gauge_check.setToolTip("Smoothly animate the gauge when values change")
+        self.animate_gauge_check = QCheckBox("Smooth Transitions")
+        self.animate_gauge_check.setToolTip("Smoothly animate gauge transitions when values change")
         self.animate_gauge_check.stateChanged.connect(self.on_property_changed)
         self.animate_gauge_label = QLabel("")
         options_layout.addRow(self.animate_gauge_label, self.animate_gauge_check)
 
+        self.gauge_rounded_ends_check = QCheckBox("Rounded Arc Ends")
+        self.gauge_rounded_ends_check.setToolTip("Draw pill-shaped rounded ends on the gauge arc")
+        self.gauge_rounded_ends_check.stateChanged.connect(self.on_property_changed)
+        self.gauge_rounded_ends_label = QLabel("")
+        options_layout.addRow(self.gauge_rounded_ends_label, self.gauge_rounded_ends_check)
+
         # Digital clock time format options
-        self.time_format_combo = QComboBox()
+        self.time_format_combo = NoScrollComboBox()
         self.time_format_combo.addItem("24-Hour (Military)", "24h")
         self.time_format_combo.addItem("12-Hour (Standard)", "12h")
         self.time_format_combo.currentIndexChanged.connect(self.on_property_changed)
@@ -1169,7 +1257,7 @@ class PropertiesPanel(QWidget):
         self.show_clock_border_label = QLabel("")
         options_layout.addRow(self.show_clock_border_label, self.show_clock_border_check)
 
-        self.clock_face_style_combo = QComboBox()
+        self.clock_face_style_combo = NoScrollComboBox()
         self.clock_face_style_combo.addItem("Numbers (1-12)", "numbers")
         self.clock_face_style_combo.addItem("Tick Marks", "ticks")
         self.clock_face_style_combo.addItem("None", "none")
@@ -1189,11 +1277,10 @@ class PropertiesPanel(QWidget):
             (self.line_thickness_label, self.line_thickness_spin),
             (self.smooth_label, self.smooth_check),
             (self.rounded_corners_label, self.rounded_corners_check),
-            (self.bar_text_mode_label, self.bar_text_mode_combo),
-            (self.bar_text_position_label, self.bar_text_position_combo),
             (self.temp_hide_unit_label, self.temp_hide_unit_check),
             (self.auto_color_change_label, self.auto_color_change_check),
             (self.animate_gauge_label, self.animate_gauge_check),
+            (self.gauge_rounded_ends_label, self.gauge_rounded_ends_check),
             (self.time_format_label, self.time_format_combo),
             (self.show_am_pm_label, self.show_am_pm_check),
             (self.show_seconds_label, self.show_seconds_check),
@@ -1252,7 +1339,7 @@ class PropertiesPanel(QWidget):
         multi_position_layout = QHBoxLayout()
         multi_position_layout.setSpacing(8)
 
-        self.multi_x_spin = QSpinBox()
+        self.multi_x_spin = NoScrollSpinBox()
         self.multi_x_spin.setRange(-1000, DISPLAY_WIDTH + 1000)
         self.multi_x_spin.valueChanged.connect(self.on_multi_transform_changed)
         multi_x_container = QHBoxLayout()
@@ -1262,7 +1349,7 @@ class PropertiesPanel(QWidget):
         multi_x_container.addWidget(self.multi_x_spin)
         multi_position_layout.addLayout(multi_x_container)
 
-        self.multi_y_spin = QSpinBox()
+        self.multi_y_spin = NoScrollSpinBox()
         self.multi_y_spin.setRange(-1000, DISPLAY_HEIGHT + 1000)
         self.multi_y_spin.valueChanged.connect(self.on_multi_transform_changed)
         multi_y_container = QHBoxLayout()
@@ -1280,7 +1367,7 @@ class PropertiesPanel(QWidget):
         multi_size_layout = QHBoxLayout()
         multi_size_layout.setSpacing(8)
 
-        self.multi_w_spin = QSpinBox()
+        self.multi_w_spin = NoScrollSpinBox()
         self.multi_w_spin.setRange(1, DISPLAY_WIDTH * 2)
         self.multi_w_spin.valueChanged.connect(self.on_multi_size_changed)
         multi_w_container = QHBoxLayout()
@@ -1290,7 +1377,7 @@ class PropertiesPanel(QWidget):
         multi_w_container.addWidget(self.multi_w_spin)
         multi_size_layout.addLayout(multi_w_container)
 
-        self.multi_h_spin = QSpinBox()
+        self.multi_h_spin = NoScrollSpinBox()
         self.multi_h_spin.setRange(1, DISPLAY_HEIGHT * 2)
         self.multi_h_spin.valueChanged.connect(self.on_multi_size_changed)
         multi_h_container = QHBoxLayout()
@@ -1408,13 +1495,16 @@ class PropertiesPanel(QWidget):
         for font in common_fonts:
             if font in families:
                 self.font_family_combo.addItem(font)
+                self.label_font_family_combo.addItem(font)
                 added.add(font)
 
         self.font_family_combo.insertSeparator(len(added))
+        self.label_font_family_combo.insertSeparator(len(added))
 
         for family in sorted(families):
             if family not in added and not family.startswith("@"):
                 self.font_family_combo.addItem(family)
+                self.label_font_family_combo.addItem(family)
 
     def setup_source_combo(self):
         """Setup the source combo box with categorized items."""
@@ -1499,21 +1589,24 @@ class PropertiesPanel(QWidget):
         field_visibility = {
             "circle_gauge": {
                 "width": False, "height": False, "radius": True,
-                "color": True, "bg_color": True, "text": True,
-                "font": True, "font_size": True, "font_style": True,
+                "color": True, "bg_color": True, "text": False,
+                "font": False, "font_size": False, "font_style": False,
+                "value_text_group": True, "label_text_group": True,
                 "align": False, "clip": False, "source": True, "value": True, "image": False,
-                "auto_color_change": True, "animate_gauge": True
+                "auto_color_change": True, "animate_gauge": True, "gauge_rounded_ends": True
             },
             "text": {
                 "width": True, "height": True, "radius": False,
                 "color": True, "bg_color": False, "text": True,
-                "font": True, "font_size": True, "font_style": True,
+                "font": False, "font_size": False, "font_style": False,
+                "value_text_group": True, "label_text_group": False,
                 "align": True, "clip": True, "source": True, "value": True, "image": False
             },
             "clock": {
                 "width": True, "height": True, "radius": False,
                 "color": True, "bg_color": False, "text": False,
-                "font": True, "font_size": True, "font_style": True,
+                "font": False, "font_size": False, "font_style": False,
+                "value_text_group": True, "label_text_group": False,
                 "align": True, "clip": True, "source": False, "value": False, "image": False,
                 "time_format": True, "show_am_pm": True, "show_seconds": True, "show_leading_zero": True
             },
@@ -1540,7 +1633,8 @@ class PropertiesPanel(QWidget):
             "line_chart": {
                 "width": True, "height": True, "radius": False,
                 "color": True, "bg_color": True, "text": True,
-                "font": False, "font_size": True, "font_style": False,
+                "font": False, "font_size": False, "font_style": False,
+                "value_text_group": True, "label_text_group": False,
                 "align": False, "clip": False, "source": True, "value": True, "image": False,
                 "show_background": True, "show_label": True, "show_gradient": True,
                 "rounded_corners": False, "gradient_fill": False,
@@ -1548,8 +1642,9 @@ class PropertiesPanel(QWidget):
             },
             "bar_gauge": {
                 "width": True, "height": True, "radius": False,
-                "color": True, "bg_color": True, "text": True,
-                "font": True, "font_size": True, "font_style": True,
+                "color": True, "bg_color": True, "text": False,
+                "font": False, "font_size": False, "font_style": False,
+                "value_text_group": True, "label_text_group": True,
                 "align": False, "clip": False, "source": True, "value": True, "image": False,
                 "show_background": False, "show_label": False, "show_gradient": False,
                 "rounded_corners": True, "gradient_fill": True,
@@ -1559,7 +1654,8 @@ class PropertiesPanel(QWidget):
             "analog_clock": {
                 "width": False, "height": False, "radius": True,
                 "color": True, "bg_color": True, "text": False,
-                "font": True, "font_size": True, "font_style": False,
+                "font": False, "font_size": False, "font_style": False,
+                "value_text_group": True, "label_text_group": False,
                 "align": False, "clip": False, "source": False, "value": False, "image": False,
                 "show_seconds_hand": True, "show_clock_border": True,
                 "clock_face_style": True, "smooth_animation": True
@@ -1593,14 +1689,13 @@ class PropertiesPanel(QWidget):
         # Colors section
         color_visible = visibility.get("color", True)
         bg_color_visible = visibility.get("bg_color", False)
-        # Show custom text color option for elements that have text AND a separate element color
-        # (not for pure text elements where color IS the text color)
-        has_text = visibility.get("text", False) or visibility.get("font", False)
-        show_custom_text_color = has_text and element_type not in ["text", "clock"]
 
         # Gradient fill option is only for bar_gauge and circle_gauge
         gradient_fill_visible = element_type in ["bar_gauge", "circle_gauge"]
         use_gradient = gradient_fill_visible and self.gradient_fill_check.isChecked()
+
+        # Batch visibility updates to prevent flicker
+        self.setUpdatesEnabled(False)
 
         # Show color button only when not using gradient fill
         self.color_label.setVisible(color_visible and not use_gradient)
@@ -1614,14 +1709,7 @@ class PropertiesPanel(QWidget):
         self.gradient_preview_label.setVisible(use_gradient)
         self.gradient_preview.setVisible(use_gradient)
 
-        # Custom text color option (only for elements with both element color and text)
-        self.custom_text_color_label.setVisible(show_custom_text_color)
-        self.custom_text_color_check.setVisible(show_custom_text_color)
-
-        # Text color button visibility depends on checkbox state
-        use_custom = self.custom_text_color_check.isChecked()
-        self.text_color_label.setVisible(show_custom_text_color and use_custom)
-        self.text_color_btn.setVisible(show_custom_text_color and use_custom)
+        self.setUpdatesEnabled(True)
 
         section_visible['colors'] = color_visible or bg_color_visible or gradient_fill_visible
 
@@ -1645,24 +1733,48 @@ class PropertiesPanel(QWidget):
         font_visible = visibility.get("font", True)
         font_size_visible = visibility.get("font_size", True)
         font_style_visible = visibility.get("font_style", True)
+        value_text_group_visible = visibility.get("value_text_group", False)
+        label_text_group_visible = visibility.get("label_text_group", False)
         align_visible = visibility.get("align", False)
         clip_visible = visibility.get("clip", False)
+        bar_text_mode_visible = visibility.get("bar_text_mode", False)
+        bar_text_position_visible = visibility.get("bar_text_position", False)
+
+        # Bar gauge text display/position options (at top of text section)
+        self.bar_text_mode_label.setVisible(bar_text_mode_visible)
+        self.bar_text_mode_combo.setVisible(bar_text_mode_visible)
+        self.bar_text_position_label.setVisible(bar_text_position_visible)
+        self.bar_text_position_combo.setVisible(bar_text_position_visible)
 
         self.text_label.setVisible(text_visible)
         self.text_edit.setVisible(text_visible)
-        self.font_family_label.setVisible(font_visible)
-        self.font_family_combo.setVisible(font_visible)
-        self.font_size_label.setVisible(font_size_visible)
-        self.font_size_spin.setVisible(font_size_visible)
-        self.font_style_label.setVisible(font_style_visible)
-        self.font_style_widget.setVisible(font_style_visible)
+        self.value_text_group.setVisible(value_text_group_visible)
+        self.label_text_group.setVisible(label_text_group_visible)
+
+        # Show all label options for both circle_gauge and bar_gauge
+        self.label_text_input_label.setVisible(label_text_group_visible)
+        self.label_text_edit.setVisible(label_text_group_visible)
+        self.label_font_family_label.setVisible(label_text_group_visible)
+        self.label_font_family_combo.setVisible(label_text_group_visible)
+
+        # Show font controls when standalone OR inside value_text_group
+        show_standalone_font = font_visible and not value_text_group_visible
+        show_font_controls = show_standalone_font or value_text_group_visible
+        self.font_family_label.setVisible(show_font_controls)
+        self.font_family_combo.setVisible(show_font_controls)
+        self.font_size_label.setVisible(show_font_controls)
+        self.font_size_spin.setVisible(show_font_controls)
+        self.font_style_label.setVisible(show_font_controls)
+        self.font_style_widget.setVisible(show_font_controls)
         self.align_label.setVisible(align_visible)
         self.align_widget.setVisible(align_visible)
         self.clip_label.setVisible(clip_visible)
         self.clip_checkbox.setVisible(clip_visible)
 
         section_visible['text'] = (text_visible or font_visible or font_size_visible or
-                                   font_style_visible or align_visible or clip_visible)
+                                   font_style_visible or value_text_group_visible or
+                                   label_text_group_visible or align_visible or clip_visible or
+                                   bar_text_mode_visible or bar_text_position_visible)
 
         # Data section
         source_visible = visibility.get("source", False)
@@ -1701,10 +1813,9 @@ class PropertiesPanel(QWidget):
         line_thickness_visible = visibility.get("line_thickness", False)
         smooth_visible = visibility.get("smooth", False)
         rounded_corners_visible = visibility.get("rounded_corners", False)
-        bar_text_mode_visible = visibility.get("bar_text_mode", False)
-        bar_text_position_visible = visibility.get("bar_text_position", False)
         auto_color_change_visible = visibility.get("auto_color_change", False)
         animate_gauge_visible = visibility.get("animate_gauge", False)
+        gauge_rounded_ends_visible = visibility.get("gauge_rounded_ends", False)
         time_format_visible = visibility.get("time_format", False)
         show_am_pm_visible = visibility.get("show_am_pm", False)
         show_seconds_visible = visibility.get("show_seconds", False)
@@ -1726,10 +1837,6 @@ class PropertiesPanel(QWidget):
         self.smooth_check.setVisible(smooth_visible)
         self.rounded_corners_label.setVisible(rounded_corners_visible)
         self.rounded_corners_check.setVisible(rounded_corners_visible)
-        self.bar_text_mode_label.setVisible(bar_text_mode_visible)
-        self.bar_text_mode_combo.setVisible(bar_text_mode_visible)
-        self.bar_text_position_label.setVisible(bar_text_position_visible)
-        self.bar_text_position_combo.setVisible(bar_text_position_visible)
         # Temperature hide unit option - visible only for temperature sources
         temp_sources = ["cpu_temp", "gpu_temp"]
         current_source = getattr(self.current_element, 'source', 'static') if self.current_element else 'static'
@@ -1741,6 +1848,8 @@ class PropertiesPanel(QWidget):
         self.auto_color_change_check.setVisible(auto_color_change_visible)
         self.animate_gauge_label.setVisible(animate_gauge_visible)
         self.animate_gauge_check.setVisible(animate_gauge_visible)
+        self.gauge_rounded_ends_label.setVisible(gauge_rounded_ends_visible)
+        self.gauge_rounded_ends_check.setVisible(gauge_rounded_ends_visible)
         self.time_format_label.setVisible(time_format_visible)
         self.time_format_combo.setVisible(time_format_visible)
         self.show_am_pm_label.setVisible(show_am_pm_visible)
@@ -1761,9 +1870,9 @@ class PropertiesPanel(QWidget):
         section_visible['options'] = (show_background_visible or show_label_visible or
                                       show_gradient_visible or line_thickness_visible or
                                       smooth_visible or rounded_corners_visible or
-                                      bar_text_mode_visible or bar_text_position_visible or
                                       temp_hide_unit_visible or auto_color_change_visible or
-                                      animate_gauge_visible or time_format_visible or
+                                      animate_gauge_visible or gauge_rounded_ends_visible or
+                                      time_format_visible or
                                       show_am_pm_visible or show_seconds_visible or
                                       show_leading_zero_visible or show_seconds_hand_visible or
                                       show_clock_border_visible or clock_face_style_visible or
@@ -1778,15 +1887,21 @@ class PropertiesPanel(QWidget):
         self.multi_selection_elements = []
         self.multi_selection_indices = []
 
+        # Batch visibility updates to prevent flicker
+        self.setUpdatesEnabled(False)
+
         if element is None:
             self.no_selection_container.setVisible(True)
             self.scroll_area.setVisible(False)
             self.alignment_widget.setVisible(False)
+            self.setUpdatesEnabled(True)
             return
 
         self.no_selection_container.setVisible(False)
         self.scroll_area.setVisible(True)
         self.alignment_widget.setVisible(False)
+
+        self.setUpdatesEnabled(True)
 
         self.update_visible_fields(element.type)
 
@@ -1801,6 +1916,7 @@ class PropertiesPanel(QWidget):
         self.glass_opacity_spin.blockSignals(True)
         self.radius_spin.blockSignals(True)
         self.text_edit.blockSignals(True)
+        self.label_text_edit.blockSignals(True)
         self.font_family_combo.blockSignals(True)
         self.font_size_spin.blockSignals(True)
         self.bold_checkbox.blockSignals(True)
@@ -1822,10 +1938,14 @@ class PropertiesPanel(QWidget):
         self.gradient_fill_check.blockSignals(True)
         self.auto_color_change_check.blockSignals(True)
         self.animate_gauge_check.blockSignals(True)
+        self.gauge_rounded_ends_check.blockSignals(True)
+        self.label_font_size_spin.blockSignals(True)
+        self.label_font_family_combo.blockSignals(True)
+        self.label_bold_checkbox.blockSignals(True)
+        self.label_italic_checkbox.blockSignals(True)
         self.temp_hide_unit_check.blockSignals(True)
         self.gif_path_edit.blockSignals(True)
         self.scale_mode_combo.blockSignals(True)
-        self.custom_text_color_check.blockSignals(True)
         self.bar_text_mode_combo.blockSignals(True)
         self.bar_text_position_combo.blockSignals(True)
         self.time_format_combo.blockSignals(True)
@@ -1848,6 +1968,7 @@ class PropertiesPanel(QWidget):
         self.glass_opacity_spin.setValue(getattr(element, 'glass_opacity', 50))
         self.radius_spin.setValue(element.radius)
         self.text_edit.setText(element.text)
+        self.label_text_edit.setText(element.text)  # For circle gauge label
         self.font_size_spin.setValue(element.font_size)
         self.value_spin.setValue(element.value)
         self.image_path_edit.setText(element.image_path)
@@ -1865,6 +1986,11 @@ class PropertiesPanel(QWidget):
         self.gradient_preview.set_gradient(gradient_stops)
         self.auto_color_change_check.setChecked(getattr(element, 'auto_color_change', True))
         self.animate_gauge_check.setChecked(getattr(element, 'animate_gauge', False))
+        self.gauge_rounded_ends_check.setChecked(getattr(element, 'gauge_rounded_ends', False))
+        self.label_font_size_spin.setValue(getattr(element, 'label_font_size', 16))
+        self.label_font_family_combo.setCurrentText(getattr(element, 'label_font_family', 'Arial'))
+        self.label_bold_checkbox.setChecked(getattr(element, 'label_font_bold', False))
+        self.label_italic_checkbox.setChecked(getattr(element, 'label_font_italic', False))
         self.temp_hide_unit_check.setChecked(getattr(element, 'temp_hide_unit', False))
 
         # GIF options
@@ -1919,14 +2045,11 @@ class PropertiesPanel(QWidget):
         self.color_btn.setStyleSheet(f"background-color: {element.color};")
         self.bg_color_btn.setStyleSheet(f"background-color: {element.background_color};")
 
-        # Custom text color
-        use_custom_text_color = getattr(element, 'use_custom_text_color', False)
-        self.custom_text_color_check.setChecked(use_custom_text_color)
-        text_color = getattr(element, 'text_color', element.color)
-        self.text_color_btn.setStyleSheet(f"background-color: {text_color};")
-        # Text color button visibility based on checkbox
-        self.text_color_label.setVisible(use_custom_text_color)
-        self.text_color_btn.setVisible(use_custom_text_color)
+        # Value and label text colors
+        value_text_color = getattr(element, 'text_color', element.color)
+        self.value_text_color_btn.setStyleSheet(f"background-color: {value_text_color};")
+        label_text_color = getattr(element, 'label_text_color', element.color)
+        self.label_text_color_btn.setStyleSheet(f"background-color: {label_text_color};")
 
         self.set_source_by_id(element.source)
 
@@ -1941,6 +2064,7 @@ class PropertiesPanel(QWidget):
         self.glass_opacity_spin.blockSignals(False)
         self.radius_spin.blockSignals(False)
         self.text_edit.blockSignals(False)
+        self.label_text_edit.blockSignals(False)
         self.font_family_combo.blockSignals(False)
         self.font_size_spin.blockSignals(False)
         self.bold_checkbox.blockSignals(False)
@@ -1962,10 +2086,14 @@ class PropertiesPanel(QWidget):
         self.gradient_fill_check.blockSignals(False)
         self.auto_color_change_check.blockSignals(False)
         self.animate_gauge_check.blockSignals(False)
+        self.gauge_rounded_ends_check.blockSignals(False)
+        self.label_font_size_spin.blockSignals(False)
+        self.label_font_family_combo.blockSignals(False)
+        self.label_bold_checkbox.blockSignals(False)
+        self.label_italic_checkbox.blockSignals(False)
         self.temp_hide_unit_check.blockSignals(False)
         self.gif_path_edit.blockSignals(False)
         self.scale_mode_combo.blockSignals(False)
-        self.custom_text_color_check.blockSignals(False)
         self.bar_text_mode_combo.blockSignals(False)
         self.bar_text_position_combo.blockSignals(False)
         self.time_format_combo.blockSignals(False)
@@ -2005,11 +2133,12 @@ class PropertiesPanel(QWidget):
         # Colors
         self.color_btn.setEnabled(enabled)
         self.bg_color_btn.setEnabled(enabled)
-        self.custom_text_color_check.setEnabled(enabled)
-        self.text_color_btn.setEnabled(enabled)
+        self.value_text_color_btn.setEnabled(enabled)
+        self.label_text_color_btn.setEnabled(enabled)
 
         # Text properties
         self.text_edit.setEnabled(enabled)
+        self.label_text_edit.setEnabled(enabled)
         self.font_family_combo.setEnabled(enabled)
         self.font_size_spin.setEnabled(enabled)
         self.bold_checkbox.setEnabled(enabled)
@@ -2042,6 +2171,7 @@ class PropertiesPanel(QWidget):
         self.bar_text_position_combo.setEnabled(enabled)
         self.auto_color_change_check.setEnabled(enabled)
         self.animate_gauge_check.setEnabled(enabled)
+        self.gauge_rounded_ends_check.setEnabled(enabled)
 
         # GIF options
         self.gif_path_edit.setEnabled(enabled)
@@ -2083,7 +2213,11 @@ class PropertiesPanel(QWidget):
         self.current_element.glass_blur = self.glass_blur_spin.value()
         self.current_element.glass_opacity = self.glass_opacity_spin.value()
         self.current_element.radius = self.radius_spin.value()
-        self.current_element.text = self.text_edit.text()
+        # For circle_gauge and bar_gauge, use label_text_edit; for others use text_edit
+        if self.current_element.type in ["circle_gauge", "bar_gauge"]:
+            self.current_element.text = self.label_text_edit.text()
+        else:
+            self.current_element.text = self.text_edit.text()
         self.current_element.font_family = self.font_family_combo.currentText()
         self.current_element.font_size = self.font_size_spin.value()
         self.current_element.font_bold = self.bold_checkbox.isChecked()
@@ -2119,6 +2253,13 @@ class PropertiesPanel(QWidget):
         # Gauge options
         self.current_element.auto_color_change = self.auto_color_change_check.isChecked()
         self.current_element.animate_gauge = self.animate_gauge_check.isChecked()
+        self.current_element.gauge_rounded_ends = self.gauge_rounded_ends_check.isChecked()
+
+        # Circle gauge label font options
+        self.current_element.label_font_size = self.label_font_size_spin.value()
+        self.current_element.label_font_family = self.label_font_family_combo.currentText()
+        self.current_element.label_font_bold = self.label_bold_checkbox.isChecked()
+        self.current_element.label_font_italic = self.label_italic_checkbox.isChecked()
 
         # Temperature display options
         self.current_element.temp_hide_unit = self.temp_hide_unit_check.isChecked()
@@ -2179,11 +2320,6 @@ class PropertiesPanel(QWidget):
             self.current_element.color = color.name()
             self.current_element.color_opacity = dialog.get_opacity()
             self.color_btn.setStyleSheet(f"background-color: {color.name()};")
-            # If not using custom text color, update text color to match
-            if not getattr(self.current_element, 'use_custom_text_color', False):
-                self.current_element.text_color = color.name()
-                self.current_element.text_color_opacity = dialog.get_opacity()
-                self.text_color_btn.setStyleSheet(f"background-color: {color.name()};")
             self.property_changed.emit()
 
     def choose_bg_color(self):
@@ -2204,7 +2340,7 @@ class PropertiesPanel(QWidget):
             self.bg_color_btn.setStyleSheet(f"background-color: {color.name()};")
             self.property_changed.emit()
 
-    def choose_text_color(self):
+    def choose_value_text_color(self):
         if self.current_element is None:
             return
         if self.current_element.locked:
@@ -2213,36 +2349,33 @@ class PropertiesPanel(QWidget):
         text_color = getattr(self.current_element, 'text_color', self.current_element.color)
         opacity = getattr(self.current_element, 'text_color_opacity', 100)
         dialog = ColorPickerDialog(
-            text_color, opacity, "Select Text Color", self
+            text_color, opacity, "Select Value Text Color", self
         )
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             color = dialog.get_color()
             self.current_element.text_color = color.name()
             self.current_element.text_color_opacity = dialog.get_opacity()
-            self.text_color_btn.setStyleSheet(f"background-color: {color.name()};")
+            self.value_text_color_btn.setStyleSheet(f"background-color: {color.name()};")
             self.property_changed.emit()
 
-    def on_custom_text_color_changed(self, state):
+    def choose_label_text_color(self):
         if self.current_element is None:
             return
         if self.current_element.locked:
             return
 
-        use_custom = state == Qt.CheckState.Checked.value
-        self.current_element.use_custom_text_color = use_custom
+        label_text_color = getattr(self.current_element, 'label_text_color', self.current_element.color)
+        opacity = getattr(self.current_element, 'text_color_opacity', 100)
+        dialog = ColorPickerDialog(
+            label_text_color, opacity, "Select Label Text Color", self
+        )
 
-        # Show/hide text color button
-        self.text_color_label.setVisible(use_custom)
-        self.text_color_btn.setVisible(use_custom)
-
-        if not use_custom:
-            # Reset text color to element color
-            self.current_element.text_color = self.current_element.color
-            self.current_element.text_color_opacity = getattr(self.current_element, 'color_opacity', 100)
-            self.text_color_btn.setStyleSheet(f"background-color: {self.current_element.color};")
-
-        self.property_changed.emit()
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            color = dialog.get_color()
+            self.current_element.label_text_color = color.name()
+            self.label_text_color_btn.setStyleSheet(f"background-color: {color.name()};")
+            self.property_changed.emit()
 
     def on_gradient_fill_changed(self, state):
         if self.current_element is None:
@@ -2252,6 +2385,9 @@ class PropertiesPanel(QWidget):
 
         use_gradient = state == Qt.CheckState.Checked.value
         self.current_element.gradient_fill = use_gradient
+
+        # Batch visibility updates to prevent flicker
+        self.setUpdatesEnabled(False)
 
         # Show/hide color button vs gradient preview
         self.color_label.setVisible(not use_gradient)
@@ -2265,6 +2401,7 @@ class PropertiesPanel(QWidget):
             self.current_element.gradient_stops = gradient_stops
             self.gradient_preview.set_gradient(gradient_stops)
 
+        self.setUpdatesEnabled(True)
         self.property_changed.emit()
 
     def edit_gradient(self):

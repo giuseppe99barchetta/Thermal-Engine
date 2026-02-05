@@ -26,13 +26,16 @@ def apply_opacity(color, opacity):
 
 
 def get_text_color(element):
-    """Get the effective text color for an element, with opacity applied."""
-    if getattr(element, 'use_custom_text_color', False):
-        color = getattr(element, 'text_color', element.color)
-        opacity = getattr(element, 'text_color_opacity', 100)
-    else:
-        color = element.color
-        opacity = getattr(element, 'color_opacity', 100)
+    """Get the effective text color for an element (value text), with opacity applied."""
+    color = getattr(element, 'text_color', element.color)
+    opacity = getattr(element, 'text_color_opacity', 100)
+    return apply_opacity(color, opacity)
+
+
+def get_label_text_color(element):
+    """Get the label text color for an element (circle gauge labels), with opacity applied."""
+    color = getattr(element, 'label_text_color', element.color)
+    opacity = getattr(element, 'text_color_opacity', 100)
     return apply_opacity(color, opacity)
 
 
@@ -140,26 +143,31 @@ class CanvasPreview(QWidget):
         self.update()
 
     def get_animated_value(self, element):
-        """Get the display value for a gauge, handling animation if enabled."""
+        """Get the display value for a gauge, handling animation if enabled.
+
+        Stores the animated value on the element itself so display renderer can use it too.
+        """
         target_value = float(element.value)
 
         if not getattr(element, 'animate_gauge', False):
+            # Clear any stored animated value when animation is disabled
+            if hasattr(element, '_animated_display_value'):
+                delattr(element, '_animated_display_value')
             return target_value
 
-        # Use element name as key for tracking
-        key = element.name
+        # Get current animated value from element (shared with display renderer)
+        current = getattr(element, '_animated_display_value', None)
 
-        if key not in self._animated_values:
+        if current is None:
             # Initialize with current value
-            self._animated_values[key] = target_value
+            element._animated_display_value = target_value
             return target_value
 
-        current = self._animated_values[key]
         diff = target_value - current
 
         # Pixel-perfect threshold - stop when difference is negligible
         if abs(diff) < 0.001:
-            self._animated_values[key] = target_value
+            element._animated_display_value = target_value
             return target_value
 
         # Ultra-smooth animation using ease-out cubic
@@ -179,7 +187,7 @@ class CanvasPreview(QWidget):
             step = min_step if diff > 0 else -min_step
 
         new_value = current + step
-        self._animated_values[key] = new_value
+        element._animated_display_value = new_value
         return new_value
 
     def set_selected(self, index):
@@ -334,32 +342,65 @@ class CanvasPreview(QWidget):
 
     def draw_circle_gauge(self, painter, element, x, y, selected):
         radius = int(element.radius * self.scale)
-        color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
         bg_color = apply_opacity(element.background_color, getattr(element, 'background_color_opacity', 100))
 
         # Get animated display value
         display_value = self.get_animated_value(element)
 
-        painter.setPen(QPen(bg_color, int(15 * self.scale)))
+        # Determine color (with auto color change support)
+        use_gradient = getattr(element, 'gradient_fill', False)
+        if not use_gradient:
+            auto_color = getattr(element, 'auto_color_change', False)
+            if auto_color:
+                if "temp" in element.source:
+                    if display_value < 60:
+                        color_hex = element.color
+                    elif display_value < 80:
+                        color_hex = "#ffcc00"
+                    else:
+                        color_hex = "#ff3232"
+                else:
+                    if display_value < 70:
+                        color_hex = element.color
+                    elif display_value < 90:
+                        color_hex = "#ffcc00"
+                    else:
+                        color_hex = "#ff3232"
+            else:
+                color_hex = element.color
+            color = apply_opacity(color_hex, getattr(element, 'color_opacity', 100))
+        else:
+            color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
+
+        # Check for rounded ends (pill shape)
+        rounded_ends = getattr(element, 'gauge_rounded_ends', False)
+        pen_width = int(15 * self.scale)
+
+        # Draw background arc
+        bg_pen = QPen(bg_color, pen_width)
+        if rounded_ends:
+            bg_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(bg_pen)
         painter.drawArc(
             x - radius, y - radius, radius * 2, radius * 2,
             225 * 16, -270 * 16
         )
 
-        use_gradient = getattr(element, 'gradient_fill', False)
         sweep = int(-270 * (display_value / 100) * 16)
 
         if use_gradient and display_value > 0:
             # Draw gradient arc using multiple small segments
             from PySide6.QtGui import QColor as QC
             gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
-            pen_width = int(15 * self.scale)
             # Draw in small increments for smooth gradient
             num_segments = max(1, int(display_value * 2.7))  # ~2.7 segments per percent (270 degrees / 100)
             for i in range(num_segments):
                 t = i / (270.0)  # Position along full arc range (0 to 1 for full 270 degrees)
                 segment_color = interpolate_gradient_color(gradient_stops, t)
-                painter.setPen(QPen(QC(segment_color), pen_width))
+                segment_pen = QPen(QC(segment_color), pen_width)
+                if rounded_ends:
+                    segment_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+                painter.setPen(segment_pen)
                 segment_start = 225 * 16 - int(i * 16)
                 segment_sweep = -16  # 1 degree at a time
                 painter.drawArc(
@@ -368,15 +409,19 @@ class CanvasPreview(QWidget):
                 )
         else:
             fill_color = color
-            painter.setPen(QPen(fill_color, int(15 * self.scale)))
+            fill_pen = QPen(fill_color, pen_width)
+            if rounded_ends:
+                fill_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(fill_pen)
             painter.drawArc(
                 x - radius, y - radius, radius * 2, radius * 2,
                 225 * 16, sweep
             )
 
-        painter.setPen(QPen(QColor(255, 255, 255)))
+        # Draw value text
+        painter.setPen(QPen(get_text_color(element)))
         font = QFont(element.font_family)
-        font.setPixelSize(int(element.font_size * self.scale * 0.8))
+        font.setPixelSize(int(element.font_size * self.scale))
         font.setBold(element.font_bold)
         font.setItalic(element.font_italic)
         painter.setFont(font)
@@ -385,9 +430,13 @@ class CanvasPreview(QWidget):
         text_rect = QRectF(x - radius, y - radius / 2, radius * 2, radius)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
-        font.setPixelSize(int(element.font_size * self.scale * 0.5))
-        painter.setFont(font)
-        painter.setPen(QPen(get_text_color(element)))
+        # Draw label with separate label font settings and color
+        label_font = QFont(getattr(element, 'label_font_family', element.font_family))
+        label_font.setPixelSize(int(getattr(element, 'label_font_size', 16) * self.scale))
+        label_font.setBold(getattr(element, 'label_font_bold', False))
+        label_font.setItalic(getattr(element, 'label_font_italic', False))
+        painter.setFont(label_font)
+        painter.setPen(QPen(get_label_text_color(element)))
         label_rect = QRectF(x - radius, y + radius / 4, radius * 2, radius / 2)
         painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, element.text)
 
@@ -396,7 +445,6 @@ class CanvasPreview(QWidget):
 
         width = int(element.width * self.scale)
         height = int(element.height * self.scale)
-        color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
         bg_color = apply_opacity(element.background_color, getattr(element, 'background_color_opacity', 100))
 
         # Get animated display value
@@ -405,6 +453,22 @@ class CanvasPreview(QWidget):
         rounded = getattr(element, 'rounded_corners', False)
         use_gradient = getattr(element, 'gradient_fill', False)
         corner_radius = height // 2 if rounded else 0
+
+        # Determine color (with auto color change support)
+        if not use_gradient:
+            auto_color = getattr(element, 'auto_color_change', False)
+            if auto_color:
+                if display_value < 70:
+                    color_hex = element.color
+                elif display_value < 90:
+                    color_hex = "#ffcc00"
+                else:
+                    color_hex = "#ff3232"
+            else:
+                color_hex = element.color
+            color = apply_opacity(color_hex, getattr(element, 'color_opacity', 100))
+        else:
+            color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
 
         # Draw background
         if rounded:
@@ -439,28 +503,249 @@ class CanvasPreview(QWidget):
         bar_text_position = getattr(element, 'bar_text_position', 'inside')
 
         if bar_text_mode != 'none':
-            painter.setPen(QPen(get_text_color(element)))
-            font = QFont(element.font_family)
-            font.setPixelSize(int(element.font_size * self.scale * 0.6))
-            font.setBold(element.font_bold)
-            font.setItalic(element.font_italic)
-            painter.setFont(font)
+            # Value text font
+            value_font = QFont(element.font_family)
+            value_font.setPixelSize(int(element.font_size * self.scale))
+            value_font.setBold(element.font_bold)
+            value_font.setItalic(element.font_italic)
+
+            # Label text font (separate styling)
+            label_font = QFont(getattr(element, 'label_font_family', element.font_family))
+            label_font.setPixelSize(int(getattr(element, 'label_font_size', element.font_size) * self.scale))
+            label_font.setBold(getattr(element, 'label_font_bold', element.font_bold))
+            label_font.setItalic(getattr(element, 'label_font_italic', element.font_italic))
 
             value_text = get_value_with_unit(display_value, element.source, getattr(element, 'temp_hide_unit', False))
-            if bar_text_mode == 'full':
-                display_text = f"{element.text}: {value_text}"
-            else:  # value_only
-                display_text = value_text
 
             if bar_text_position == 'inside':
-                text_rect = QRectF(x, y, width, height)
-                painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, display_text)
-            else:  # left
-                metrics = painter.fontMetrics()
-                text_width = metrics.horizontalAdvance(display_text)
-                text_x = x - text_width - 10 * self.scale  # 10px spacing
-                text_y = y + (height + metrics.ascent() - metrics.descent()) / 2
-                painter.drawText(int(text_x), int(text_y), display_text)
+                if bar_text_mode == 'full':
+                    # Draw label and value separately with their own fonts
+                    painter.setFont(label_font)
+                    label_metrics = painter.fontMetrics()
+                    label_text = f"{element.text} "
+                    label_width = label_metrics.horizontalAdvance(label_text)
+
+                    painter.setFont(value_font)
+                    value_metrics = painter.fontMetrics()
+                    value_width = value_metrics.horizontalAdvance(value_text)
+
+                    total_width = label_width + value_width
+                    start_x = x + (width - total_width) / 2
+
+                    # Draw label
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    label_rect = QRectF(start_x, y, label_width, height)
+                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
+
+                    # Draw value
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    value_rect = QRectF(start_x + label_width, y, value_width, height)
+                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'value_only':
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    text_rect = QRectF(x, y, width, height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, value_text)
+                elif bar_text_mode == 'label_only':
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    text_rect = QRectF(x, y, width, height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, element.text)
+
+            elif bar_text_position == 'left':
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    painter.setFont(label_font)
+                    label_metrics = painter.fontMetrics()
+                    label_text = f"{element.text} "
+                    label_width = label_metrics.horizontalAdvance(label_text)
+
+                    painter.setFont(value_font)
+                    value_metrics = painter.fontMetrics()
+                    value_width = value_metrics.horizontalAdvance(value_text)
+
+                    total_width = label_width + value_width
+                    start_x = x - total_width - 10 * self.scale
+
+                    # Draw label centered with bar's vertical center
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    label_rect = QRectF(start_x, y, label_width, height)
+                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
+
+                    # Draw value centered with bar's vertical center
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    value_rect = QRectF(start_x + label_width, y, value_width, height)
+                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'value_only':
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(value_text)
+                    text_x = x - text_width - 10 * self.scale
+                    text_rect = QRectF(text_x, y, text_width, height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'label_only':
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(element.text)
+                    text_x = x - text_width - 10 * self.scale
+                    text_rect = QRectF(text_x, y, text_width, height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
+
+            elif bar_text_position == 'right':
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    painter.setFont(label_font)
+                    label_metrics = painter.fontMetrics()
+                    label_text = f"{element.text} "
+                    label_width = label_metrics.horizontalAdvance(label_text)
+
+                    painter.setFont(value_font)
+                    value_metrics = painter.fontMetrics()
+                    value_width = value_metrics.horizontalAdvance(value_text)
+
+                    start_x = x + width + 10 * self.scale
+
+                    # Draw label centered with bar's vertical center
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    label_rect = QRectF(start_x, y, label_width, height)
+                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
+
+                    # Draw value centered with bar's vertical center
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    value_rect = QRectF(start_x + label_width, y, value_width, height)
+                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'value_only':
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(value_text)
+                    text_x = x + width + 10 * self.scale
+                    text_rect = QRectF(text_x, y, text_width, height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'label_only':
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(element.text)
+                    text_x = x + width + 10 * self.scale
+                    text_rect = QRectF(text_x, y, text_width, height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
+
+            elif bar_text_position == 'top':
+                # Label and value inline above bar with 16px padding
+                if bar_text_mode == 'full':
+                    # Draw label and value inline above bar with vertical center alignment
+                    painter.setFont(label_font)
+                    label_metrics = painter.fontMetrics()
+                    label_text = f"{element.text} "
+                    label_width = label_metrics.horizontalAdvance(label_text)
+                    label_height = label_metrics.height()
+
+                    painter.setFont(value_font)
+                    value_metrics = painter.fontMetrics()
+                    value_width = value_metrics.horizontalAdvance(value_text)
+                    value_height = value_metrics.height()
+
+                    total_width = label_width + value_width
+                    max_height = max(label_height, value_height)
+                    start_x = x + (width - total_width) / 2
+                    center_y = y - 16 * self.scale - max_height / 2
+
+                    # Draw label centered vertically
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    label_rect = QRectF(start_x, center_y - label_height / 2, label_width, label_height)
+                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
+
+                    # Draw value centered vertically
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    value_rect = QRectF(start_x + label_width, center_y - value_height / 2, value_width, value_height)
+                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'value_only':
+                    # Value only above bar
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(value_text)
+                    text_height = metrics.height()
+                    text_x = x + (width - text_width) / 2
+                    text_y = y - 16 * self.scale - text_height
+                    text_rect = QRectF(text_x, text_y, text_width, text_height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'label_only':
+                    # Label only above bar
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(element.text)
+                    text_height = metrics.height()
+                    text_x = x + (width - text_width) / 2
+                    text_y = y - 16 * self.scale - text_height
+                    text_rect = QRectF(text_x, text_y, text_width, text_height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
+
+            elif bar_text_position == 'bottom':
+                # Label and value inline below bar with 16px padding
+                if bar_text_mode == 'full':
+                    # Draw label and value inline below bar with vertical center alignment
+                    painter.setFont(label_font)
+                    label_metrics = painter.fontMetrics()
+                    label_text = f"{element.text} "
+                    label_width = label_metrics.horizontalAdvance(label_text)
+                    label_height = label_metrics.height()
+
+                    painter.setFont(value_font)
+                    value_metrics = painter.fontMetrics()
+                    value_width = value_metrics.horizontalAdvance(value_text)
+                    value_height = value_metrics.height()
+
+                    total_width = label_width + value_width
+                    max_height = max(label_height, value_height)
+                    start_x = x + (width - total_width) / 2
+                    center_y = y + height + 16 * self.scale + max_height / 2
+
+                    # Draw label centered vertically
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    label_rect = QRectF(start_x, center_y - label_height / 2, label_width, label_height)
+                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
+
+                    # Draw value centered vertically
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    value_rect = QRectF(start_x + label_width, center_y - value_height / 2, value_width, value_height)
+                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'value_only':
+                    # Value only below bar
+                    painter.setPen(QPen(get_text_color(element)))
+                    painter.setFont(value_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(value_text)
+                    text_height = metrics.height()
+                    text_x = x + (width - text_width) / 2
+                    text_y = y + height + 16 * self.scale
+                    text_rect = QRectF(text_x, text_y, text_width, text_height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
+                elif bar_text_mode == 'label_only':
+                    # Label only below bar
+                    painter.setPen(QPen(get_label_text_color(element)))
+                    painter.setFont(label_font)
+                    metrics = painter.fontMetrics()
+                    text_width = metrics.horizontalAdvance(element.text)
+                    text_height = metrics.height()
+                    text_x = x + (width - text_width) / 2
+                    text_y = y + height + 16 * self.scale
+                    text_rect = QRectF(text_x, text_y, text_width, text_height)
+                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
 
     def draw_text(self, painter, element, x, y, selected):
         color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))

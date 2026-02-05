@@ -19,10 +19,89 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QColorDialog, QFileDialog,
     QComboBox, QSplitter, QMessageBox, QStatusBar, QTabWidget,
-    QDialog, QCheckBox, QDialogButtonBox, QGroupBox, QFormLayout, QSystemTrayIcon
+    QDialog, QCheckBox, QDialogButtonBox, QGroupBox, QFormLayout, QSystemTrayIcon,
+    QTextEdit, QPlainTextEdit
 )
-from PySide6.QtCore import Qt, QTimer, QByteArray
-from PySide6.QtGui import QColor, QAction, QKeySequence, QIcon
+from PySide6.QtCore import Qt, QTimer, QByteArray, Signal, QObject
+from PySide6.QtGui import QColor, QAction, QKeySequence, QIcon, QTextCursor, QFont
+
+
+class ConsoleOutputStream(QObject):
+    """Stream that captures output and emits signals for GUI display."""
+    text_written = Signal(str)
+
+    def __init__(self, original_stream=None):
+        super().__init__()
+        self.original_stream = original_stream
+
+    def write(self, text):
+        if text:
+            self.text_written.emit(text)
+            if self.original_stream:
+                self.original_stream.write(text)
+                self.original_stream.flush()
+
+    def flush(self):
+        if self.original_stream:
+            self.original_stream.flush()
+
+
+class ConsoleWindow(QDialog):
+    """Window that displays captured console output."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Console Output")
+        self.setMinimumSize(600, 400)
+        self.resize(800, 500)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+
+        # Console text display
+        self.console_text = QPlainTextEdit()
+        self.console_text.setReadOnly(True)
+        self.console_text.setMaximumBlockCount(5000)  # Limit lines to prevent memory issues
+
+        # Use monospace font
+        font = QFont("Consolas", 9)
+        font.setStyleHint(QFont.Monospace)
+        self.console_text.setFont(font)
+
+        # Dark theme styling
+        self.console_text.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #333;
+                selection-background-color: #264f78;
+            }
+        """)
+
+        layout.addWidget(self.console_text)
+
+        # Button row
+        button_layout = QHBoxLayout()
+
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.clicked.connect(self.console_text.clear)
+        button_layout.addWidget(self.clear_btn)
+
+        button_layout.addStretch()
+
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.hide)
+        button_layout.addWidget(self.close_btn)
+
+        layout.addLayout(button_layout)
+
+    def append_text(self, text):
+        """Append text to the console display."""
+        # Move cursor to end and insert text
+        self.console_text.moveCursor(QTextCursor.End)
+        self.console_text.insertPlainText(text)
+        # Auto-scroll to bottom
+        self.console_text.moveCursor(QTextCursor.End)
 
 # Windows power event constants
 WM_POWERBROADCAST = 0x0218
@@ -263,6 +342,7 @@ class ThemeEditorWindow(QMainWindow):
         start_psutil_thread()
 
         self.setup_ui()
+        self.setup_console()
         self.setup_menu()
         self.connect_signals()
 
@@ -508,6 +588,26 @@ class ThemeEditorWindow(QMainWindow):
         self.status_bar.addPermanentWidget(self.perf_indicator)
         self.status_bar.addPermanentWidget(self.perf_label)
 
+    def setup_console(self):
+        """Setup console output capture and window."""
+        self.console_window = ConsoleWindow(self)
+
+        # Capture stdout and stderr
+        self.stdout_stream = ConsoleOutputStream(sys.stdout)
+        self.stderr_stream = ConsoleOutputStream(sys.stderr)
+
+        self.stdout_stream.text_written.connect(self.console_window.append_text)
+        self.stderr_stream.text_written.connect(self.console_window.append_text)
+
+        sys.stdout = self.stdout_stream
+        sys.stderr = self.stderr_stream
+
+    def show_console(self):
+        """Show the console output window."""
+        self.console_window.show()
+        self.console_window.raise_()
+        self.console_window.activateWindow()
+
     def setup_menu(self):
         menubar = self.menuBar()
 
@@ -609,6 +709,12 @@ class ThemeEditorWindow(QMainWindow):
         settings_action = QAction("Preferences...", self)
         settings_action.triggered.connect(self.show_settings)
         settings_menu.addAction(settings_action)
+
+        settings_menu.addSeparator()
+
+        console_action = QAction("Show Console", self)
+        console_action.triggered.connect(self.show_console)
+        settings_menu.addAction(console_action)
 
     def connect_signals(self):
         self.element_list.element_selected.connect(self.on_element_selected)
@@ -1725,16 +1831,20 @@ class ThemeEditorWindow(QMainWindow):
     def get_pil_font(self, element, size_override=None):
         """Get a PIL font with caching for performance."""
         size = size_override or element.font_size
-        cache_key = (element.font_family, element.font_bold, element.font_italic, size)
+        return self.get_pil_font_custom(element.font_family, element.font_bold, element.font_italic, size)
+
+    def get_pil_font_custom(self, font_family, font_bold, font_italic, font_size):
+        """Get a PIL font with explicit parameters and caching."""
+        cache_key = (font_family, font_bold, font_italic, font_size)
 
         with _pil_font_cache_lock:
             if cache_key in _pil_font_cache:
                 return _pil_font_cache[cache_key]
 
         try:
-            font_path = self.get_font_path(element.font_family, element.font_bold, element.font_italic)
+            font_path = self.get_font_path(font_family, font_bold, font_italic)
             if font_path and os.path.exists(font_path):
-                font = ImageFont.truetype(font_path, size)
+                font = ImageFont.truetype(font_path, font_size)
             else:
                 font = ImageFont.load_default()
         except:
@@ -2044,6 +2154,8 @@ class ThemeEditorWindow(QMainWindow):
 
     def create_horizontal_gradient(self, width, height, gradient_stops, opacity=100):
         """Create a horizontal gradient image from gradient stops using NumPy for performance."""
+        width = int(width)
+        height = int(height)
         if width <= 0 or height <= 0:
             return Image.new('RGBA', (max(1, width), max(1, height)), (0, 0, 0, 0))
 
@@ -2246,26 +2358,29 @@ class ThemeEditorWindow(QMainWindow):
         bbox = draw.textbbox((0, 0), value_text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        # Get text color (use custom text color if set, otherwise use element color)
-        if getattr(element, 'use_custom_text_color', False):
-            text_color = getattr(element, 'text_color', element.color)
-            text_opacity = getattr(element, 'text_color_opacity', 100)
-        else:
-            text_color = element.color
-            text_opacity = getattr(element, 'color_opacity', 100)
-        value_text_rgba = hex_to_rgba(text_color, text_opacity)
+        # Get value text color
+        value_text_color = getattr(element, 'text_color', element.color)
+        value_text_opacity = getattr(element, 'text_color_opacity', 100)
+        value_text_rgba = hex_to_rgba(value_text_color, value_text_opacity)
         draw.text(
             (x - text_width // 2, y - text_height // 2 - 10),
             value_text, fill=value_text_rgba, font=font
         )
 
-        # Draw label text
-        label_rgba = hex_to_rgba(color, color_opacity)
-        bbox = draw.textbbox((0, 0), element.text, font=font_small)
+        # Draw label text with separate label font settings and color
+        label_font = self.get_pil_font_custom(
+            getattr(element, 'label_font_family', element.font_family),
+            getattr(element, 'label_font_bold', False),
+            getattr(element, 'label_font_italic', False),
+            getattr(element, 'label_font_size', 16)
+        )
+        label_text_color = getattr(element, 'label_text_color', element.color)
+        label_rgba = hex_to_rgba(label_text_color, getattr(element, 'text_color_opacity', 100))
+        bbox = draw.textbbox((0, 0), element.text, font=label_font)
         text_width = bbox[2] - bbox[0]
         draw.text(
             (x - text_width // 2, y + radius // 3),
-            element.text, fill=label_rgba, font=font_small
+            element.text, fill=label_rgba, font=label_font
         )
 
         # Composite onto main image
@@ -2375,34 +2490,171 @@ class ThemeEditorWindow(QMainWindow):
 
         if bar_text_mode != 'none':
             value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
-            if bar_text_mode == 'full':
-                display_text = f"{element.text}: {value_text}"
-            else:  # value_only
-                display_text = value_text
 
-            # Use smaller font for bar text
-            font_small = self.get_pil_font(element, int(element.font_size * 0.6))
-            bbox = draw.textbbox((0, 0), display_text, font=font_small)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
+            # Value font
+            value_font = self.get_pil_font(element, element.font_size)
+            # Label font (separate styling)
+            label_font = self.get_pil_font_custom(
+                getattr(element, 'label_font_family', element.font_family),
+                getattr(element, 'label_font_bold', element.font_bold),
+                getattr(element, 'label_font_italic', element.font_italic),
+                getattr(element, 'label_font_size', element.font_size)
+            )
+
+            # Text colors
+            value_text_color = getattr(element, 'text_color', element.color)
+            value_text_opacity = getattr(element, 'text_color_opacity', 100)
+            value_rgba = hex_to_rgba(value_text_color, value_text_opacity)
+
+            label_text_color = getattr(element, 'label_text_color', element.color)
+            label_rgba = hex_to_rgba(label_text_color, value_text_opacity)
 
             if bar_text_position == 'inside':
-                text_x = x + (width - text_width) // 2
-                text_y = y + (height - text_height) // 2
-            else:  # left
-                text_x = x - text_width - 10  # 10px spacing
-                text_y = y + (height - text_height) // 2
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
 
-            # Get text color (use custom text color if set, otherwise use element color)
-            if getattr(element, 'use_custom_text_color', False):
-                text_color = getattr(element, 'text_color', element.color)
-                text_opacity = getattr(element, 'text_color_opacity', 100)
-            else:
-                text_color = element.color
-                text_opacity = getattr(element, 'color_opacity', 100)
-            text_rgba = hex_to_rgba(text_color, text_opacity)
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
 
-            draw.text((text_x, text_y), display_text, fill=text_rgba, font=font_small)
+                    total_width = label_width + value_width
+                    start_x = x + (width - total_width) // 2
+                    center_y = y + height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_rgba, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_rgba, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'left':
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
+
+                    total_width = label_width + value_width
+                    start_x = x - total_width - 10
+                    center_y = y + height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_rgba, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x - text_width - 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x - text_width - 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_rgba, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'right':
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+
+                    start_x = x + width + 10
+                    center_y = y + height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_rgba, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    text_x = x + width + 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    text_x = x + width + 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_rgba, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'top':
+                # Label and value inline above bar with 16px padding
+                if bar_text_mode == 'full':
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+                    label_height = bbox_label[3] - bbox_label[1]
+
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
+                    value_height = bbox_value[3] - bbox_value[1]
+
+                    total_width = label_width + value_width
+                    max_height = max(label_height, value_height)
+                    start_x = x + (width - total_width) // 2
+                    center_y = y - 16 - max_height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_rgba, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y - 16 - text_height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y - 16 - text_height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_rgba, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'bottom':
+                # Label and value inline below bar with 16px padding
+                if bar_text_mode == 'full':
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+                    label_height = bbox_label[3] - bbox_label[1]
+
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
+                    value_height = bbox_value[3] - bbox_value[1]
+
+                    total_width = label_width + value_width
+                    max_height = max(label_height, value_height)
+                    start_x = x + (width - total_width) // 2
+                    center_y = y + height + 16 + max_height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_rgba, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height + 16 + text_height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_rgba, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height + 16 + text_height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_rgba, font=label_font, anchor="lm")
 
         # Composite onto main image
         img.alpha_composite(overlay)
@@ -2582,21 +2834,20 @@ class ThemeEditorWindow(QMainWindow):
         bbox = draw.textbbox((0, 0), value_text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        # Get text color (use custom text color if set, otherwise use element color)
-        if getattr(element, 'use_custom_text_color', False):
-            text_color = getattr(element, 'text_color', element.color)
-        else:
-            text_color = element.color
+        # Get value text color
+        value_text_color = getattr(element, 'text_color', element.color)
         draw.text(
             (x - text_width // 2, y - text_height // 2 - 10),
-            value_text, fill=text_color, font=font
+            value_text, fill=value_text_color, font=font
         )
 
+        # Get label text color
+        label_text_color = getattr(element, 'label_text_color', element.color)
         bbox = draw.textbbox((0, 0), element.text, font=font_small)
         text_width = bbox[2] - bbox[0]
         draw.text(
             (x - text_width // 2, y + radius // 3),
-            element.text, fill=color, font=font_small
+            element.text, fill=label_text_color, font=font_small
         )
 
     def render_bar_gauge(self, draw, element, font):
@@ -2667,31 +2918,167 @@ class ThemeEditorWindow(QMainWindow):
 
         if bar_text_mode != 'none':
             value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
-            if bar_text_mode == 'full':
-                display_text = f"{element.text}: {value_text}"
-            else:  # value_only
-                display_text = value_text
 
-            # Use smaller font for bar text
-            font_small = self.get_pil_font(element, int(element.font_size * 0.6))
-            bbox = draw.textbbox((0, 0), display_text, font=font_small)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
+            # Value font
+            value_font = self.get_pil_font(element, element.font_size)
+            # Label font (separate styling)
+            label_font = self.get_pil_font_custom(
+                getattr(element, 'label_font_family', element.font_family),
+                getattr(element, 'label_font_bold', element.font_bold),
+                getattr(element, 'label_font_italic', element.font_italic),
+                getattr(element, 'label_font_size', element.font_size)
+            )
+
+            # Text colors
+            value_text_color = getattr(element, 'text_color', element.color)
+            label_text_color = getattr(element, 'label_text_color', element.color)
 
             if bar_text_position == 'inside':
-                text_x = x + (width - text_width) // 2
-                text_y = y + (height - text_height) // 2
-            else:  # left
-                text_x = x - text_width - 10  # 10px spacing
-                text_y = y + (height - text_height) // 2
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
 
-            # Get text color (use custom text color if set, otherwise use element color)
-            if getattr(element, 'use_custom_text_color', False):
-                text_color = getattr(element, 'text_color', element.color)
-            else:
-                text_color = element.color
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
 
-            draw.text((text_x, text_y), display_text, fill=text_color, font=font_small)
+                    total_width = label_width + value_width
+                    start_x = x + (width - total_width) // 2
+                    center_y = y + height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'left':
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
+
+                    total_width = label_width + value_width
+                    start_x = x - total_width - 10
+                    center_y = y + height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x - text_width - 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_x = x - text_width - 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'right':
+                if bar_text_mode == 'full':
+                    # Draw label and value separately, centered with bar
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+
+                    start_x = x + width + 10
+                    center_y = y + height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    text_x = x + width + 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    text_x = x + width + 10
+                    center_y = y + height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'top':
+                if bar_text_mode == 'full':
+                    # Label and value inline above bar with 16px padding
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+                    label_height = bbox_label[3] - bbox_label[1]
+
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
+                    value_height = bbox_value[3] - bbox_value[1]
+
+                    total_width = label_width + value_width
+                    max_height = max(label_height, value_height)
+                    start_x = x + (width - total_width) // 2
+                    center_y = y - 16 - max_height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y - 16 - text_height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y - 16 - text_height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
+
+            elif bar_text_position == 'bottom':
+                if bar_text_mode == 'full':
+                    # Label and value inline below bar with 16px padding
+                    label_text = f"{element.text} "
+                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
+                    label_width = bbox_label[2] - bbox_label[0]
+                    label_height = bbox_label[3] - bbox_label[1]
+
+                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
+                    value_width = bbox_value[2] - bbox_value[0]
+                    value_height = bbox_value[3] - bbox_value[1]
+
+                    total_width = label_width + value_width
+                    max_height = max(label_height, value_height)
+                    start_x = x + (width - total_width) // 2
+                    center_y = y + height + 16 + max_height // 2
+
+                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
+                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'value_only':
+                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height + 16 + text_height // 2
+                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
+                elif bar_text_mode == 'label_only':
+                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_x = x + (width - text_width) // 2
+                    center_y = y + height + 16 + text_height // 2
+                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
 
     def image_to_jpeg(self, img, quality=80):
         """Convert image to JPEG bytes with optimized settings."""
@@ -2803,6 +3190,12 @@ class ThemeEditorWindow(QMainWindow):
 
     def cleanup(self):
         """Clean up all resources before quitting."""
+        # Restore original stdout/stderr
+        if hasattr(self, 'stdout_stream') and self.stdout_stream.original_stream:
+            sys.stdout = self.stdout_stream.original_stream
+        if hasattr(self, 'stderr_stream') and self.stderr_stream.original_stream:
+            sys.stderr = self.stderr_stream.original_stream
+
         # Stop reconnect timer if running
         if self._reconnect_timer:
             self._reconnect_timer.stop()
