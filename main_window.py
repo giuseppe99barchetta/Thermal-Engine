@@ -2549,17 +2549,17 @@ class ThemeEditorWindow(QMainWindow):
             # Calculate offset based on border position
             # PIL draws stroke centered on the path, so we adjust coordinates
             if border_position == "inside":
-                bx1, by1 = x + half_border, y + half_border
-                bx2, by2 = x + width - half_border, y + height - half_border
-                bradius = max(0, corner_radius - half_border)
+                bx1, by1 = int(x + half_border), int(y + half_border)
+                bx2, by2 = int(x + width - half_border), int(y + height - half_border)
+                bradius = max(0, int(corner_radius - half_border))
             elif border_position == "center":
-                bx1, by1 = x, y
-                bx2, by2 = x + width, y + height
-                bradius = corner_radius
+                bx1, by1 = int(x), int(y)
+                bx2, by2 = int(x + width), int(y + height)
+                bradius = int(corner_radius)
             else:  # outside
-                bx1, by1 = x - half_border, y - half_border
-                bx2, by2 = x + width + half_border, y + height + half_border
-                bradius = corner_radius + half_border
+                bx1, by1 = int(x - half_border), int(y - half_border)
+                bx2, by2 = int(x + width + half_border), int(y + height + half_border)
+                bradius = int(corner_radius + half_border)
 
             # Draw border (outline only)
             if rounded:
@@ -3028,17 +3028,17 @@ class ThemeEditorWindow(QMainWindow):
 
             # Calculate offset based on border position
             if border_position == "inside":
-                bx1, by1 = x + half_border, y + half_border
-                bx2, by2 = x + width - half_border, y + height - half_border
-                bradius = max(0, corner_radius - half_border)
+                bx1, by1 = int(x + half_border), int(y + half_border)
+                bx2, by2 = int(x + width - half_border), int(y + height - half_border)
+                bradius = max(0, int(corner_radius - half_border))
             elif border_position == "center":
-                bx1, by1 = x, y
-                bx2, by2 = x + width, y + height
-                bradius = corner_radius
+                bx1, by1 = int(x), int(y)
+                bx2, by2 = int(x + width), int(y + height)
+                bradius = int(corner_radius)
             else:  # outside
-                bx1, by1 = x - half_border, y - half_border
-                bx2, by2 = x + width + half_border, y + height + half_border
-                bradius = corner_radius + half_border
+                bx1, by1 = int(x - half_border), int(y - half_border)
+                bx2, by2 = int(x + width + half_border), int(y + height + half_border)
+                bradius = int(corner_radius + half_border)
 
             if rounded:
                 draw.rounded_rectangle(
