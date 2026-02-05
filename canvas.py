@@ -124,6 +124,7 @@ class CanvasPreview(QWidget):
         self._glass_background = None  # Cached background for glass effect
         self._glass_cache_valid = False  # Track if glass cache needs rebuild
         self._has_glass_cache = None  # Cache result of _has_glass_elements()
+        self._animated_values = {}  # Track display values for animated gauges {element_name: current_display_value}
 
         self.setFixedSize(
             int(DISPLAY_WIDTH * self.scale),
@@ -137,6 +138,33 @@ class CanvasPreview(QWidget):
         self._glass_cache_valid = False  # Invalidate glass cache when elements change
         self._has_glass_cache = None  # Clear has_glass cache
         self.update()
+
+    def get_animated_value(self, element):
+        """Get the display value for a gauge, handling animation if enabled."""
+        target_value = element.value
+
+        if not getattr(element, 'animate_gauge', False):
+            return target_value
+
+        # Use element name as key for tracking
+        key = element.name
+
+        if key not in self._animated_values:
+            # Initialize with current value
+            self._animated_values[key] = target_value
+            return target_value
+
+        current = self._animated_values[key]
+        speed = getattr(element, 'animation_speed', 0.15)
+
+        # Interpolate towards target
+        if abs(current - target_value) < 0.1:
+            self._animated_values[key] = target_value
+            return target_value
+
+        new_value = current + (target_value - current) * speed
+        self._animated_values[key] = new_value
+        return new_value
 
     def set_selected(self, index):
         """Set single selection (backwards compatible)."""
@@ -293,6 +321,9 @@ class CanvasPreview(QWidget):
         color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
         bg_color = apply_opacity(element.background_color, getattr(element, 'background_color_opacity', 100))
 
+        # Get animated display value
+        display_value = self.get_animated_value(element)
+
         painter.setPen(QPen(bg_color, int(15 * self.scale)))
         painter.drawArc(
             x - radius, y - radius, radius * 2, radius * 2,
@@ -300,15 +331,15 @@ class CanvasPreview(QWidget):
         )
 
         use_gradient = getattr(element, 'gradient_fill', False)
-        sweep = int(-270 * (element.value / 100) * 16)
+        sweep = int(-270 * (display_value / 100) * 16)
 
-        if use_gradient and element.value > 0:
+        if use_gradient and display_value > 0:
             # Draw gradient arc using multiple small segments
             from PySide6.QtGui import QColor as QC
             gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
             pen_width = int(15 * self.scale)
             # Draw in small increments for smooth gradient
-            num_segments = max(1, int(element.value * 2.7))  # ~2.7 segments per percent (270 degrees / 100)
+            num_segments = max(1, int(display_value * 2.7))  # ~2.7 segments per percent (270 degrees / 100)
             for i in range(num_segments):
                 t = i / (270.0)  # Position along full arc range (0 to 1 for full 270 degrees)
                 segment_color = interpolate_gradient_color(gradient_stops, t)
@@ -334,7 +365,7 @@ class CanvasPreview(QWidget):
         font.setItalic(element.font_italic)
         painter.setFont(font)
 
-        text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
+        text = get_value_with_unit(display_value, element.source, getattr(element, 'temp_hide_unit', False))
         text_rect = QRectF(x - radius, y - radius / 2, radius * 2, radius)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
@@ -352,6 +383,9 @@ class CanvasPreview(QWidget):
         color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
         bg_color = apply_opacity(element.background_color, getattr(element, 'background_color_opacity', 100))
 
+        # Get animated display value
+        display_value = self.get_animated_value(element)
+
         rounded = getattr(element, 'rounded_corners', False)
         use_gradient = getattr(element, 'gradient_fill', False)
         corner_radius = height // 2 if rounded else 0
@@ -365,7 +399,7 @@ class CanvasPreview(QWidget):
             painter.fillRect(x, y, width, height, bg_color)
 
         # Draw fill
-        fill_width = int(width * element.value / 100)
+        fill_width = int(width * display_value / 100)
         if fill_width > 0:
             if use_gradient:
                 # Use horizontal gradient with custom stops
@@ -396,7 +430,7 @@ class CanvasPreview(QWidget):
             font.setItalic(element.font_italic)
             painter.setFont(font)
 
-            value_text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
+            value_text = get_value_with_unit(display_value, element.source, getattr(element, 'temp_hide_unit', False))
             if bar_text_mode == 'full':
                 display_text = f"{element.text}: {value_text}"
             else:  # value_only

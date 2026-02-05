@@ -52,6 +52,8 @@ class ThemeElement:
 
         # Gauge options
         self.auto_color_change = kwargs.get("auto_color_change", True)  # Change color at thresholds
+        self.animate_gauge = kwargs.get("animate_gauge", False)  # Animate value changes
+        self.animation_speed = kwargs.get("animation_speed", 0.15)  # Animation interpolation speed (0.05-0.5)
 
         # GIF options
         self.gif_path = kwargs.get("gif_path", "")
@@ -121,6 +123,8 @@ class ThemeElement:
             "bar_text_mode": self.bar_text_mode,
             "bar_text_position": self.bar_text_position,
             "auto_color_change": self.auto_color_change,
+            "animate_gauge": self.animate_gauge,
+            "animation_speed": self.animation_speed,
             "gif_path": self.gif_path,
             "scale_mode": self.scale_mode,
             "time_format": self.time_format,

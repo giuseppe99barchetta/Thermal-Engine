@@ -1129,6 +1129,12 @@ class PropertiesPanel(QWidget):
         self.auto_color_change_label = QLabel("")
         options_layout.addRow(self.auto_color_change_label, self.auto_color_change_check)
 
+        self.animate_gauge_check = QCheckBox("Animate Value Changes")
+        self.animate_gauge_check.setToolTip("Smoothly animate the gauge when values change")
+        self.animate_gauge_check.stateChanged.connect(self.on_property_changed)
+        self.animate_gauge_label = QLabel("")
+        options_layout.addRow(self.animate_gauge_label, self.animate_gauge_check)
+
         # Digital clock time format options
         self.time_format_combo = QComboBox()
         self.time_format_combo.addItem("24-Hour (Military)", "24h")
@@ -1187,6 +1193,7 @@ class PropertiesPanel(QWidget):
             (self.bar_text_position_label, self.bar_text_position_combo),
             (self.temp_hide_unit_label, self.temp_hide_unit_check),
             (self.auto_color_change_label, self.auto_color_change_check),
+            (self.animate_gauge_label, self.animate_gauge_check),
             (self.time_format_label, self.time_format_combo),
             (self.show_am_pm_label, self.show_am_pm_check),
             (self.show_seconds_label, self.show_seconds_check),
@@ -1495,7 +1502,7 @@ class PropertiesPanel(QWidget):
                 "color": True, "bg_color": True, "text": True,
                 "font": True, "font_size": True, "font_style": True,
                 "align": False, "clip": False, "source": True, "value": True, "image": False,
-                "auto_color_change": True
+                "auto_color_change": True, "animate_gauge": True
             },
             "text": {
                 "width": True, "height": True, "radius": False,
@@ -1546,7 +1553,7 @@ class PropertiesPanel(QWidget):
                 "align": False, "clip": False, "source": True, "value": True, "image": False,
                 "show_background": False, "show_label": False, "show_gradient": False,
                 "rounded_corners": True, "gradient_fill": True,
-                "auto_color_change": True,
+                "auto_color_change": True, "animate_gauge": True,
                 "bar_text_mode": True, "bar_text_position": True
             },
             "analog_clock": {
@@ -1697,6 +1704,7 @@ class PropertiesPanel(QWidget):
         bar_text_mode_visible = visibility.get("bar_text_mode", False)
         bar_text_position_visible = visibility.get("bar_text_position", False)
         auto_color_change_visible = visibility.get("auto_color_change", False)
+        animate_gauge_visible = visibility.get("animate_gauge", False)
         time_format_visible = visibility.get("time_format", False)
         show_am_pm_visible = visibility.get("show_am_pm", False)
         show_seconds_visible = visibility.get("show_seconds", False)
@@ -1731,6 +1739,8 @@ class PropertiesPanel(QWidget):
 
         self.auto_color_change_label.setVisible(auto_color_change_visible)
         self.auto_color_change_check.setVisible(auto_color_change_visible)
+        self.animate_gauge_label.setVisible(animate_gauge_visible)
+        self.animate_gauge_check.setVisible(animate_gauge_visible)
         self.time_format_label.setVisible(time_format_visible)
         self.time_format_combo.setVisible(time_format_visible)
         self.show_am_pm_label.setVisible(show_am_pm_visible)
@@ -1753,10 +1763,11 @@ class PropertiesPanel(QWidget):
                                       smooth_visible or rounded_corners_visible or
                                       bar_text_mode_visible or bar_text_position_visible or
                                       temp_hide_unit_visible or auto_color_change_visible or
-                                      time_format_visible or show_am_pm_visible or
-                                      show_seconds_visible or show_leading_zero_visible or
-                                      show_seconds_hand_visible or show_clock_border_visible or
-                                      clock_face_style_visible or smooth_animation_visible)
+                                      animate_gauge_visible or time_format_visible or
+                                      show_am_pm_visible or show_seconds_visible or
+                                      show_leading_zero_visible or show_seconds_hand_visible or
+                                      show_clock_border_visible or clock_face_style_visible or
+                                      smooth_animation_visible)
 
         # Update section header visibility
         for section, header in self.section_headers.items():
@@ -1810,6 +1821,7 @@ class PropertiesPanel(QWidget):
         self.rounded_corners_check.blockSignals(True)
         self.gradient_fill_check.blockSignals(True)
         self.auto_color_change_check.blockSignals(True)
+        self.animate_gauge_check.blockSignals(True)
         self.temp_hide_unit_check.blockSignals(True)
         self.gif_path_edit.blockSignals(True)
         self.scale_mode_combo.blockSignals(True)
@@ -1852,6 +1864,7 @@ class PropertiesPanel(QWidget):
         gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
         self.gradient_preview.set_gradient(gradient_stops)
         self.auto_color_change_check.setChecked(getattr(element, 'auto_color_change', True))
+        self.animate_gauge_check.setChecked(getattr(element, 'animate_gauge', False))
         self.temp_hide_unit_check.setChecked(getattr(element, 'temp_hide_unit', False))
 
         # GIF options
@@ -1948,6 +1961,7 @@ class PropertiesPanel(QWidget):
         self.rounded_corners_check.blockSignals(False)
         self.gradient_fill_check.blockSignals(False)
         self.auto_color_change_check.blockSignals(False)
+        self.animate_gauge_check.blockSignals(False)
         self.temp_hide_unit_check.blockSignals(False)
         self.gif_path_edit.blockSignals(False)
         self.scale_mode_combo.blockSignals(False)
@@ -2027,6 +2041,7 @@ class PropertiesPanel(QWidget):
         self.bar_text_mode_combo.setEnabled(enabled)
         self.bar_text_position_combo.setEnabled(enabled)
         self.auto_color_change_check.setEnabled(enabled)
+        self.animate_gauge_check.setEnabled(enabled)
 
         # GIF options
         self.gif_path_edit.setEnabled(enabled)
@@ -2103,6 +2118,7 @@ class PropertiesPanel(QWidget):
 
         # Gauge options
         self.current_element.auto_color_change = self.auto_color_change_check.isChecked()
+        self.current_element.animate_gauge = self.animate_gauge_check.isChecked()
 
         # Temperature display options
         self.current_element.temp_hide_unit = self.temp_hide_unit_check.isChecked()
