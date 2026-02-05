@@ -2537,24 +2537,41 @@ class ThemeEditorWindow(QMainWindow):
             border_width = getattr(element, 'bar_border_width', 2)
             border_color = getattr(element, 'bar_border_color', '#ffffff')
             border_opacity = getattr(element, 'bar_border_opacity', 100)
+            border_position = getattr(element, 'bar_border_position', 'inside')
 
             # Create border layer for proper opacity handling
             border_layer = Image.new('RGBA', img.size, (0, 0, 0, 0))
             border_draw = ImageDraw.Draw(border_layer)
             border_rgb = hex_to_rgba(border_color, 100)  # Full opacity for drawing
 
+            half_border = border_width / 2
+
+            # Calculate offset based on border position
+            # PIL draws stroke centered on the path, so we adjust coordinates
+            if border_position == "inside":
+                bx1, by1 = x + half_border, y + half_border
+                bx2, by2 = x + width - half_border, y + height - half_border
+                bradius = max(0, corner_radius - half_border)
+            elif border_position == "center":
+                bx1, by1 = x, y
+                bx2, by2 = x + width, y + height
+                bradius = corner_radius
+            else:  # outside
+                bx1, by1 = x - half_border, y - half_border
+                bx2, by2 = x + width + half_border, y + height + half_border
+                bradius = corner_radius + half_border
+
             # Draw border (outline only)
             if rounded:
-                # For rounded rectangles, use rounded_rectangle with outline
                 border_draw.rounded_rectangle(
-                    [x, y, x + width, y + height],
-                    radius=corner_radius,
+                    [bx1, by1, bx2, by2],
+                    radius=bradius,
                     outline=border_rgb,
                     width=border_width
                 )
             else:
                 border_draw.rectangle(
-                    [x, y, x + width, y + height],
+                    [bx1, by1, bx2, by2],
                     outline=border_rgb,
                     width=border_width
                 )
@@ -3005,17 +3022,34 @@ class ThemeEditorWindow(QMainWindow):
         if bar_border:
             border_width = getattr(element, 'bar_border_width', 2)
             border_color = getattr(element, 'bar_border_color', '#ffffff')
+            border_position = getattr(element, 'bar_border_position', 'inside')
+
+            half_border = border_width / 2
+
+            # Calculate offset based on border position
+            if border_position == "inside":
+                bx1, by1 = x + half_border, y + half_border
+                bx2, by2 = x + width - half_border, y + height - half_border
+                bradius = max(0, corner_radius - half_border)
+            elif border_position == "center":
+                bx1, by1 = x, y
+                bx2, by2 = x + width, y + height
+                bradius = corner_radius
+            else:  # outside
+                bx1, by1 = x - half_border, y - half_border
+                bx2, by2 = x + width + half_border, y + height + half_border
+                bradius = corner_radius + half_border
 
             if rounded:
                 draw.rounded_rectangle(
-                    [x, y, x + width, y + height],
-                    radius=corner_radius,
+                    [bx1, by1, bx2, by2],
+                    radius=bradius,
                     outline=border_color,
                     width=border_width
                 )
             else:
                 draw.rectangle(
-                    [x, y, x + width, y + height],
+                    [bx1, by1, bx2, by2],
                     outline=border_color,
                     width=border_width
                 )

@@ -504,26 +504,41 @@ class CanvasPreview(QWidget):
             border_width = int(getattr(element, 'bar_border_width', 2) * self.scale)
             border_color = getattr(element, 'bar_border_color', '#ffffff')
             border_opacity = getattr(element, 'bar_border_opacity', 100)
+            border_position = getattr(element, 'bar_border_position', 'inside')
             border_qcolor = apply_opacity(border_color, border_opacity)
 
             border_pen = QPen(border_qcolor, border_width)
             painter.setPen(border_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
 
-            # Offset for border to be drawn inside the bar
             half_border = border_width / 2
+
+            # Calculate offset based on border position
+            if border_position == "inside":
+                offset = half_border
+                size_adjust = -border_width
+                radius_adjust = -half_border
+            elif border_position == "center":
+                offset = 0
+                size_adjust = 0
+                radius_adjust = 0
+            else:  # outside
+                offset = -half_border
+                size_adjust = border_width
+                radius_adjust = half_border
+
             if rounded:
                 border_path = QPainterPath()
                 border_path.addRoundedRect(
-                    x + half_border, y + half_border,
-                    width - border_width, height - border_width,
-                    max(0, corner_radius - half_border), max(0, corner_radius - half_border)
+                    x + offset, y + offset,
+                    width + size_adjust, height + size_adjust,
+                    max(0, corner_radius + radius_adjust), max(0, corner_radius + radius_adjust)
                 )
                 painter.drawPath(border_path)
             else:
                 painter.drawRect(
-                    int(x + half_border), int(y + half_border),
-                    int(width - border_width), int(height - border_width)
+                    int(x + offset), int(y + offset),
+                    int(width + size_adjust), int(height + size_adjust)
                 )
 
         # Draw text based on bar_text_mode and bar_text_position

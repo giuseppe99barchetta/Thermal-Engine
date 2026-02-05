@@ -675,6 +675,28 @@ class PropertiesPanel(QWidget):
         label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         return label
 
+    def _set_svg_icon(self, button, svg_content):
+        """Set an SVG icon on a button using QIcon."""
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtGui import QPixmap, QPainter
+        from PySide6.QtCore import QByteArray
+
+        # Replace currentColor with actual color based on palette
+        color = "#cccccc"  # Light gray for dark theme
+        svg_content = svg_content.replace("currentColor", color)
+
+        svg_bytes = QByteArray(svg_content.encode('utf-8'))
+        renderer = QSvgRenderer(svg_bytes)
+
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+
+        button.setIcon(QIcon(pixmap))
+        button.setIconSize(pixmap.size())
+
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -1197,37 +1219,106 @@ class PropertiesPanel(QWidget):
         self.rounded_corners_label = QLabel("")
         options_layout.addRow(self.rounded_corners_label, self.rounded_corners_check)
 
-        # Bar gauge border options
+        # Bar gauge border options - checkbox and collapsible sub-panel
         self.bar_border_check = QCheckBox("Show Border")
         self.bar_border_check.stateChanged.connect(self.on_bar_border_changed)
         self.bar_border_label = QLabel("")
         options_layout.addRow(self.bar_border_label, self.bar_border_check)
 
+        # Border options sub-panel (shown when border is enabled)
+        self.bar_border_panel = QWidget()
+        border_panel_layout = QVBoxLayout(self.bar_border_panel)
+        border_panel_layout.setContentsMargins(10, 5, 0, 5)
+        border_panel_layout.setSpacing(8)
+
+        # Stroke position with icon buttons
+        stroke_pos_layout = QHBoxLayout()
+        stroke_pos_layout.setSpacing(4)
+        stroke_pos_label = QLabel("Position:")
+        stroke_pos_label.setFixedWidth(55)
+        stroke_pos_layout.addWidget(stroke_pos_label)
+
+        self.border_pos_inside_btn = QPushButton()
+        self.border_pos_inside_btn.setFixedSize(28, 28)
+        self.border_pos_inside_btn.setCheckable(True)
+        self.border_pos_inside_btn.setChecked(True)
+        self.border_pos_inside_btn.setToolTip("Inside")
+        self.border_pos_inside_btn.clicked.connect(lambda: self.set_border_position("inside"))
+
+        self.border_pos_center_btn = QPushButton()
+        self.border_pos_center_btn.setFixedSize(28, 28)
+        self.border_pos_center_btn.setCheckable(True)
+        self.border_pos_center_btn.setToolTip("Center")
+        self.border_pos_center_btn.clicked.connect(lambda: self.set_border_position("center"))
+
+        self.border_pos_outside_btn = QPushButton()
+        self.border_pos_outside_btn.setFixedSize(28, 28)
+        self.border_pos_outside_btn.setCheckable(True)
+        self.border_pos_outside_btn.setToolTip("Outside")
+        self.border_pos_outside_btn.clicked.connect(lambda: self.set_border_position("outside"))
+
+        # Set SVG icons for stroke position buttons
+        inside_icon = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-opacity="0.3"/>
+            <rect x="5" y="5" width="14" height="14" rx="1"/>
+        </svg>"""
+        center_icon = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-opacity="0.3"/>
+            <rect x="4" y="4" width="16" height="16" rx="1.5"/>
+        </svg>"""
+        outside_icon = """<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-opacity="0.3"/>
+            <rect x="2" y="2" width="20" height="20" rx="2.5"/>
+        </svg>"""
+
+        self._set_svg_icon(self.border_pos_inside_btn, inside_icon)
+        self._set_svg_icon(self.border_pos_center_btn, center_icon)
+        self._set_svg_icon(self.border_pos_outside_btn, outside_icon)
+
+        stroke_pos_layout.addWidget(self.border_pos_inside_btn)
+        stroke_pos_layout.addWidget(self.border_pos_center_btn)
+        stroke_pos_layout.addWidget(self.border_pos_outside_btn)
+        stroke_pos_layout.addStretch()
+        border_panel_layout.addLayout(stroke_pos_layout)
+
+        # Border width
+        width_layout = QHBoxLayout()
+        width_label = QLabel("Width:")
+        width_label.setFixedWidth(55)
+        width_layout.addWidget(width_label)
         self.bar_border_width_spin = NoScrollSpinBox()
         self.bar_border_width_spin.setRange(1, 20)
         self.bar_border_width_spin.setValue(2)
+        self.bar_border_width_spin.setFixedWidth(60)
         self.bar_border_width_spin.valueChanged.connect(self.on_property_changed)
-        self.bar_border_width_label = self.create_label("Border Width:")
-        options_layout.addRow(self.bar_border_width_label, self.bar_border_width_spin)
+        width_layout.addWidget(self.bar_border_width_spin)
+        width_layout.addStretch()
+        border_panel_layout.addLayout(width_layout)
 
         # Border color with opacity
-        border_color_layout = QHBoxLayout()
+        color_layout = QHBoxLayout()
+        color_label = QLabel("Color:")
+        color_label.setFixedWidth(55)
+        color_layout.addWidget(color_label)
         self.bar_border_color_btn = QPushButton()
         self.bar_border_color_btn.setFixedSize(30, 25)
         self.bar_border_color_btn.setStyleSheet("background-color: #ffffff;")
         self.bar_border_color_btn.clicked.connect(self.choose_bar_border_color)
-        border_color_layout.addWidget(self.bar_border_color_btn)
+        color_layout.addWidget(self.bar_border_color_btn)
 
         self.bar_border_opacity_spin = NoScrollSpinBox()
         self.bar_border_opacity_spin.setRange(0, 100)
         self.bar_border_opacity_spin.setValue(100)
         self.bar_border_opacity_spin.setSuffix("%")
+        self.bar_border_opacity_spin.setFixedWidth(60)
         self.bar_border_opacity_spin.valueChanged.connect(self.on_property_changed)
-        border_color_layout.addWidget(self.bar_border_opacity_spin)
-        border_color_layout.addStretch()
+        color_layout.addWidget(self.bar_border_opacity_spin)
+        color_layout.addStretch()
+        border_panel_layout.addLayout(color_layout)
 
-        self.bar_border_color_label = self.create_label("Border Color:")
-        options_layout.addRow(self.bar_border_color_label, border_color_layout)
+        # Add sub-panel to main layout (hidden by default)
+        self.bar_border_panel.setVisible(False)
+        options_layout.addRow("", self.bar_border_panel)
 
         # Temperature display option
         self.temp_hide_unit_check = QCheckBox("Hide unit letter (show ° only)")
@@ -1876,11 +1967,7 @@ class PropertiesPanel(QWidget):
         bar_border_enabled = self.bar_border_check.isChecked() if bar_border_visible else False
         self.bar_border_label.setVisible(bar_border_visible)
         self.bar_border_check.setVisible(bar_border_visible)
-        self.bar_border_width_label.setVisible(bar_border_visible and bar_border_enabled)
-        self.bar_border_width_spin.setVisible(bar_border_visible and bar_border_enabled)
-        self.bar_border_color_label.setVisible(bar_border_visible and bar_border_enabled)
-        self.bar_border_color_btn.setVisible(bar_border_visible and bar_border_enabled)
-        self.bar_border_opacity_spin.setVisible(bar_border_visible and bar_border_enabled)
+        self.bar_border_panel.setVisible(bar_border_visible and bar_border_enabled)
 
         # Temperature hide unit option - visible only for temperature sources
         temp_sources = ["cpu_temp", "gpu_temp"]
@@ -2034,6 +2121,13 @@ class PropertiesPanel(QWidget):
         bar_border_color = getattr(element, 'bar_border_color', '#ffffff')
         self.bar_border_color_btn.setStyleSheet(f"background-color: {bar_border_color};")
         self.bar_border_opacity_spin.setValue(getattr(element, 'bar_border_opacity', 100))
+        # Load border position
+        border_position = getattr(element, 'bar_border_position', 'inside')
+        self.border_pos_inside_btn.setChecked(border_position == "inside")
+        self.border_pos_center_btn.setChecked(border_position == "center")
+        self.border_pos_outside_btn.setChecked(border_position == "outside")
+        # Show/hide panel based on checkbox
+        self.bar_border_panel.setVisible(getattr(element, 'bar_border', False))
         self.gradient_fill_check.setChecked(element.gradient_fill)
         # Load gradient stops
         gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
@@ -2499,17 +2593,25 @@ class PropertiesPanel(QWidget):
         show_border = state == Qt.CheckState.Checked.value
         self.current_element.bar_border = show_border
 
-        # Batch visibility updates to prevent flicker
-        self.setUpdatesEnabled(False)
+        # Show/hide border options panel based on checkbox state
+        self.bar_border_panel.setVisible(show_border)
 
-        # Show/hide border options based on checkbox state
-        self.bar_border_width_label.setVisible(show_border)
-        self.bar_border_width_spin.setVisible(show_border)
-        self.bar_border_color_label.setVisible(show_border)
-        self.bar_border_color_btn.setVisible(show_border)
-        self.bar_border_opacity_spin.setVisible(show_border)
+        self.property_changed.emit()
 
-        self.setUpdatesEnabled(True)
+    def set_border_position(self, position):
+        """Set the border stroke position (inside, center, outside)."""
+        if self.current_element is None:
+            return
+        if self.current_element.locked:
+            return
+
+        self.current_element.bar_border_position = position
+
+        # Update button states
+        self.border_pos_inside_btn.setChecked(position == "inside")
+        self.border_pos_center_btn.setChecked(position == "center")
+        self.border_pos_outside_btn.setChecked(position == "outside")
+
         self.property_changed.emit()
 
     def edit_gradient(self):
