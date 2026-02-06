@@ -7,9 +7,12 @@ import json
 import webbrowser
 import urllib.request
 import urllib.error
+import os
+import tempfile
+import subprocess
 from packaging import version as version_parser
-from PySide6.QtWidgets import QMessageBox, QPushButton
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import QMessageBox, QPushButton, QProgressDialog
+from PySide6.QtCore import QThread, Signal, Qt
 
 from version import __version__
 
@@ -64,6 +67,66 @@ class UpdateChecker(QThread):
             self.error.emit(f"Network error: {e.reason}")
         except Exception as e:
             self.error.emit(f"Failed to check for updates: {e}")
+
+
+class UpdateDownloader(QThread):
+    """Background thread to download installer."""
+
+    progress = Signal(int, int)  # downloaded_bytes, total_bytes
+    finished = Signal(str)  # installer_path
+    error = Signal(str)
+
+    def __init__(self, download_url, version):
+        super().__init__()
+        self.download_url = download_url
+        self.version = version
+        self._cancelled = False
+
+    def cancel(self):
+        """Cancel the download."""
+        self._cancelled = True
+
+    def run(self):
+        """Download the installer in background."""
+        try:
+            # Create temp directory for download
+            temp_dir = tempfile.gettempdir()
+            installer_filename = f"ThermalEngine-{self.version}-Setup.exe"
+            installer_path = os.path.join(temp_dir, installer_filename)
+
+            # Download with progress reporting
+            request = urllib.request.Request(
+                self.download_url,
+                headers={'User-Agent': 'ThermalEngine-UpdateChecker'}
+            )
+
+            with urllib.request.urlopen(request, timeout=30) as response:
+                total_size = int(response.headers.get('Content-Length', 0))
+                downloaded = 0
+                chunk_size = 8192
+
+                with open(installer_path, 'wb') as f:
+                    while not self._cancelled:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        self.progress.emit(downloaded, total_size)
+
+                if self._cancelled:
+                    # Clean up partial download
+                    if os.path.exists(installer_path):
+                        os.remove(installer_path)
+                    return
+
+                self.finished.emit(installer_path)
+
+        except urllib.error.URLError as e:
+            self.error.emit(f"Download failed: {e.reason}")
+        except Exception as e:
+            self.error.emit(f"Download failed: {e}")
 
 
 def check_for_updates(parent=None, silent=False):

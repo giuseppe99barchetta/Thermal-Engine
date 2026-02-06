@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QColorDialog, QFileDialog,
     QComboBox, QSplitter, QMessageBox, QStatusBar, QTabWidget,
     QDialog, QCheckBox, QDialogButtonBox, QGroupBox, QFormLayout, QSystemTrayIcon,
-    QTextEdit, QPlainTextEdit, QSpinBox
+    QTextEdit, QPlainTextEdit, QSpinBox, QApplication, QProgressDialog
 )
 from PySide6.QtCore import Qt, QTimer, QByteArray, Signal, QObject
 from PySide6.QtGui import QColor, QAction, QKeySequence, QIcon, QTextCursor, QFont
@@ -290,7 +290,7 @@ import sensors
 from sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
 import settings
 from app_path import get_resource_path, get_bundled_resource_path
-from updater import UpdateChecker
+from updater import UpdateChecker, UpdateDownloader
 
 
 def hex_to_rgba(hex_color, opacity=100):
@@ -3825,6 +3825,7 @@ class ThemeEditorWindow(QMainWindow):
     def _on_update_available(self, latest_version, release_url, release_notes):
         """Handle update available signal."""
         from version import __version__
+        from PySide6.QtWidgets import QProgressDialog
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Update Available")
@@ -3854,7 +3855,7 @@ class ThemeEditorWindow(QMainWindow):
 
         # Buttons
         buttons = QDialogButtonBox()
-        download_btn = buttons.addButton("Download", QDialogButtonBox.ButtonRole.AcceptRole)
+        download_btn = buttons.addButton("Download & Install", QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
 
         buttons.accepted.connect(dialog.accept)
@@ -3862,12 +3863,109 @@ class ThemeEditorWindow(QMainWindow):
         layout.addWidget(buttons)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Open download URL in browser
-            import webbrowser
-            webbrowser.open(release_url)
-            self.status_bar.showMessage("Opening download page...", 3000)
+            # Start automatic download
+            self._download_and_install_update(latest_version, release_url)
         else:
             self.status_bar.showMessage("Update dismissed", 2000)
+
+    def _download_and_install_update(self, version, download_url):
+        """Download installer and prompt for installation."""
+        from PySide6.QtWidgets import QProgressDialog
+        import subprocess
+        import os
+
+        # Create progress dialog
+        progress = QProgressDialog(
+            "Downloading update...",
+            "Cancel",
+            0, 100,
+            self
+        )
+        progress.setWindowTitle("Downloading Update")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumDuration(0)
+
+        # Start download
+        self.update_downloader = UpdateDownloader(download_url, version)
+
+        def on_progress(downloaded, total):
+            if total > 0:
+                percent = int((downloaded / total) * 100)
+                progress.setValue(percent)
+                # Update label with MB downloaded
+                downloaded_mb = downloaded / (1024 * 1024)
+                total_mb = total / (1024 * 1024)
+                progress.setLabelText(f"Downloading update... {downloaded_mb:.1f} MB / {total_mb:.1f} MB")
+
+        def on_download_finished(installer_path):
+            progress.close()
+
+            # Ask if user wants to install now
+            reply = QMessageBox.question(
+                self,
+                "Download Complete",
+                "Update downloaded successfully!\n\n"
+                "Do you want to install it now?\n\n"
+                "The application will close and the installer will start.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                # Launch installer and close app
+                try:
+                    if os.path.exists(installer_path):
+                        # Launch installer in detached process
+                        subprocess.Popen([installer_path], shell=True)
+                        # Close the application
+                        QApplication.instance().quit()
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Error",
+                            f"Installer not found at:\n{installer_path}"
+                        )
+                except Exception as e:
+                    QMessageBox.warning(
+                        self,
+                        "Error",
+                        f"Failed to launch installer:\n{e}"
+                    )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Install Later",
+                    f"The installer has been saved to:\n{installer_path}\n\n"
+                    "You can run it manually when ready."
+                )
+
+        def on_download_error(error_msg):
+            progress.close()
+            QMessageBox.warning(
+                self,
+                "Download Failed",
+                f"Failed to download update:\n\n{error_msg}"
+            )
+            self.status_bar.showMessage("Update download failed", 3000)
+
+        # Connect signals
+        self.update_downloader.progress.connect(on_progress)
+        self.update_downloader.finished.connect(on_download_finished)
+        self.update_downloader.error.connect(on_download_error)
+
+        # Handle cancel button
+        def on_cancel():
+            if self.update_downloader and self.update_downloader.isRunning():
+                self.update_downloader.cancel()
+                self.update_downloader.wait()
+                self.status_bar.showMessage("Download cancelled", 2000)
+
+        progress.canceled.connect(on_cancel)
+
+        # Start download
+        self.update_downloader.start()
+        self.status_bar.showMessage("Downloading update...", 3000)
 
     def _on_no_update(self, silent):
         """Handle no update available signal."""
