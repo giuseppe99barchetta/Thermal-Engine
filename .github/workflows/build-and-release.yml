@@ -141,9 +141,8 @@ jobs:
     - name: Install Inno Setup
       if: steps.version_bump.outputs.should_release == 'true'
       run: |
-        # Download and install Inno Setup
-        Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "innosetup.exe"
-        Start-Process -FilePath "innosetup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
+        # Install Inno Setup via Chocolatey (pre-installed on GitHub runners)
+        choco install innosetup -y --no-progress
         echo "Inno Setup installed"
 
     - name: Build Installer
