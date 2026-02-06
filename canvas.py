@@ -130,10 +130,16 @@ class CanvasPreview(QWidget):
         self._has_glass_cache = None  # Cache result of _has_glass_elements()
         self._animated_values = {}  # Track display values for animated gauges {element_name: current_display_value}
 
-        self.setFixedSize(
-            int(constants.DISPLAY_WIDTH * self.scale),
-            int(constants.DISPLAY_HEIGHT * self.scale)
-        )
+        # Canvas dimensions (actual display size scaled)
+        self.canvas_width = int(constants.DISPLAY_WIDTH * self.scale)
+        self.canvas_height = int(constants.DISPLAY_HEIGHT * self.scale)
+
+        # Allow widget to expand to fill available space
+        # Margins will be calculated dynamically in paintEvent
+        self.setMinimumSize(self.canvas_width + 200, self.canvas_height + 200)
+        from PySide6.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Enable keyboard input
 
@@ -221,6 +227,20 @@ class CanvasPreview(QWidget):
         self._glass_cache_valid = False  # Invalidate glass cache
         self.update()
 
+    def get_canvas_margins(self):
+        """Calculate margins dynamically to center canvas in widget."""
+        margin_x = (self.width() - self.canvas_width) // 2
+        margin_y = (self.height() - self.canvas_height) // 2
+        return max(0, margin_x), max(0, margin_y)
+
+    def widget_to_canvas_pos(self, widget_pos):
+        """Convert widget coordinates to canvas coordinates (accounting for margin)."""
+        margin_x, margin_y = self.get_canvas_margins()
+        return QPointF(
+            widget_pos.x() - margin_x,
+            widget_pos.y() - margin_y
+        )
+
     def _has_glass_elements(self):
         """Check if any element has glass effect enabled (cached)."""
         if self._has_glass_cache is None:
@@ -273,18 +293,29 @@ class CanvasPreview(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Draw video background if enabled, otherwise solid color
+        # Draw dark background for the entire widget (margin area)
+        painter.fillRect(self.rect(), QColor(25, 25, 35))
+
+        # Calculate dynamic margins to center canvas
+        margin_x, margin_y = self.get_canvas_margins()
+
+        # Translate painter to draw canvas in center with margin
+        painter.translate(margin_x, margin_y)
+
+        # Draw canvas area background
+        canvas_rect = QRectF(0, 0, self.canvas_width, self.canvas_height)
         if video_background.enabled:
             pixmap = video_background.get_frame_qpixmap(self.scale)
             if pixmap:
                 painter.drawPixmap(0, 0, pixmap)
             else:
-                painter.fillRect(self.rect(), self.background_color)
+                painter.fillRect(canvas_rect, self.background_color)
         else:
-            painter.fillRect(self.rect(), self.background_color)
+            painter.fillRect(canvas_rect, self.background_color)
 
-        painter.setPen(QPen(QColor(60, 60, 80), 2))
-        painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
+        # Draw canvas border
+        painter.setPen(QPen(QColor(100, 100, 120), 3))
+        painter.drawRect(canvas_rect)
 
         # Draw elements in reverse: last in list drawn first (back), first in list drawn last (front)
         # Tree shows first element at top, so top of tree = front of display
@@ -1237,7 +1268,7 @@ class CanvasPreview(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            pos = event.position()
+            pos = self.widget_to_canvas_pos(event.position())
             modifiers = event.modifiers()
             ctrl_held = modifiers & Qt.KeyboardModifier.ControlModifier
             shift_held = modifiers & Qt.KeyboardModifier.ShiftModifier
@@ -1363,7 +1394,7 @@ class CanvasPreview(QWidget):
             self.update()
 
     def mouseMoveEvent(self, event):
-        pos = event.position()
+        pos = self.widget_to_canvas_pos(event.position())
 
         # Handle multi-element resizing
         if self.resizing and len(self.selected_indices) > 1 and self.resize_start_bounds:
@@ -1470,12 +1501,14 @@ class CanvasPreview(QWidget):
             dy = (pos.y() - self.drag_start_mouse.y()) / self.scale
 
             for idx in self.selected_indices:
-                if idx in self.drag_start_positions:
+                if idx in self.drag_start_positions and 0 <= idx < len(self.elements):
                     start_x, start_y = self.drag_start_positions[idx]
                     new_x = int(start_x + dx)
                     new_y = int(start_y + dy)
-                    new_x = max(0, min(new_x, constants.DISPLAY_WIDTH - 50))
-                    new_y = max(0, min(new_y, constants.DISPLAY_HEIGHT - 50))
+                    # Allow elements to go outside canvas for cropping effects
+                    # Set generous limits to prevent dragging infinitely far
+                    new_x = max(-constants.DISPLAY_WIDTH * 2, min(new_x, constants.DISPLAY_WIDTH * 3))
+                    new_y = max(-constants.DISPLAY_HEIGHT * 2, min(new_y, constants.DISPLAY_HEIGHT * 3))
                     self.elements[idx].x = new_x
                     self.elements[idx].y = new_y
 

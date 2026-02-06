@@ -569,13 +569,8 @@ class ThemeEditorWindow(QMainWindow):
 
         self.canvas = CanvasPreview()
 
-        canvas_wrapper = QHBoxLayout()
-        canvas_wrapper.addStretch()
-        canvas_wrapper.addWidget(self.canvas)
-        canvas_wrapper.addStretch()
-
-        canvas_layout.addLayout(canvas_wrapper)
-        canvas_layout.addStretch()
+        # Add canvas directly to fill all available space
+        canvas_layout.addWidget(self.canvas)
 
         splitter.addWidget(canvas_container)
 
@@ -1526,7 +1521,18 @@ class ThemeEditorWindow(QMainWindow):
             # Update display dimensions based on connected device
             constants.DISPLAY_WIDTH = self.selected_device_def.width
             constants.DISPLAY_HEIGHT = self.selected_device_def.height
+
+            # Set adaptive preview scale based on display size
+            # Square displays (480x480) get larger scale for easier editing
+            # Wide displays (1280x480) keep smaller scale to fit on screen
+            aspect_ratio = constants.DISPLAY_WIDTH / constants.DISPLAY_HEIGHT
+            if aspect_ratio < 1.5:  # Square-ish displays
+                constants.PREVIEW_SCALE = 1.0  # 480x480 -> 720x720
+            else:  # Wide displays
+                constants.PREVIEW_SCALE = 0.5  # 1280x480 -> 640x240
+
             logger.info(f"Display dimensions set to {constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}")
+            logger.info(f"Preview scale set to {constants.PREVIEW_SCALE}x")
 
             # Recreate canvas with correct dimensions
             old_canvas = self.canvas
