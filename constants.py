@@ -2,10 +2,14 @@
 Constants and configuration for Thermal Engine.
 """
 
-# Display dimensions
-DISPLAY_WIDTH = 1280
+# Display dimensions (default - can be overridden by device)
+DISPLAY_WIDTH = 1280  # Default for Trofeo AIO (ultrawide)
 DISPLAY_HEIGHT = 480
 PREVIEW_SCALE = 0.5
+
+# Note: Actual display dimensions are determined by the connected device.
+# - Thermalright Trofeo: 1280x480 (ultrawide)
+# - Thermalright FW 360 Ultra: 480x480 (square)
 
 # HID Device settings
 VENDOR_ID = 0x35CC

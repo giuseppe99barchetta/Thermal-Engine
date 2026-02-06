@@ -12,6 +12,9 @@ psutil>=5.9.0
 # HID device communication (for LCD display)
 hidapi>=0.14.0
 
+# USB device communication (for experimental displays)
+pyusb>=1.2.1
+
 # Video background support (optional)
 opencv-python>=4.8.0
 numpy>=1.24.0

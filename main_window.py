@@ -9,6 +9,7 @@ import time
 import io
 import threading
 import psutil
+import logging
 
 # Windows-specific imports for power event handling
 if sys.platform == 'win32':
@@ -251,6 +252,16 @@ except ImportError:
 
 from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT, SOURCE_UNITS
 
+# Device backend system for multi-device support
+import device_backends
+from device_backends import (
+    DisplayBackend, enumerate_available_devices,
+    find_device_definition, create_backend, SUPPORTED_DEVICES
+)
+
+# Setup logger for main window
+logger = logging.getLogger(__name__)
+
 
 def get_value_with_unit(value, source, temp_hide_unit=False):
     """Format a value with its appropriate unit symbol."""
@@ -304,7 +315,9 @@ class ThemeEditorWindow(QMainWindow):
         self.theme_name = "Untitled Theme"
         self.background_color = "#0f0f19"
         self.elements = []
-        self.device = None
+        self.device = None  # Legacy compatibility
+        self.backend = None  # New device backend system
+        self.selected_device_def = None  # Selected device definition
         self.live_preview_timer = None
         self.target_fps = settings.get_setting("target_fps", 30)
 
@@ -1368,7 +1381,7 @@ class ThemeEditorWindow(QMainWindow):
 
     def toggle_connection(self):
         """Toggle between connected and disconnected states."""
-        if self.device:
+        if self.backend:
             # User manually disconnecting - stop any auto-reconnect
             if self._reconnect_timer:
                 self._reconnect_timer.stop()
@@ -1378,21 +1391,138 @@ class ThemeEditorWindow(QMainWindow):
         else:
             self.connect_display()
 
+    def select_device(self):
+        """Show device selection dialog."""
+        available = enumerate_available_devices()
+
+        if not available:
+            QMessageBox.warning(
+                self,
+                "No Devices Found",
+                "No supported display devices detected.\n\n"
+                "Make sure your display is connected and not in use by other software."
+            )
+            return None
+
+        # If only one device, auto-select it
+        if len(available) == 1:
+            return available[0]
+
+        # Multiple devices - show selection dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Display Device")
+        dialog.setMinimumWidth(400)
+
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel("Multiple display devices detected. Please select one:")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+
+        device_combo = QComboBox()
+        for dev in available:
+            exp_tag = " [EXPERIMENTAL]" if dev.experimental else ""
+            device_combo.addItem(f"{dev.name}{exp_tag}", dev)
+        layout.addWidget(device_combo)
+
+        # Warning for experimental devices
+        if any(dev.experimental for dev in available):
+            warning = QLabel(
+                "⚠️ EXPERIMENTAL devices have incomplete protocol support.\n"
+                "Display output may not work until the protocol is reverse-engineered."
+            )
+            warning.setWordWrap(True)
+            warning.setStyleSheet("color: #ff9800; padding: 10px; background: #2d2d2d; border-radius: 4px;")
+            layout.addWidget(warning)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        button_box.accepted.connect(dialog.accept)
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return device_combo.currentData()
+
+        return None
+
     def connect_display(self, show_error=True):
-        if not HAS_HID:
-            if show_error:
-                QMessageBox.warning(self, "Error", "HID library not installed.\nRun: pip install hidapi")
-            return False
+        """Connect to display using new backend system."""
+        # Check if already connected - don't create duplicate backend!
+        if self.backend and self.backend.is_connected():
+            logger.info("Display already connected, skipping reconnect")
+            return True
+
+        # Select device if not already selected
+        if not self.selected_device_def:
+            self.selected_device_def = self.select_device()
+            if not self.selected_device_def:
+                return False  # User cancelled
+
+        # Show experimental warning
+        if self.selected_device_def.experimental and show_error:
+            reply = QMessageBox.question(
+                self,
+                "Experimental Device",
+                f"⚠️ {self.selected_device_def.name} support is EXPERIMENTAL.\n\n"
+                "This device's protocol is not yet fully understood.\n"
+                "Display output may not work correctly.\n\n"
+                "A console window will open to show detailed logs for debugging.\n\n"
+                "Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                self.selected_device_def = None
+                return False
+
+            # Show console window for experimental devices
+            self.show_console()
 
         try:
-            self.device = hid.device()
-            self.device.open(0x0416, 0x5302)
+            # Create backend
+            self.backend = create_backend(self.selected_device_def)
+            if not self.backend:
+                if show_error:
+                    QMessageBox.critical(self, "Error", "Failed to create device backend.")
+                return False
 
-            init = bytearray(512)
-            init[0:4] = bytes([0xDA, 0xDB, 0xDC, 0xDD])
-            init[4] = 0x00
-            init[12] = 0x01
-            self.device.write(bytes([0x00]) + bytes(init))
+            # Connect
+            if not self.backend.connect():
+                if show_error:
+                    QMessageBox.critical(
+                        self,
+                        "Connection Failed",
+                        f"Failed to connect to {self.selected_device_def.name}.\n\n"
+                        "Make sure the device is connected and not in use by other software."
+                    )
+                self.backend = None
+                return False
+
+            # Set legacy device reference for compatibility
+            self.device = self.backend  # Acts as a flag for connected state
+
+            # Update display dimensions based on connected device
+            import constants
+            constants.DISPLAY_WIDTH = self.selected_device_def.width
+            constants.DISPLAY_HEIGHT = self.selected_device_def.height
+            logger.info(f"Display dimensions set to {constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}")
+
+            # Recreate canvas with correct dimensions
+            old_canvas = self.canvas
+            self.canvas = CanvasPreview()
+            # Copy settings from old canvas
+            self.canvas.set_background_color(self.background_color)
+            self.canvas.set_elements(self.elements)
+            # Replace in UI
+            canvas_wrapper = old_canvas.parent()
+            canvas_wrapper.layout().replaceWidget(old_canvas, self.canvas)
+            old_canvas.deleteLater()
+            # Reconnect signals
+            self.canvas.element_selected.connect(self.on_canvas_element_selected)
+            self.canvas.elements_selected.connect(self.on_canvas_elements_selected)
+            self.canvas.element_moved.connect(self.on_element_moved)
+            self.canvas.element_resized.connect(self.on_element_resized)
+            self.canvas.drag_started.connect(self.save_undo_state)
+            logger.info("Canvas recreated with device dimensions")
 
             # Update button text to "Disconnect"
             self.connect_action.setText("Disconnect")
@@ -1412,24 +1542,32 @@ class ThemeEditorWindow(QMainWindow):
             self._was_connected_before_sleep = False
             self._reconnect_attempts = 0
 
-            self.status_bar.showMessage("Connected to display - sending frames")
+            status_msg = f"Connected to {self.selected_device_def.name} ({constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT})"
+            if self.selected_device_def.experimental:
+                status_msg += " [experimental]"
+            self.status_bar.showMessage(status_msg)
             return True
 
         except Exception as e:
+            logger.error(f"Exception during connect_display: {e}", exc_info=True)
             if show_error:
-                QMessageBox.critical(self, "Error", f"Failed to connect:\n{e}\n\nMake sure TRCC is closed.")
+                QMessageBox.critical(self, "Error", f"Failed to connect:\n{e}")
+            self.backend = None
+            self.device = None
             return False
 
     def disconnect_display(self):
+        """Disconnect from display using backend system."""
         self.stop_continuous_send()
 
-        if self.device:
+        if self.backend:
             try:
-                self.device.close()
+                self.backend.disconnect()
             except Exception as e:
-                print(f"Error closing HID device: {e}")
+                print(f"Error disconnecting backend: {e}")
             finally:
-                self.device = None
+                self.backend = None
+                self.device = None  # Clear legacy reference
 
         self.frame_times = []
         self.last_frame_time = 0
@@ -3238,38 +3376,59 @@ class ThemeEditorWindow(QMainWindow):
         return buffer.getvalue()
 
     def send_jpeg_frame(self, jpeg_data):
-        if not self.device:
+        """Send JPEG frame to display via backend."""
+        if not self.backend:
             raise IOError("Device not connected")
 
-        MAGIC = bytes([0xDA, 0xDB, 0xDC, 0xDD])
+        # Build frame data according to protocol
+        # For HID devices (Thermalright Trofeo): Use known protocol with header + chunks
+        # For experimental USB devices: Send raw frame data (protocol unknown)
 
-        header = bytearray(512)
-        header[0:4] = MAGIC
-        header[4] = 0x02
-        header[8:12] = bytes([0x00, 0x05, 0xE0, 0x01])
-        header[12] = 0x02
+        if self.selected_device_def.backend_type == 'hid':
+            # HID Protocol for Thermalright Trofeo
+            MAGIC = bytes([0xDA, 0xDB, 0xDC, 0xDD])
 
-        jpeg_len = len(jpeg_data)
-        header[16] = jpeg_len & 0xFF
-        header[17] = (jpeg_len >> 8) & 0xFF
-        header[18] = (jpeg_len >> 16) & 0xFF
-        header[19] = (jpeg_len >> 24) & 0xFF
+            header = bytearray(512)
+            header[0:4] = MAGIC
+            header[4] = 0x02
+            header[8:12] = bytes([0x00, 0x05, 0xE0, 0x01])
+            header[12] = 0x02
 
-        first_chunk = min(len(jpeg_data), 492)
-        header[20:20 + first_chunk] = jpeg_data[:first_chunk]
+            jpeg_len = len(jpeg_data)
+            header[16] = jpeg_len & 0xFF
+            header[17] = (jpeg_len >> 8) & 0xFF
+            header[18] = (jpeg_len >> 16) & 0xFF
+            header[19] = (jpeg_len >> 24) & 0xFF
 
-        try:
-            self.device.write(bytes([0x00]) + bytes(header))
+            first_chunk = min(len(jpeg_data), 492)
+            header[20:20 + first_chunk] = jpeg_data[:first_chunk]
 
-            offset = first_chunk
-            while offset < len(jpeg_data):
-                chunk = jpeg_data[offset:offset + 512]
-                if len(chunk) < 512:
-                    chunk = chunk + bytes(512 - len(chunk))
-                self.device.write(bytes([0x00]) + chunk)
-                offset += 512
-        except Exception as e:
-            raise IOError(f"HID write failed: {e}")
+            try:
+                # Send header
+                if not self.backend.send_frame(bytes([0x00]) + bytes(header)):
+                    raise IOError("Failed to send header")
+
+                # Send remaining chunks
+                offset = first_chunk
+                while offset < len(jpeg_data):
+                    chunk = jpeg_data[offset:offset + 512]
+                    if len(chunk) < 512:
+                        chunk = chunk + bytes(512 - len(chunk))
+                    if not self.backend.send_frame(bytes([0x00]) + chunk):
+                        raise IOError("Failed to send chunk")
+                    offset += 512
+            except Exception as e:
+                raise IOError(f"Frame send failed: {e}")
+
+        else:
+            # USB devices (ChiZhu Tech USBDISPLAY) - send JPEG with protocol header
+            try:
+                if not self.backend.send_frame(jpeg_data):
+                    # Log but don't crash
+                    print(f"Frame send returned False")
+            except Exception as e:
+                # Log but don't crash
+                print(f"Frame send error: {e}")
 
     def show_settings(self):
         """Show the settings dialog."""
