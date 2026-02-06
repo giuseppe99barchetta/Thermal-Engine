@@ -92,6 +92,14 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
+    - name: Download UPX
+      if: steps.version_bump.outputs.should_release == 'true'
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v4.2.2/upx-4.2.2-win64.zip" -OutFile "upx.zip"
+        Expand-Archive -Path "upx.zip" -DestinationPath "."
+        Move-Item "upx-4.2.2-win64" "upx"
+        echo "$PWD\upx" >> $env:GITHUB_PATH
+
     - name: Build with PyInstaller
       if: steps.version_bump.outputs.should_release == 'true'
       run: |
@@ -106,7 +114,19 @@ jobs:
           --hidden-import=PySide6.QtWidgets `
           --hidden-import=device_backends `
           --hidden-import=video_background `
-          --collect-all PySide6 `
+          --exclude-module=tkinter `
+          --exclude-module=matplotlib `
+          --exclude-module=pandas `
+          --exclude-module=scipy `
+          --exclude-module=PySide6.QtNetwork `
+          --exclude-module=PySide6.QtQml `
+          --exclude-module=PySide6.QtQuick `
+          --exclude-module=PySide6.QtWebEngineWidgets `
+          --exclude-module=PySide6.Qt3D `
+          --exclude-module=PySide6.QtCharts `
+          --exclude-module=PySide6.QtDataVisualization `
+          --upx-dir=upx `
+          --strip `
           main.py
 
     - name: Rename executable
