@@ -106,7 +106,7 @@ jobs:
       if: steps.version_bump.outputs.should_release == 'true'
       run: |
         pyinstaller --name="ThermalEngine" `
-          --onefile `
+          --onedir `
           --windowed `
           --icon="assets/icon.ico" `
           --add-data="elements;elements" `
@@ -138,15 +138,38 @@ jobs:
           --exclude-module=PySide6.QtDataVisualization `
           main.py
 
-    - name: Rename executable
+    - name: Install Inno Setup
+      if: steps.version_bump.outputs.should_release == 'true'
+      run: |
+        # Download and install Inno Setup
+        Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "innosetup.exe"
+        Start-Process -FilePath "innosetup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
+        echo "Inno Setup installed"
+
+    - name: Build Installer
       if: steps.version_bump.outputs.should_release == 'true'
       run: |
         $version = "${{ steps.version_bump.outputs.new_version }}"
-        $exeName = "ThermalEngine-$version-Windows.exe"
-        Move-Item "dist/ThermalEngine.exe" "dist/$exeName"
-        echo "Renamed to: $exeName"
-        echo "exe_name=$exeName" >> $env:GITHUB_OUTPUT
-      id: rename_exe
+        # Remove 'v' prefix from version for installer
+        $versionNum = $version -replace '^v', ''
+
+        # Compile installer with Inno Setup
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+          /DMyAppVersion=$versionNum `
+          installer.iss
+
+        # Find the generated installer
+        $installerName = "ThermalEngine-$versionNum-Setup.exe"
+        if (Test-Path $installerName) {
+          $finalName = "ThermalEngine-$version-Setup.exe"
+          Move-Item $installerName $finalName -Force
+          echo "installer_name=$finalName" >> $env:GITHUB_OUTPUT
+          echo "Created installer: $finalName"
+        } else {
+          echo "ERROR: Installer not found at $installerName"
+          exit 1
+        }
+      id: build_installer
 
     - name: Create Release
       if: steps.version_bump.outputs.should_release == 'true'
@@ -156,7 +179,7 @@ jobs:
         name: Release ${{ steps.version_bump.outputs.new_version }}
         draft: false
         prerelease: false
-        files: dist/${{ steps.rename_exe.outputs.exe_name }}
+        files: ${{ steps.build_installer.outputs.installer_name }}
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -165,5 +188,5 @@ jobs:
       if: steps.version_bump.outputs.should_release == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: ThermalEngine-${{ steps.version_bump.outputs.new_version }}
-        path: dist/${{ steps.rename_exe.outputs.exe_name }}
+        name: ThermalEngine-${{ steps.version_bump.outputs.new_version }}-Installer
+        path: ${{ steps.build_installer.outputs.installer_name }}

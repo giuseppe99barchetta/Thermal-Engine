@@ -4,46 +4,71 @@
 #define MyAppName "ThermalEngine"
 #define MyAppPublisher "Thermal Engine"
 #define MyAppExeName "ThermalEngine.exe"
+#define MyAppURL "https://github.com/giuseppe99barchetta/Thermal-Engine"
+#define MyAppId "{{8B5F3F3E-8C4D-4F3E-8B5F-3F3E8C4D4F3E}"
 
 [Setup]
-AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\{#MyAppName}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
+DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=.
 OutputBaseFilename=ThermalEngine-{#MyAppVersion}-Setup
-Compression=lzma
+Compression=lzma2/ultra64
 SolidCompression=yes
+LZMAUseSeparateProcess=yes
+LZMADictionarySize=1048576
+LZMANumFastBytes=273
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog
 SetupIconFile=assets\icon.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
+MinVersion=10.0
+ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64
 ; Update/upgrade support
 UsePreviousAppDir=yes
-CloseApplications=yes
+CloseApplications=force
 CloseApplicationsFilter=*.exe
-RestartApplications=yes
-UninstallDisplayIcon={app}\{#MyAppExeName}
+RestartApplications=no
+DisableWelcomePage=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "startupicon"; Description: "Launch at Windows startup (minimized to tray)"; GroupDescription: "Additional options:"
 
 [Files]
-; Main application files (excluding user data folders)
-Source: "dist\ThermalEngine\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "presets\*,elements\*"
-; User data folders - only install defaults if they don't exist (preserves user customizations)
-Source: "dist\ThermalEngine\presets\*"; DestDir: "{app}\presets"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
-Source: "dist\ThermalEngine\elements\*"; DestDir: "{app}\elements"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
+; Main application files
+Source: "dist\ThermalEngine\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Presets - from project root (only install if they don't exist to preserve user customizations)
+Source: "presets\*"; DestDir: "{app}\presets"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs; Attribs: readonly
 
 [Icons]
+; Start Menu shortcut
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+
+; Desktop shortcut (if selected)
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
+; Startup shortcut (if selected) - launches minimized
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--minimized"; Tasks: startupicon
+
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runascurrentuser
+; Option to launch after installation
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; Kill any running instances before uninstall
+Filename: "{cmd}"; Parameters: "/c taskkill /f /im {#MyAppExeName} >nul 2>&1"; Flags: runhidden; RunOnceId: "KillApp"
