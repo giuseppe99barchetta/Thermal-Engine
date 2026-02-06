@@ -114,6 +114,11 @@ jobs:
           --hidden-import=PySide6.QtWidgets `
           --hidden-import=device_backends `
           --hidden-import=video_background `
+          --hidden-import=usb `
+          --hidden-import=usb.core `
+          --hidden-import=usb.backend `
+          --hidden-import=usb.backend.libusb1 `
+          --collect-submodules=usb `
           --exclude-module=tkinter `
           --exclude-module=matplotlib `
           --exclude-module=pandas `
@@ -126,7 +131,6 @@ jobs:
           --exclude-module=PySide6.QtCharts `
           --exclude-module=PySide6.QtDataVisualization `
           --upx-dir=upx `
-          --strip `
           main.py
 
     - name: Rename executable
