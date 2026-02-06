@@ -92,13 +92,15 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Download UPX
+    - name: Download libusb DLLs
       if: steps.version_bump.outputs.should_release == 'true'
       run: |
-        Invoke-WebRequest -Uri "https://github.com/upx/upx/releases/download/v4.2.2/upx-4.2.2-win64.zip" -OutFile "upx.zip"
-        Expand-Archive -Path "upx.zip" -DestinationPath "."
-        Move-Item "upx-4.2.2-win64" "upx"
-        echo "$PWD\upx" >> $env:GITHUB_PATH
+        # Download libusb for Windows (needed for USB device access)
+        Invoke-WebRequest -Uri "https://github.com/libusb/libusb/releases/download/v1.0.27/libusb-1.0.27.7z" -OutFile "libusb.7z"
+        7z x libusb.7z -olibusb
+        # Copy the 64-bit DLL to a location PyInstaller will find
+        Copy-Item "libusb\VS2019\MS64\dll\libusb-1.0.dll" -Destination "." -Force
+        echo "libusb-1.0.dll downloaded and ready"
 
     - name: Build with PyInstaller
       if: steps.version_bump.outputs.should_release == 'true'
@@ -109,16 +111,20 @@ jobs:
           --icon="assets/icon.ico" `
           --add-data="elements;elements" `
           --add-data="assets;assets" `
+          --add-binary="libusb-1.0.dll;." `
           --hidden-import=PySide6.QtCore `
           --hidden-import=PySide6.QtGui `
           --hidden-import=PySide6.QtWidgets `
           --hidden-import=device_backends `
           --hidden-import=video_background `
+          --collect-submodules=device_backends `
           --hidden-import=usb `
           --hidden-import=usb.core `
           --hidden-import=usb.backend `
           --hidden-import=usb.backend.libusb1 `
           --collect-submodules=usb `
+          --collect-binaries=usb `
+          --collect-data=usb `
           --exclude-module=tkinter `
           --exclude-module=matplotlib `
           --exclude-module=pandas `
@@ -130,7 +136,6 @@ jobs:
           --exclude-module=PySide6.Qt3D `
           --exclude-module=PySide6.QtCharts `
           --exclude-module=PySide6.QtDataVisualization `
-          --upx-dir=upx `
           main.py
 
     - name: Rename executable
