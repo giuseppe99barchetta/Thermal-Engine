@@ -2,9 +2,9 @@
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/nathanielh)
 
-A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom monitoring themes with real-time CPU/GPU sensor data, gauges, clocks, images, and video backgrounds.
+A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring themes with real-time CPU/GPU sensor data, gauges, clocks, images, and video backgrounds.
 
-![Preview](https://img.shields.io/badge/Display-1280x480-blue) ![Python](https://img.shields.io/badge/Python-3.10+-green) ![License](https://img.shields.io/badge/License-MIT-yellow)
+![Preview](https://img.shields.io/badge/Display-Multiple%20Sizes-blue) ![Python](https://img.shields.io/badge/Python-3.10+-green) ![License](https://img.shields.io/badge/License-MIT-yellow) ![Auto%20Release](https://img.shields.io/badge/Auto%20Release-Enabled-success)
 
 <img width="1306" height="732" alt="image" src="https://github.com/user-attachments/assets/d6eafe44-8ea3-4f00-a6bd-2c0b672de1d8" />
 
@@ -12,6 +12,12 @@ A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom 
 ## Features
 
 - **Visual drag-and-drop editor** with live preview
+- **Universal display support**:
+  - HID and USB bulk transfer protocols
+  - Auto-detects any display size (480x480, 1280x480, custom resolutions)
+  - Works with WinUSB-compatible displays
+- **Expandable canvas**: Full-screen editing area with margins for precise image cropping
+- **Display orientation controls**: Flip/rotate output for any mounting position
 - **Real-time sensor data**: CPU/GPU temperature, utilization, clock speed, power
 - **No admin required** - runs as a standard user application
 - **Auto-recovery**: Sensors automatically reconnect after sleep/wake or if HWiNFO restarts
@@ -32,8 +38,22 @@ A visual theme editor for **LCD AIO cooler displays** (1280x480). Create custom 
 
 ## Supported Displays
 
-- Thermalright Trofeo AIO LCD (1280x480)
-- Other HID-based AIO LCD displays (may require configuration)
+### Communication Protocols
+
+**HID-based displays:**
+- Thermalright Trofeo AIO (1280x480) ✅
+- Other HID displays (may require protocol configuration)
+
+**USB Bulk Transfer (WinUSB):**
+- **Thermalright FW 360 Ultra** (480x480) ✅ - ChiZhu Tech USBDISPLAY protocol
+- **Any AIO display using WinUSB driver** - Just needs WinUSB driver installation via Zadig
+- Supports custom protocols and dimensions
+
+**Universal Features:**
+- Automatic dimension detection (works with any resolution: 480x480, 1280x480, 1920x480, etc.)
+- Dynamic canvas scaling for comfortable editing
+- Display orientation controls (flip/rotate) for any mounting position
+- Protocol can be extended for new display types
 
 ## Requirements
 
@@ -124,6 +144,22 @@ Build a standalone executable locally:
 1. **Close any manufacturer software** (e.g., TRCC) if running - it locks the display
 2. Launch the editor
 3. The editor will auto-connect, or click "Connect" in the toolbar
+4. Display dimensions are automatically detected and applied
+
+### Display Orientation
+
+If your display appears upside-down or rotated, adjust the orientation:
+
+1. Go to **Display > Display Orientation**
+2. Choose from available options:
+   - **Normal** - Default orientation
+   - **Flip Vertical** - Mirror vertically
+   - **Flip Horizontal** - Mirror horizontally
+   - **Rotate 180°** - Upside down
+   - **Rotate 90° CW** - Clockwise rotation
+   - **Rotate 90° CCW** - Counter-clockwise rotation
+
+The setting is saved automatically and applied to all frames.
 
 ### Setting Up Sensors
 
@@ -142,6 +178,15 @@ Go to **Display > Diagnose Sensors** to verify sensor connection.
 3. **Resize** using corner handles
 4. **Configure properties** in the Properties panel (right side)
 5. **Save as preset** via File > Save as Preset
+
+### Canvas Features
+
+- **Full-screen editing area**: Canvas expands to fill available space for comfortable work
+- **Visible margins**: Dark background around canvas shows elements extending beyond boundaries
+- **Image cropping**: Drag images/GIFs outside canvas edges to crop and position precisely
+- **Auto-scaling**: Canvas automatically scales based on connected display size
+  - 480x480 displays: 1.5x scale (720x720 editing area)
+  - 1280x480 displays: 0.5x scale (640x240 editing area)
 
 ### Keyboard Shortcuts
 
@@ -193,13 +238,35 @@ Go to **Display > Diagnose Sensors** to verify sensor connection.
 - Avoid video backgrounds on older machines
 - Simplify theme (fewer elements)
 
+### USB Display not detected
+If your USB-based AIO display isn't detected:
+
+1. **Install WinUSB driver** using [Zadig](https://zadig.akeo.ie/)
+   - Download and run Zadig
+   - Options → List All Devices
+   - Select your display device (e.g., "ChiZhu Tech", or check Device Manager for VID/PID)
+   - Select "WinUSB" as target driver
+   - Click "Replace Driver" or "Install Driver"
+2. **Unplug and replug** the USB cable
+3. **Restart** ThermalEngine
+4. See `FIX_USB_WINDOWS.md` for detailed USB troubleshooting
+
+**Note:** ThermalEngine will automatically detect your display dimensions and protocol. No manual configuration needed!
+
+### Display appears upside-down or rotated
+Use **Display > Display Orientation** to adjust for your mounting position:
+- **Rotate 180°** - Common fix for upside-down displays
+- **Flip Vertical/Horizontal** - For mirrored displays
+- **Rotate 90°** - For rotated mounting
+
 ## Project Structure
 
 ```
 Thermal-Engine/
 ├── main.py              # Entry point
 ├── main_window.py       # Main application window
-├── canvas.py            # Visual preview widget
+├── canvas.py            # Visual preview widget with expandable editing area
+├── device_backends.py   # Multi-device backend system (HID, USB bulk)
 ├── properties.py        # Properties panel
 ├── element_list.py      # Element list panel
 ├── presets.py           # Preset management
@@ -207,7 +274,7 @@ Thermal-Engine/
 ├── sensors.py           # Sensor polling and smoothing
 ├── hwinfo_reader.py     # HWiNFO shared memory reader
 ├── video_background.py  # Video background support
-├── constants.py         # Configuration constants
+├── constants.py         # Configuration constants (dynamic dimensions)
 ├── scripts/             # Build and utility scripts
 │   ├── build-local.ps1  # Local build script
 │   └── clean-local.ps1  # Clean up build artifacts
@@ -219,7 +286,34 @@ Thermal-Engine/
 │   └── gif.py
 ├── presets/             # Saved presets
 └── .github/workflows/   # CI/CD workflows
-    └── release.yml      # Automated release build
+    ├── auto-tag.yml     # Automatic semantic versioning
+    └── release.yml      # Automated build and release
+```
+
+## Development
+
+### Automatic Releases
+
+This project uses **semantic versioning** with automatic tagging and releases:
+
+**Commit message format:**
+```bash
+fix: description     # Patch bump (1.0.0 -> 1.0.1)
+feat: description    # Minor bump (1.0.0 -> 1.1.0)
+major: description   # Major bump (1.0.0 -> 2.0.0)
+```
+
+**Workflow:**
+1. Commit with proper prefix (`fix:`, `feat:`, `major:`)
+2. Push to `main` branch
+3. GitHub Actions automatically:
+   - Creates version tag
+   - Builds Windows exe
+   - Creates GitHub Release with exe attached
+
+**Manual build:**
+```bash
+pyinstaller --name="Thermal-Engine" --windowed --add-data="elements;elements" --hidden-import=PySide6.QtCore --hidden-import=PySide6.QtGui --hidden-import=PySide6.QtWidgets --hidden-import=device_backends --hidden-import=video_background --collect-all PySide6 main.py
 ```
 
 ## License

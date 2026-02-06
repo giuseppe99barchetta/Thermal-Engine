@@ -40,8 +40,8 @@ jobs:
 
     - name: Create ZIP archive
       run: |
-        cd dist
-        powershell Compress-Archive -Path Thermal-Engine -DestinationPath Thermal-Engine-Windows.zip
+        cd dist/Thermal-Engine
+        powershell Compress-Archive -Path * -DestinationPath ../Thermal-Engine-Windows.zip
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
