@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QColorDialog, QFileDialog,
     QComboBox, QSplitter, QMessageBox, QStatusBar, QTabWidget,
     QDialog, QCheckBox, QDialogButtonBox, QGroupBox, QFormLayout, QSystemTrayIcon,
-    QTextEdit, QPlainTextEdit
+    QTextEdit, QPlainTextEdit, QSpinBox
 )
 from PySide6.QtCore import Qt, QTimer, QByteArray, Signal, QObject
 from PySide6.QtGui import QColor, QAction, QKeySequence, QIcon, QTextCursor, QFont
@@ -347,6 +347,13 @@ class ThemeEditorWindow(QMainWindow):
         self._render_thread = None
         self._render_thread_running = False
 
+        # Multi-page system
+        self.pages = [{"name": "Page 1", "number": 1}]  # List of pages
+        self.current_page = 1  # Current page being edited/displayed
+        self.auto_rotate_pages = False  # Auto-rotate through pages
+        self.page_rotation_interval = 5  # Seconds between page rotations
+        self.page_rotation_timer = None  # Timer for auto-rotation
+
         # Sleep/wake handling - auto-reconnect
         self._reconnect_timer = None
         self._reconnect_attempts = 0
@@ -569,8 +576,59 @@ class ThemeEditorWindow(QMainWindow):
 
         self.canvas = CanvasPreview()
 
+        # Initialize grid settings from preferences
+        self.canvas.set_show_grid(settings.get_setting("show_grid", True))
+        self.canvas.set_snap_to_grid(settings.get_setting("snap_to_grid", True))
+
         # Add canvas directly to fill all available space
         canvas_layout.addWidget(self.canvas)
+
+        # Page controls at bottom
+        page_controls_layout = QHBoxLayout()
+        page_controls_layout.addWidget(QLabel("Page:"))
+
+        self.prev_page_btn = QPushButton("◀")
+        self.prev_page_btn.setFixedWidth(40)
+        self.prev_page_btn.clicked.connect(self.prev_page)
+        page_controls_layout.addWidget(self.prev_page_btn)
+
+        self.page_combo = QComboBox()
+        self.page_combo.setFixedWidth(120)
+        self.page_combo.currentIndexChanged.connect(self.on_page_changed)
+        self.update_page_combo()
+        page_controls_layout.addWidget(self.page_combo)
+
+        self.next_page_btn = QPushButton("▶")
+        self.next_page_btn.setFixedWidth(40)
+        self.next_page_btn.clicked.connect(self.next_page)
+        page_controls_layout.addWidget(self.next_page_btn)
+
+        self.add_page_btn = QPushButton("+ Add Page")
+        self.add_page_btn.setFixedWidth(90)
+        self.add_page_btn.clicked.connect(self.add_page)
+        page_controls_layout.addWidget(self.add_page_btn)
+
+        self.delete_page_btn = QPushButton("Delete Page")
+        self.delete_page_btn.setFixedWidth(90)
+        self.delete_page_btn.clicked.connect(self.delete_page)
+        page_controls_layout.addWidget(self.delete_page_btn)
+
+        self.auto_rotate_checkbox = QCheckBox("Auto-Rotate")
+        self.auto_rotate_checkbox.setChecked(self.auto_rotate_pages)
+        self.auto_rotate_checkbox.toggled.connect(self.toggle_auto_rotate)
+        page_controls_layout.addWidget(self.auto_rotate_checkbox)
+
+        self.rotation_interval_spin = QSpinBox()
+        self.rotation_interval_spin.setRange(1, 60)
+        self.rotation_interval_spin.setValue(self.page_rotation_interval)
+        self.rotation_interval_spin.setSuffix(" sec")
+        self.rotation_interval_spin.setFixedWidth(80)
+        self.rotation_interval_spin.valueChanged.connect(self.set_rotation_interval)
+        page_controls_layout.addWidget(self.rotation_interval_spin)
+
+        page_controls_layout.addStretch()
+
+        canvas_layout.addLayout(page_controls_layout)
 
         splitter.addWidget(canvas_container)
 
@@ -670,6 +728,21 @@ class ThemeEditorWindow(QMainWindow):
         self.redo_action.triggered.connect(self.redo)
         self.redo_action.setEnabled(False)
         edit_menu.addAction(self.redo_action)
+
+        # View menu
+        view_menu = menubar.addMenu("View")
+
+        self.show_grid_action = QAction("Show Grid", self)
+        self.show_grid_action.setCheckable(True)
+        self.show_grid_action.setChecked(settings.get_setting("show_grid", True))
+        self.show_grid_action.triggered.connect(self.toggle_show_grid)
+        view_menu.addAction(self.show_grid_action)
+
+        self.snap_to_grid_action = QAction("Snap to Grid", self)
+        self.snap_to_grid_action.setCheckable(True)
+        self.snap_to_grid_action.setChecked(settings.get_setting("snap_to_grid", True))
+        self.snap_to_grid_action.triggered.connect(self.toggle_snap_to_grid)
+        view_menu.addAction(self.snap_to_grid_action)
 
         display_menu = menubar.addMenu("Display")
 
@@ -921,7 +994,9 @@ class ThemeEditorWindow(QMainWindow):
 
     def _do_refresh_canvas(self):
         """Actually perform the canvas refresh."""
-        self.canvas.set_elements(self.elements)
+        # Filter elements by current page
+        visible_elements = [el for el in self.elements if getattr(el, 'page', 1) == self.current_page]
+        self.canvas.set_elements(visible_elements)
         self.canvas.update()
 
     def save_undo_state(self):
@@ -1699,6 +1774,127 @@ class ThemeEditorWindow(QMainWindow):
 
         self.status_bar.showMessage(f"Display orientation: {orientation.replace('_', ' ').title()}")
 
+    def toggle_show_grid(self, checked):
+        """Toggle grid visibility."""
+        self.canvas.set_show_grid(checked)
+        settings.set_setting("show_grid", checked)
+        self.status_bar.showMessage(f"Grid: {'Shown' if checked else 'Hidden'}")
+
+    def toggle_snap_to_grid(self, checked):
+        """Toggle snap to grid."""
+        self.canvas.set_snap_to_grid(checked)
+        settings.set_setting("snap_to_grid", checked)
+        self.status_bar.showMessage(f"Snap to Grid: {'Enabled' if checked else 'Disabled'}")
+
+    def update_page_combo(self):
+        """Update page combo box with current pages."""
+        self.page_combo.blockSignals(True)
+        self.page_combo.clear()
+        for page in self.pages:
+            self.page_combo.addItem(page["name"], page["number"])
+        # Select current page
+        for i, page in enumerate(self.pages):
+            if page["number"] == self.current_page:
+                self.page_combo.setCurrentIndex(i)
+                break
+        self.page_combo.blockSignals(False)
+
+    def on_page_changed(self, index):
+        """Handle page selection change."""
+        if index >= 0 and index < len(self.pages):
+            self.current_page = self.pages[index]["number"]
+            self.element_list.current_page = self.current_page  # Update element list's current page
+            self.refresh_canvas()
+            self.status_bar.showMessage(f"Switched to {self.pages[index]['name']}")
+
+    def prev_page(self):
+        """Go to previous page."""
+        current_index = self.page_combo.currentIndex()
+        if current_index > 0:
+            self.page_combo.setCurrentIndex(current_index - 1)
+
+    def next_page(self):
+        """Go to next page."""
+        current_index = self.page_combo.currentIndex()
+        if current_index < len(self.pages) - 1:
+            self.page_combo.setCurrentIndex(current_index + 1)
+
+    def add_page(self):
+        """Add a new page."""
+        new_page_num = max(p["number"] for p in self.pages) + 1 if self.pages else 1
+        new_page = {"name": f"Page {new_page_num}", "number": new_page_num}
+        self.pages.append(new_page)
+        self.update_page_combo()
+        # Switch to new page
+        self.page_combo.setCurrentIndex(len(self.pages) - 1)
+        self.status_bar.showMessage(f"Created {new_page['name']}")
+
+    def delete_page(self):
+        """Delete current page (if not the last one)."""
+        if len(self.pages) <= 1:
+            QMessageBox.warning(self, "Cannot Delete", "Cannot delete the last page.")
+            return
+
+        current_index = self.page_combo.currentIndex()
+        page_to_delete = self.pages[current_index]
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Delete Page",
+            f"Delete {page_to_delete['name']}? All elements on this page will be removed.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Remove elements on this page
+            self.elements = [el for el in self.elements if getattr(el, 'page', 1) != page_to_delete["number"]]
+            # Remove page
+            self.pages.pop(current_index)
+            # Switch to previous page or first page
+            new_index = max(0, current_index - 1)
+            self.current_page = self.pages[new_index]["number"]
+            self.update_page_combo()
+            self.refresh_canvas()
+            self.element_list.set_elements(self.elements)
+            self.status_bar.showMessage(f"Deleted {page_to_delete['name']}")
+
+    def toggle_auto_rotate(self, checked):
+        """Toggle auto-rotation of pages."""
+        self.auto_rotate_pages = checked
+        if checked:
+            self.start_page_rotation()
+        else:
+            self.stop_page_rotation()
+        self.status_bar.showMessage(f"Auto-Rotate: {'Enabled' if checked else 'Disabled'}")
+
+    def set_rotation_interval(self, value):
+        """Set page rotation interval in seconds."""
+        self.page_rotation_interval = value
+        if self.auto_rotate_pages:
+            # Restart timer with new interval
+            self.start_page_rotation()
+
+    def start_page_rotation(self):
+        """Start auto-rotation timer."""
+        if self.page_rotation_timer:
+            self.page_rotation_timer.stop()
+        self.page_rotation_timer = QTimer()
+        self.page_rotation_timer.timeout.connect(self.rotate_to_next_page)
+        self.page_rotation_timer.start(self.page_rotation_interval * 1000)
+
+    def stop_page_rotation(self):
+        """Stop auto-rotation timer."""
+        if self.page_rotation_timer:
+            self.page_rotation_timer.stop()
+            self.page_rotation_timer = None
+
+    def rotate_to_next_page(self):
+        """Rotate to next page (wraps around to first page)."""
+        current_index = self.page_combo.currentIndex()
+        next_index = (current_index + 1) % len(self.pages)
+        self.page_combo.setCurrentIndex(next_index)
+
     def _start_render_thread(self):
         """Start background render thread for overdrive mode."""
         if self._render_thread and self._render_thread.is_alive():
@@ -1804,7 +2000,8 @@ class ThemeEditorWindow(QMainWindow):
                 else:
                     # Fallback to direct render if buffer empty
                     sensor_data = self.get_sensor_data()
-                    for element in self.elements:
+                    # Update sensor values for current page elements only
+                    for element in self.get_current_page_elements():
                         if element.source != "static" and element.source in sensor_data:
                             element.value = sensor_data[element.source]
                     img = self.render_theme_image()
@@ -1817,7 +2014,8 @@ class ThemeEditorWindow(QMainWindow):
                 # Standard mode - direct render and send
                 sensor_data = self.get_sensor_data()
 
-                for element in self.elements:
+                # Update sensor values for current page elements only
+                for element in self.get_current_page_elements():
                     if element.source != "static" and element.source in sensor_data:
                         element.value = sensor_data[element.source]
 
@@ -1829,7 +2027,8 @@ class ThemeEditorWindow(QMainWindow):
             self._canvas_update_counter += 1
             if self._canvas_update_counter >= self._canvas_update_interval:
                 self._canvas_update_counter = 0
-                self.canvas.set_elements(self.elements)
+                # Show current page elements on canvas
+                self.canvas.set_elements(self.get_current_page_elements())
                 self.canvas.update()
 
             self.record_frame_time()
@@ -2037,6 +2236,10 @@ class ThemeEditorWindow(QMainWindow):
 
         return font
 
+    def get_current_page_elements(self):
+        """Get elements for current page."""
+        return [el for el in self.elements if getattr(el, 'page', 1) == self.current_page]
+
     def render_theme_image(self):
         # Use video frame as background if enabled, otherwise solid color
         if video_background.enabled:
@@ -2049,7 +2252,9 @@ class ThemeEditorWindow(QMainWindow):
             img = Image.new('RGBA', (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT), color=self.background_color)
 
         # Render in reverse order so elements at top of list appear in front
-        for element in reversed(self.elements):
+        # Filter by current page
+        page_elements = self.get_current_page_elements()
+        for element in reversed(page_elements):
             self.render_element_with_opacity(img, element)
 
         # Convert back to RGB for output

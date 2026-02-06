@@ -130,6 +130,11 @@ class CanvasPreview(QWidget):
         self._has_glass_cache = None  # Cache result of _has_glass_elements()
         self._animated_values = {}  # Track display values for animated gauges {element_name: current_display_value}
 
+        # Grid settings
+        self.show_grid = True
+        self.snap_to_grid = True
+        self.grid_spacing = 20  # Grid spacing in actual pixels (not scaled)
+
         # Canvas dimensions (actual display size scaled)
         self.canvas_width = int(constants.DISPLAY_WIDTH * self.scale)
         self.canvas_height = int(constants.DISPLAY_HEIGHT * self.scale)
@@ -227,11 +232,46 @@ class CanvasPreview(QWidget):
         self._glass_cache_valid = False  # Invalidate glass cache
         self.update()
 
+    def snap_to_grid_coord(self, value):
+        """Snap a coordinate value to the grid."""
+        if not self.snap_to_grid:
+            return value
+        return round(value / self.grid_spacing) * self.grid_spacing
+
+    def set_show_grid(self, show):
+        """Toggle grid visibility."""
+        self.show_grid = show
+        self.update()
+
+    def set_snap_to_grid(self, snap):
+        """Toggle snap to grid."""
+        self.snap_to_grid = snap
+
     def get_canvas_margins(self):
         """Calculate margins dynamically to center canvas in widget."""
         margin_x = (self.width() - self.canvas_width) // 2
         margin_y = (self.height() - self.canvas_height) // 2
         return max(0, margin_x), max(0, margin_y)
+
+    def draw_grid(self, painter):
+        """Draw grid lines on canvas."""
+        grid_color = QColor(60, 60, 80, 100)  # Semi-transparent grid lines
+        painter.setPen(QPen(grid_color, 1, Qt.PenStyle.DotLine))
+
+        # Scaled grid spacing
+        spacing = int(self.grid_spacing * self.scale)
+
+        # Draw vertical lines
+        x = spacing
+        while x < self.canvas_width:
+            painter.drawLine(x, 0, x, self.canvas_height)
+            x += spacing
+
+        # Draw horizontal lines
+        y = spacing
+        while y < self.canvas_height:
+            painter.drawLine(0, y, self.canvas_width, y)
+            y += spacing
 
     def widget_to_canvas_pos(self, widget_pos):
         """Convert widget coordinates to canvas coordinates (accounting for margin)."""
@@ -316,6 +356,10 @@ class CanvasPreview(QWidget):
         # Draw canvas border
         painter.setPen(QPen(QColor(100, 100, 120), 3))
         painter.drawRect(canvas_rect)
+
+        # Draw grid if enabled
+        if self.show_grid:
+            self.draw_grid(painter)
 
         # Draw elements in reverse: last in list drawn first (back), first in list drawn last (front)
         # Tree shows first element at top, so top of tree = front of display
@@ -1503,8 +1547,17 @@ class CanvasPreview(QWidget):
             for idx in self.selected_indices:
                 if idx in self.drag_start_positions and 0 <= idx < len(self.elements):
                     start_x, start_y = self.drag_start_positions[idx]
-                    new_x = int(start_x + dx)
-                    new_y = int(start_y + dy)
+                    new_x = start_x + dx
+                    new_y = start_y + dy
+
+                    # Apply snap to grid if enabled
+                    if self.snap_to_grid:
+                        new_x = self.snap_to_grid_coord(new_x)
+                        new_y = self.snap_to_grid_coord(new_y)
+
+                    new_x = int(new_x)
+                    new_y = int(new_y)
+
                     # Allow elements to go outside canvas for cropping effects
                     # Set generous limits to prevent dragging infinitely far
                     new_x = max(-constants.DISPLAY_WIDTH * 2, min(new_x, constants.DISPLAY_WIDTH * 3))
@@ -1582,8 +1635,16 @@ class CanvasPreview(QWidget):
         # Move all selected elements
         for idx in self.selected_indices:
             element = self.elements[idx]
-            element.x += dx
-            element.y += dy
+            new_x = element.x + dx
+            new_y = element.y + dy
+
+            # Apply snap to grid if enabled
+            if self.snap_to_grid:
+                new_x = self.snap_to_grid_coord(new_x)
+                new_y = self.snap_to_grid_coord(new_y)
+
+            element.x = int(new_x)
+            element.y = int(new_y)
             self.element_moved.emit(idx, element.x, element.y)
 
         self.update()

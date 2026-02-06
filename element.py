@@ -100,6 +100,9 @@ class ThemeElement:
         # Temperature display option
         self.temp_hide_unit = kwargs.get("temp_hide_unit", False)  # Show only ° instead of °C
 
+        # Page assignment (for multi-page themes)
+        self.page = kwargs.get("page", 1)  # Page number (1-based)
+
     def to_dict(self):
         return {
             "type": self.type,
@@ -168,7 +171,8 @@ class ThemeElement:
             "smooth_animation": self.smooth_animation,
             "group": self.group,
             "locked": self.locked,
-            "temp_hide_unit": self.temp_hide_unit
+            "temp_hide_unit": self.temp_hide_unit,
+            "page": self.page
         }
 
     @classmethod

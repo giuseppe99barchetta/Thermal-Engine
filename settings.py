@@ -28,6 +28,8 @@ DEFAULT_SETTINGS = {
     "default_preset": None,  # Name of preset to load on startup
     "overdrive_mode": False,
     "suppress_60fps_warning": False,  # Show warning when selecting 60 FPS
+    "show_grid": True,  # Show grid lines on canvas
+    "snap_to_grid": True,  # Snap elements to grid when dragging
 }
 
 _settings = None

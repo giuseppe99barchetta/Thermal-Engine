@@ -45,6 +45,7 @@ class ElementListPanel(QWidget):
         self.groups = {}  # group_name -> list of element indices
         self._icon_cache = {}  # Cache for element type icons
         self._group_icon = None  # Cache for group icon
+        self.current_page = 1  # Current page for new elements
         self.setup_ui()
 
     def setup_ui(self):
@@ -457,6 +458,7 @@ class ElementListPanel(QWidget):
         else:
             props = DEFAULT_ELEMENT_PROPS.get(element_type, {}).copy()
         props["name"] = f"{element_type}_{len(self.elements) + 1}"
+        props["page"] = self.current_page  # Assign to current page
 
         element = ThemeElement(element_type, **props)
         self.elements.append(element)
