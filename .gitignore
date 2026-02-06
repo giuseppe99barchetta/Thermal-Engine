@@ -72,3 +72,4 @@ presets/*
 *.nupkg
 ThermalEngine-*.zip
 ThermalEngine-*-Setup.exe
+Thermal-Engine.spec
