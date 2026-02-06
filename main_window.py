@@ -1083,9 +1083,58 @@ class ThemeEditorWindow(QMainWindow):
         self.bg_color_btn.setStyleSheet(f"background-color: {self.background_color};")
         self.canvas.set_background_color(self.background_color)
 
+        # Load elements
         self.elements = [
             ThemeElement.from_dict(e) for e in preset_data.get("elements", [])
         ]
+
+        # Auto-scale elements if preset was created for different display dimensions
+        # If no dimensions saved, assume it was created for the original wide display (1280x480)
+        preset_width = preset_data.get("display_width", 1280)
+        preset_height = preset_data.get("display_height", 480)
+
+        if preset_width != constants.DISPLAY_WIDTH or preset_height != constants.DISPLAY_HEIGHT:
+            # Calculate UNIFORM scale factor (same for X and Y to avoid distortion)
+            # Use the smaller scale to ensure everything fits
+            scale_x = constants.DISPLAY_WIDTH / preset_width
+            scale_y = constants.DISPLAY_HEIGHT / preset_height
+            scale = min(scale_x, scale_y)
+
+            # Calculate centering offsets
+            scaled_width = preset_width * scale
+            scaled_height = preset_height * scale
+            offset_x = (constants.DISPLAY_WIDTH - scaled_width) / 2
+            offset_y = (constants.DISPLAY_HEIGHT - scaled_height) / 2
+
+            logger.info(f"Auto-scaling preset from {preset_width}x{preset_height} to {constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}")
+            logger.info(f"Uniform scale factor: {scale:.2f}, Offset: ({offset_x:.0f}, {offset_y:.0f})")
+
+            # Scale all elements uniformly
+            for element in self.elements:
+                # Scale position and add centering offset
+                element.x = int(element.x * scale + offset_x)
+                element.y = int(element.y * scale + offset_y)
+
+                # Scale size uniformly (for elements with width/height)
+                if hasattr(element, 'width') and element.width > 0:
+                    element.width = int(element.width * scale)
+                if hasattr(element, 'height') and element.height > 0:
+                    element.height = int(element.height * scale)
+
+                # Scale radius uniformly (for circle gauges and analog clocks)
+                if hasattr(element, 'radius') and element.type in ["circle_gauge", "analog_clock"]:
+                    element.radius = int(element.radius * scale)
+
+                # Scale font sizes uniformly
+                if hasattr(element, 'font_size'):
+                    element.font_size = max(8, int(element.font_size * scale))
+                if hasattr(element, 'label_font_size'):
+                    element.label_font_size = max(6, int(element.label_font_size * scale))
+
+            self.status_bar.showMessage(f"Loaded and auto-scaled preset: {self.theme_name} ({preset_width}x{preset_height} → {constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}, scale: {scale:.2f}x)")
+        else:
+            self.status_bar.showMessage(f"Loaded preset: {self.theme_name}")
+
         self.element_list.set_elements(self.elements)
         self.canvas.set_elements(self.elements)
         self.properties_panel.set_element(None)
@@ -1098,8 +1147,6 @@ class ThemeEditorWindow(QMainWindow):
         else:
             video_background.clear_video()
         self._update_video_ui()
-
-        self.status_bar.showMessage(f"Loaded preset: {self.theme_name}")
 
     def on_preset_saved(self, preset_name):
         """Called when a preset is saved."""

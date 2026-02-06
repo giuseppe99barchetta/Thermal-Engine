@@ -1,0 +1,140 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for tags
+
+    - name: Get latest tag
+      id: get_tag
+      run: |
+        $latestTag = git describe --tags --abbrev=0 2>$null
+        if (-not $latestTag) {
+          $latestTag = "v0.0.0"
+        }
+        echo "current_tag=$latestTag" >> $env:GITHUB_OUTPUT
+        echo "Current tag: $latestTag"
+
+    - name: Determine version bump
+      id: version_bump
+      run: |
+        $commitMsg = git log -1 --pretty=%B
+        echo "Commit message: $commitMsg"
+
+        $currentTag = "${{ steps.get_tag.outputs.current_tag }}"
+        $version = $currentTag -replace '^v', ''
+        $parts = $version -split '\.'
+        $major = [int]$parts[0]
+        $minor = [int]$parts[1]
+        $patch = [int]$parts[2]
+
+        $shouldRelease = $false
+
+        if ($commitMsg -match '^major:') {
+          $major++
+          $minor = 0
+          $patch = 0
+          $shouldRelease = $true
+          echo "Bump type: MAJOR"
+        }
+        elseif ($commitMsg -match '^feat:') {
+          $minor++
+          $patch = 0
+          $shouldRelease = $true
+          echo "Bump type: MINOR (feat)"
+        }
+        elseif ($commitMsg -match '^fix:') {
+          $patch++
+          $shouldRelease = $true
+          echo "Bump type: PATCH (fix)"
+        }
+        else {
+          echo "No version bump needed (commit message doesn't start with fix:, feat:, or major:)"
+        }
+
+        $newVersion = "v$major.$minor.$patch"
+        echo "new_version=$newVersion" >> $env:GITHUB_OUTPUT
+        echo "should_release=$shouldRelease" >> $env:GITHUB_OUTPUT
+        echo "New version: $newVersion"
+        echo "Should release: $shouldRelease"
+
+    - name: Create tag
+      if: steps.version_bump.outputs.should_release == 'true'
+      run: |
+        $newVersion = "${{ steps.version_bump.outputs.new_version }}"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a $newVersion -m "Release $newVersion"
+        git push origin $newVersion
+        echo "Created and pushed tag: $newVersion"
+
+    - name: Set up Python
+      if: steps.version_bump.outputs.should_release == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      if: steps.version_bump.outputs.should_release == 'true'
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build with PyInstaller
+      if: steps.version_bump.outputs.should_release == 'true'
+      run: |
+        pyinstaller --name="ThermalEngine" `
+          --windowed `
+          --icon="assets/icon.ico" `
+          --add-data="elements;elements" `
+          --add-data="assets;assets" `
+          --hidden-import=PySide6.QtCore `
+          --hidden-import=PySide6.QtGui `
+          --hidden-import=PySide6.QtWidgets `
+          --hidden-import=device_backends `
+          --hidden-import=video_background `
+          --collect-all PySide6 `
+          main.py
+
+    - name: Create ZIP archive
+      if: steps.version_bump.outputs.should_release == 'true'
+      run: |
+        cd dist/ThermalEngine
+        $version = "${{ steps.version_bump.outputs.new_version }}"
+        $zipName = "ThermalEngine-$version-Windows.zip"
+        powershell Compress-Archive -Path * -DestinationPath "../$zipName"
+        echo "Created ZIP: $zipName"
+        echo "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+      id: create_zip
+
+    - name: Create Release
+      if: steps.version_bump.outputs.should_release == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version_bump.outputs.new_version }}
+        name: Release ${{ steps.version_bump.outputs.new_version }}
+        draft: false
+        prerelease: false
+        files: dist/ThermalEngine-${{ steps.version_bump.outputs.new_version }}-Windows.zip
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload artifact
+      if: steps.version_bump.outputs.should_release == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ThermalEngine-${{ steps.version_bump.outputs.new_version }}
+        path: dist/ThermalEngine-${{ steps.version_bump.outputs.new_version }}-Windows.zip
