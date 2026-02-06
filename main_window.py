@@ -938,17 +938,27 @@ class ThemeEditorWindow(QMainWindow):
         self.last_frame_time = current_time
 
     def add_default_elements(self):
+        """Add default elements optimized for 480x480 displays."""
         defaults = [
-            ThemeElement("circle_gauge", name="cpu_temp_gauge", x=200, y=240, radius=120,
-                         text="CPU TEMP", source="cpu_temp", color="#00ff96", value=45),
-            ThemeElement("circle_gauge", name="cpu_load_gauge", x=480, y=240, radius=120,
-                         text="CPU UTIL", source="cpu_percent", color="#00c8ff", value=30),
-            ThemeElement("circle_gauge", name="gpu_util_gauge", x=760, y=240, radius=120,
-                         text="GPU UTIL", source="gpu_percent", color="#c864ff", value=55),
-            ThemeElement("circle_gauge", name="gpu_temp_gauge", x=1040, y=240, radius=120,
-                         text="GPU TEMP", source="gpu_temp", color="#ff9632", value=62),
-            ThemeElement("text", name="title", x=490, y=20, text="SYSTEM MONITOR",
-                         font_size=36, color="#666680", width=300, height=50),
+            ThemeElement("analog_clock", name="main_clock", x=240, y=200, radius=140,
+                         text="Clock", source="static", color="#ffffff", value=50,
+                         time_format="24h", show_seconds_hand=True, smooth_animation=True,
+                         background_color="#1a1a2e", background_color_opacity=0),
+            ThemeElement("text", name="cpu_temp", x=40, y=410, width=100, height=50,
+                         text="CPU", source="cpu_temp", color="#00ff96", font_size=28,
+                         text_align="left"),
+            ThemeElement("text", name="cpu_util", x=160, y=410, width=100, height=50,
+                         text="CPU%", source="cpu_percent", color="#00c8ff", font_size=28,
+                         text_align="left"),
+            ThemeElement("text", name="gpu_temp", x=280, y=410, width=100, height=50,
+                         text="GPU", source="gpu_temp", color="#ff9632", font_size=28,
+                         text_align="left"),
+            ThemeElement("text", name="gpu_util", x=400, y=410, width=100, height=50,
+                         text="GPU%", source="gpu_percent", color="#c864ff", font_size=28,
+                         text_align="left"),
+            ThemeElement("text", name="date", x=0, y=20, width=480, height=40,
+                         text="Monday, January 1", source="date", color="#666680", font_size=20,
+                         text_align="center"),
         ]
 
         self.elements = defaults

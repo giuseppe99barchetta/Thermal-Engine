@@ -26,21 +26,32 @@ LABEL_HEIGHT = 20
 WIDGET_HEIGHT = THUMBNAIL_HEIGHT + LABEL_HEIGHT  # Total widget height
 
 
-# Default theme elements (same as main_window.py)
+# Default theme elements - optimized for 480x480 displays
 DEFAULT_THEME = {
     "name": "Default",
     "background_color": "#0f0f19",
+    "display_width": 480,
+    "display_height": 480,
     "elements": [
-        {"type": "circle_gauge", "name": "cpu_temp_gauge", "x": 200, "y": 240, "radius": 120,
-         "text": "CPU TEMP", "source": "cpu_temp", "color": "#00ff96", "value": 45},
-        {"type": "circle_gauge", "name": "cpu_util_gauge", "x": 480, "y": 240, "radius": 120,
-         "text": "CPU UTIL", "source": "cpu_percent", "color": "#00c8ff", "value": 30},
-        {"type": "circle_gauge", "name": "gpu_util_gauge", "x": 760, "y": 240, "radius": 120,
-         "text": "GPU UTIL", "source": "gpu_percent", "color": "#c864ff", "value": 55},
-        {"type": "circle_gauge", "name": "gpu_temp_gauge", "x": 1040, "y": 240, "radius": 120,
-         "text": "GPU TEMP", "source": "gpu_temp", "color": "#ff9632", "value": 62},
-        {"type": "text", "name": "title", "x": 490, "y": 20, "text": "SYSTEM MONITOR",
-         "font_size": 36, "color": "#666680", "width": 300, "height": 50},
+        {"type": "analog_clock", "name": "main_clock", "x": 240, "y": 200, "radius": 140,
+         "text": "Clock", "source": "static", "color": "#ffffff", "value": 50,
+         "time_format": "24h", "show_seconds_hand": True, "smooth_animation": True,
+         "background_color": "#1a1a2e", "background_color_opacity": 0},
+        {"type": "text", "name": "cpu_temp", "x": 40, "y": 410, "width": 100, "height": 50,
+         "text": "CPU", "source": "cpu_temp", "color": "#00ff96", "font_size": 28,
+         "text_align": "left"},
+        {"type": "text", "name": "cpu_util", "x": 160, "y": 410, "width": 100, "height": 50,
+         "text": "CPU%", "source": "cpu_percent", "color": "#00c8ff", "font_size": 28,
+         "text_align": "left"},
+        {"type": "text", "name": "gpu_temp", "x": 280, "y": 410, "width": 100, "height": 50,
+         "text": "GPU", "source": "gpu_temp", "color": "#ff9632", "font_size": 28,
+         "text_align": "left"},
+        {"type": "text", "name": "gpu_util", "x": 400, "y": 410, "width": 100, "height": 50,
+         "text": "GPU%", "source": "gpu_percent", "color": "#c864ff", "font_size": 28,
+         "text_align": "left"},
+        {"type": "text", "name": "date", "x": 0, "y": 20, "width": 480, "height": 40,
+         "text": "Monday, January 1", "source": "date", "color": "#666680", "font_size": 20,
+         "text_align": "center"},
     ]
 }
 
@@ -60,11 +71,18 @@ class PresetThumbnail(QWidget):
         self.thumbnail_path = thumbnail_path
         self.thumbnail_pixmap = None
 
+        # Calculate thumbnail dimensions dynamically based on preset's display size
+        preset_width = preset_data.get("display_width", DISPLAY_WIDTH)
+        preset_height = preset_data.get("display_height", DISPLAY_HEIGHT)
+        self.thumbnail_width = THUMBNAIL_WIDTH
+        self.thumbnail_height = int(THUMBNAIL_WIDTH * preset_height / preset_width)
+        self.widget_height = self.thumbnail_height + LABEL_HEIGHT
+
         # Load thumbnail image if it exists
         if thumbnail_path and os.path.exists(thumbnail_path):
             self.thumbnail_pixmap = QPixmap(thumbnail_path)
 
-        self.setFixedSize(THUMBNAIL_WIDTH, WIDGET_HEIGHT)
+        self.setFixedSize(self.thumbnail_width, self.widget_height)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         tooltip = f"Click to load: {preset_name}"
         if is_default:
@@ -75,13 +93,11 @@ class PresetThumbnail(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        preview_height = THUMBNAIL_HEIGHT
-
         # Use saved thumbnail if available, otherwise generate preview
         if self.thumbnail_pixmap and not self.thumbnail_pixmap.isNull():
             # Draw the saved thumbnail scaled to fill the preview area exactly
             scaled_pixmap = self.thumbnail_pixmap.scaled(
-                THUMBNAIL_WIDTH, preview_height,
+                self.thumbnail_width, self.thumbnail_height,
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -89,20 +105,22 @@ class PresetThumbnail(QWidget):
 
             # Draw border
             painter.setPen(QPen(QColor(60, 60, 80), 2))
-            painter.drawRect(0, 0, THUMBNAIL_WIDTH, preview_height)
+            painter.drawRect(0, 0, self.thumbnail_width, self.thumbnail_height)
         else:
             # Fall back to generated preview
             # Draw background
             bg_color = QColor(self.preset_data.get("background_color", "#0f0f19"))
-            painter.fillRect(0, 0, THUMBNAIL_WIDTH, preview_height, bg_color)
+            painter.fillRect(0, 0, self.thumbnail_width, self.thumbnail_height, bg_color)
 
             # Draw border
             painter.setPen(QPen(QColor(60, 60, 80), 2))
-            painter.drawRect(0, 0, THUMBNAIL_WIDTH, preview_height)
+            painter.drawRect(0, 0, self.thumbnail_width, self.thumbnail_height)
 
-            # Scale factor for preview
-            scale_x = THUMBNAIL_WIDTH / DISPLAY_WIDTH
-            scale_y = preview_height / DISPLAY_HEIGHT
+            # Scale factor for preview - use preset's actual display dimensions
+            preset_width = self.preset_data.get("display_width", DISPLAY_WIDTH)
+            preset_height = self.preset_data.get("display_height", DISPLAY_HEIGHT)
+            scale_x = self.thumbnail_width / preset_width
+            scale_y = self.thumbnail_height / preset_height
 
             # Draw simplified element previews
             elements = self.preset_data.get("elements", [])
@@ -125,8 +143,8 @@ class PresetThumbnail(QWidget):
                     painter.drawRect(x, y, max(width, 3), max(height, 3))
 
         # Draw name label at bottom
-        label_y = THUMBNAIL_HEIGHT
-        painter.fillRect(0, label_y, THUMBNAIL_WIDTH, LABEL_HEIGHT, QColor(35, 35, 40))
+        label_y = self.thumbnail_height
+        painter.fillRect(0, label_y, self.thumbnail_width, LABEL_HEIGHT, QColor(35, 35, 40))
         painter.setPen(QPen(QColor(200, 200, 200)))
         font = QFont()
         font.setPixelSize(11)
@@ -140,7 +158,7 @@ class PresetThumbnail(QWidget):
         painter.drawText(5, label_y + LABEL_HEIGHT - 5, display_name)
 
         # Draw indicators on the right side
-        indicator_x = THUMBNAIL_WIDTH - 15
+        indicator_x = self.thumbnail_width - 15
 
         # Draw checkmark for default preset
         if self.is_default:
