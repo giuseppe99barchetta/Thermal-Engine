@@ -250,7 +250,8 @@ try:
 except ImportError:
     HAS_HID = False
 
-from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT, SOURCE_UNITS
+import constants
+from constants import SOURCE_UNITS
 
 # Device backend system for multi-device support
 import device_backends
@@ -340,6 +341,7 @@ class ThemeEditorWindow(QMainWindow):
         self._frame_deadline = 0  # When next frame should be sent
         self._frames_skipped = 0  # Counter for skipped frames
         self._overdrive_mode = settings.get_setting("overdrive_mode", False)
+        self.display_orientation = settings.get_setting("display_orientation", "normal")  # normal, flip_v, flip_h, rotate_180, rotate_90_cw, rotate_90_ccw
         self._frame_buffer = None  # Pre-rendered frame buffer
         self._frame_buffer_lock = threading.Lock()
         self._render_thread = None
@@ -712,6 +714,27 @@ class ThemeEditorWindow(QMainWindow):
 
         display_menu.addSeparator()
 
+        # Display Orientation submenu
+        orientation_menu = display_menu.addMenu("Display Orientation")
+        self.orientation_actions = []
+        orientations = [
+            ("Normal", "normal"),
+            ("Flip Vertical", "flip_v"),
+            ("Flip Horizontal", "flip_h"),
+            ("Rotate 180°", "rotate_180"),
+            ("Rotate 90° CW", "rotate_90_cw"),
+            ("Rotate 90° CCW", "rotate_90_ccw"),
+        ]
+        for label, value in orientations:
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(value == self.display_orientation)
+            action.triggered.connect(lambda checked, v=value: self.set_display_orientation(v))
+            orientation_menu.addAction(action)
+            self.orientation_actions.append((action, value))
+
+        display_menu.addSeparator()
+
         diagnose_action = QAction("Diagnose Sensors...", self)
         diagnose_action.triggered.connect(self.diagnose_sensors)
         display_menu.addAction(diagnose_action)
@@ -1017,8 +1040,8 @@ class ThemeEditorWindow(QMainWindow):
         theme_data = {
             "name": self.theme_name,
             "background_color": self.background_color,
-            "display_width": DISPLAY_WIDTH,
-            "display_height": DISPLAY_HEIGHT,
+            "display_width": constants.DISPLAY_WIDTH,
+            "display_height": constants.DISPLAY_HEIGHT,
             "elements": [e.to_dict() for e in self.elements],
             "video_background": video_background.to_dict()
         }
@@ -1244,8 +1267,8 @@ class ThemeEditorWindow(QMainWindow):
             data = {
                 "name": self.theme_name,
                 "background_color": self.background_color,
-                "display_width": DISPLAY_WIDTH,
-                "display_height": DISPLAY_HEIGHT,
+                "display_width": constants.DISPLAY_WIDTH,
+                "display_height": constants.DISPLAY_HEIGHT,
                 "elements": [e.to_dict() for e in self.elements],
                 "video_background": video_background.to_dict()
             }
@@ -1501,7 +1524,6 @@ class ThemeEditorWindow(QMainWindow):
             self.device = self.backend  # Acts as a flag for connected state
 
             # Update display dimensions based on connected device
-            import constants
             constants.DISPLAY_WIDTH = self.selected_device_def.width
             constants.DISPLAY_HEIGHT = self.selected_device_def.height
             logger.info(f"Display dimensions set to {constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}")
@@ -1659,6 +1681,17 @@ class ThemeEditorWindow(QMainWindow):
         else:
             self._stop_render_thread()
             self.status_bar.showMessage("Overdrive mode disabled")
+
+    def set_display_orientation(self, orientation):
+        """Set display orientation (normal, flip_v, flip_h, rotate_180, rotate_90_cw, rotate_90_ccw)."""
+        self.display_orientation = orientation
+        settings.set_setting("display_orientation", orientation)
+
+        # Update checkmarks
+        for action, value in self.orientation_actions:
+            action.setChecked(value == orientation)
+
+        self.status_bar.showMessage(f"Display orientation: {orientation.replace('_', ' ').title()}")
 
     def _start_render_thread(self):
         """Start background render thread for overdrive mode."""
@@ -2005,9 +2038,9 @@ class ThemeEditorWindow(QMainWindow):
             if video_frame:
                 img = video_frame.copy().convert('RGBA')
             else:
-                img = Image.new('RGBA', (DISPLAY_WIDTH, DISPLAY_HEIGHT), color=self.background_color)
+                img = Image.new('RGBA', (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT), color=self.background_color)
         else:
-            img = Image.new('RGBA', (DISPLAY_WIDTH, DISPLAY_HEIGHT), color=self.background_color)
+            img = Image.new('RGBA', (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT), color=self.background_color)
 
         # Render in reverse order so elements at top of list appear in front
         for element in reversed(self.elements):
@@ -3369,6 +3402,18 @@ class ThemeEditorWindow(QMainWindow):
 
     def image_to_jpeg(self, img, quality=80):
         """Convert image to JPEG bytes with optimized settings."""
+        # Apply display orientation transformation
+        if self.display_orientation == "flip_v":
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+        elif self.display_orientation == "flip_h":
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+        elif self.display_orientation == "rotate_180":
+            img = img.transpose(Image.ROTATE_180)
+        elif self.display_orientation == "rotate_90_cw":
+            img = img.transpose(Image.ROTATE_270)  # PIL uses counter-clockwise, so 270 = 90 CW
+        elif self.display_orientation == "rotate_90_ccw":
+            img = img.transpose(Image.ROTATE_90)
+
         buffer = io.BytesIO()
         # Use quality=80 and optimize=False for faster encoding
         # The LCD display doesn't need highest quality

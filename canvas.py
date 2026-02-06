@@ -9,7 +9,8 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QImage
 
-from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT, PREVIEW_SCALE, SOURCE_UNITS
+import constants
+from constants import SOURCE_UNITS
 from elements import get_custom_element
 from video_background import video_background
 
@@ -120,7 +121,7 @@ class CanvasPreview(QWidget):
         self.resize_start_pos_element = (0, 0)
         self.resize_start_size = (0, 0)
         self.resize_start_bounds = None  # For multi-element resize
-        self.scale = PREVIEW_SCALE
+        self.scale = constants.PREVIEW_SCALE
         self.background_color = QColor(15, 15, 25)
         self.handle_size = 10
         self.group_selection_mode = False  # True when a complete group is selected
@@ -130,8 +131,8 @@ class CanvasPreview(QWidget):
         self._animated_values = {}  # Track display values for animated gauges {element_name: current_display_value}
 
         self.setFixedSize(
-            int(DISPLAY_WIDTH * self.scale),
-            int(DISPLAY_HEIGHT * self.scale)
+            int(constants.DISPLAY_WIDTH * self.scale),
+            int(constants.DISPLAY_HEIGHT * self.scale)
         )
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Enable keyboard input
@@ -1473,8 +1474,8 @@ class CanvasPreview(QWidget):
                     start_x, start_y = self.drag_start_positions[idx]
                     new_x = int(start_x + dx)
                     new_y = int(start_y + dy)
-                    new_x = max(0, min(new_x, DISPLAY_WIDTH - 50))
-                    new_y = max(0, min(new_y, DISPLAY_HEIGHT - 50))
+                    new_x = max(0, min(new_x, constants.DISPLAY_WIDTH - 50))
+                    new_y = max(0, min(new_y, constants.DISPLAY_HEIGHT - 50))
                     self.elements[idx].x = new_x
                     self.elements[idx].y = new_y
 
