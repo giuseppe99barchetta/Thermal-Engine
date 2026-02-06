@@ -1674,6 +1674,9 @@ class ThemeEditorWindow(QMainWindow):
             constants.DISPLAY_WIDTH = self.selected_device_def.width
             constants.DISPLAY_HEIGHT = self.selected_device_def.height
 
+            # Update presets panel to filter by current display resolution
+            self.presets_panel.set_display_resolution(constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT)
+
             # Set adaptive preview scale based on display size
             # Square displays (480x480) get larger scale for easier editing
             # Wide displays (1280x480) keep smaller scale to fit on screen
@@ -1776,7 +1779,9 @@ class ThemeEditorWindow(QMainWindow):
             action.setChecked(action.text() == f"{fps} FPS")
 
         if self.live_preview_timer and self.live_preview_timer.isActive():
-            interval = 1000 // self.target_fps
+            # Calculate interval with proper rounding for accurate FPS
+            interval = round(1000 / self.target_fps)
+            self.live_preview_timer.setTimerType(Qt.TimerType.PreciseTimer)  # More accurate timing
             self.live_preview_timer.setInterval(interval)
 
         self.status_bar.showMessage(f"Frame rate set to {fps} FPS")
@@ -2014,7 +2019,8 @@ class ThemeEditorWindow(QMainWindow):
                 time.sleep(0.1)
 
     def start_continuous_send(self):
-        interval = 1000 // self.target_fps
+        # Calculate interval with proper rounding for accurate FPS
+        interval = round(1000 / self.target_fps)
 
         # Initialize frame deadline for smooth timing
         self._frame_deadline = time.perf_counter()
@@ -2026,11 +2032,13 @@ class ThemeEditorWindow(QMainWindow):
 
         if self.live_preview_timer is None:
             self.live_preview_timer = QTimer(self)
+            self.live_preview_timer.setTimerType(Qt.TimerType.PreciseTimer)  # More accurate timing
             self.live_preview_timer.timeout.connect(self.send_frame_with_sensors)
             # Use slightly shorter interval in overdrive to catch up faster
             actual_interval = interval if not self._overdrive_mode else max(1, interval - 2)
             self.live_preview_timer.start(actual_interval)
         else:
+            self.live_preview_timer.setTimerType(Qt.TimerType.PreciseTimer)  # More accurate timing
             actual_interval = interval if not self._overdrive_mode else max(1, interval - 2)
             self.live_preview_timer.setInterval(actual_interval)
             self.live_preview_timer.start()
@@ -2053,6 +2061,12 @@ class ThemeEditorWindow(QMainWindow):
         try:
             current_time = time.perf_counter()
             frame_interval = 1.0 / self.target_fps
+
+            # Rate limiting: skip if called too early (timer imprecision)
+            # Allow small tolerance (90% of interval) to avoid missing frames
+            min_frame_interval = frame_interval * 0.9
+            if self.last_frame_time > 0 and (current_time - self.last_frame_time) < min_frame_interval:
+                return  # Too early, skip this frame
 
             # Time-compensated frame delivery
             if self._overdrive_mode:

@@ -31,6 +31,8 @@ DEFAULT_SETTINGS = {
     "show_grid": True,  # Show grid lines on canvas
     "snap_to_grid": True,  # Snap elements to grid when dragging
     "check_for_updates": True,  # Check for updates on startup
+    "last_display_width": 480,  # Last connected display width (default to 480x480)
+    "last_display_height": 480,  # Last connected display height
 }
 
 _settings = None

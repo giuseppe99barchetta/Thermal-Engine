@@ -8,7 +8,7 @@ import math
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QGridLayout, QMessageBox, QInputDialog
+    QScrollArea, QFrame, QGridLayout, QMessageBox, QInputDialog, QCheckBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
@@ -216,6 +216,10 @@ class PresetsPanel(QWidget):
         self.user_presets_dir = get_user_data_path("presets")
         # Bundled presets directory (read-only, from installation)
         self.bundled_presets_dir = get_bundled_resource_path("presets")
+        # Display resolution filtering - use last known resolution from settings
+        self.current_display_width = get_setting("last_display_width", 480)
+        self.current_display_height = get_setting("last_display_height", 480)
+        self.show_all_resolutions = False
         self.setup_ui()
         self.load_presets()
 
@@ -223,12 +227,19 @@ class PresetsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Title row with New button
+        # Title row with filter and New button
         title_row = QHBoxLayout()
         title = QLabel("Presets")
         title.setStyleSheet("font-weight: bold; font-size: 14px; padding: 5px;")
         title_row.addWidget(title)
         title_row.addStretch()
+
+        # Resolution filter checkbox
+        self.show_all_checkbox = QCheckBox("All resolutions")
+        self.show_all_checkbox.setChecked(self.show_all_resolutions)
+        self.show_all_checkbox.setToolTip("Show presets for all display resolutions")
+        self.show_all_checkbox.stateChanged.connect(self.toggle_resolution_filter)
+        title_row.addWidget(self.show_all_checkbox)
 
         self.new_preset_btn = QPushButton("+ New")
         self.new_preset_btn.setFixedWidth(60)
@@ -271,13 +282,17 @@ class PresetsPanel(QWidget):
         if not os.path.exists(self.user_presets_dir):
             os.makedirs(self.user_presets_dir)
 
-    def _load_presets_from_dir(self, presets_dir, is_builtin=False):
+    def _load_presets_from_dir(self, presets_dir, is_builtin=False, target_dict=None):
         """Load presets from a specific directory.
 
         Args:
             presets_dir: Directory to load presets from
             is_builtin: Whether these are bundled (read-only) presets
+            target_dict: Optional dictionary to load presets into (defaults to self.presets)
         """
+        if target_dict is None:
+            target_dict = self.presets
+
         if not os.path.exists(presets_dir):
             return
 
@@ -307,8 +322,8 @@ class PresetsPanel(QWidget):
                     if not os.path.exists(thumbnail_path):
                         thumbnail_path = None
 
-                    # User presets override bundled presets with the same name
-                    self.presets[preset_name] = {
+                    # Add to target dictionary
+                    target_dict[preset_name] = {
                         "data": data,
                         "builtin": is_builtin,
                         "filepath": filepath,
@@ -321,6 +336,9 @@ class PresetsPanel(QWidget):
         """Load all presets from both bundled and user directories."""
         self.presets = {}
 
+        # Protected system presets (cannot be deleted or overwritten)
+        PROTECTED_PRESETS = ["Default", "System Monitor", "Minimal"]
+
         # Always include the default preset
         self.presets["Default"] = {
             "data": DEFAULT_THEME,
@@ -331,9 +349,15 @@ class PresetsPanel(QWidget):
         # Load bundled presets first (from installation directory)
         self._load_presets_from_dir(self.bundled_presets_dir, is_builtin=True)
 
-        # Load user presets (from AppData) - these can override bundled presets
+        # Load user presets (from AppData) - but don't override protected system presets
         self.ensure_presets_dir()
-        self._load_presets_from_dir(self.user_presets_dir, is_builtin=False)
+        user_presets = {}
+        self._load_presets_from_dir(self.user_presets_dir, is_builtin=False, target_dict=user_presets)
+
+        # Merge user presets, but skip protected ones
+        for name, preset_info in user_presets.items():
+            if name not in PROTECTED_PRESETS:
+                self.presets[name] = preset_info
 
         self.refresh_display()
 
@@ -347,8 +371,22 @@ class PresetsPanel(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
 
+        # Filter presets by resolution if enabled
+        if self.show_all_resolutions:
+            filtered_presets = self.presets.keys()
+        else:
+            filtered_presets = []
+            for name, preset_info in self.presets.items():
+                preset_data = preset_info["data"]
+                preset_width = preset_data.get("display_width", DISPLAY_WIDTH)
+                preset_height = preset_data.get("display_height", DISPLAY_HEIGHT)
+
+                # Show preset if it matches current display resolution
+                if preset_width == self.current_display_width and preset_height == self.current_display_height:
+                    filtered_presets.append(name)
+
         # Get sorted preset names (Default first, then alphabetical)
-        preset_names = sorted(self.presets.keys(), key=lambda x: (x != "Default", x.lower()))
+        preset_names = sorted(filtered_presets, key=lambda x: (x != "Default", x.lower()))
 
         # Calculate pagination
         total_presets = len(preset_names)
@@ -400,6 +438,31 @@ class PresetsPanel(QWidget):
         total_pages = math.ceil(len(self.presets) / self.PRESETS_PER_PAGE)
         if self.current_page < total_pages - 1:
             self.current_page += 1
+            self.refresh_display()
+
+    def toggle_resolution_filter(self, state):
+        """Toggle the resolution filter on/off."""
+        self.show_all_resolutions = bool(state)
+        self.current_page = 0  # Reset to first page when filtering
+        self.refresh_display()
+
+    def set_display_resolution(self, width, height):
+        """Update the current display resolution for filtering.
+
+        Args:
+            width: Display width in pixels
+            height: Display height in pixels
+        """
+        self.current_display_width = width
+        self.current_display_height = height
+
+        # Save resolution to settings for next startup
+        set_setting("last_display_width", width)
+        set_setting("last_display_height", height)
+
+        # Refresh display if filtering is active
+        if not self.show_all_resolutions:
+            self.current_page = 0  # Reset to first page
             self.refresh_display()
 
     def on_preset_clicked(self, preset_name):
@@ -492,6 +555,17 @@ class PresetsPanel(QWidget):
         default_name = get_setting("default_preset", None)
         if default_name and default_name in self.presets:
             return self.presets[default_name]["data"]
+
+        # If no default is set, use resolution-appropriate preset
+        # For 480x480 displays, use "System Monitor" instead of "Default"
+        if self.current_display_width == 480 and self.current_display_height == 480:
+            if "System Monitor" in self.presets:
+                return self.presets["System Monitor"]["data"]
+
+        # Fallback to "Default" preset
+        if "Default" in self.presets:
+            return self.presets["Default"]["data"]
+
         return None
 
     def save_preset(self, name, theme_data, thumbnail_image=None):
