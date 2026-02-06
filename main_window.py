@@ -290,6 +290,7 @@ import sensors
 from sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
 import settings
 from app_path import get_resource_path, get_bundled_resource_path
+from updater import UpdateChecker
 
 
 def hex_to_rgba(hex_color, opacity=100):
@@ -376,6 +377,10 @@ class ThemeEditorWindow(QMainWindow):
 
         # Auto-connect to display after window is shown
         QTimer.singleShot(500, self.auto_connect)
+
+        # Check for updates on startup (if enabled)
+        if settings.get_setting("check_for_updates", True):
+            QTimer.singleShot(2000, lambda: self.check_for_updates(silent=True))
 
     def auto_connect(self):
         """Attempt to connect to display automatically on startup."""
@@ -819,6 +824,13 @@ class ThemeEditorWindow(QMainWindow):
         console_action = QAction("Show Console", self)
         console_action.triggered.connect(self.show_console)
         settings_menu.addAction(console_action)
+
+        # Help menu
+        help_menu = menubar.addMenu("Help")
+
+        check_updates_action = QAction("Check for Updates...", self)
+        check_updates_action.triggered.connect(self.check_for_updates)
+        help_menu.addAction(check_updates_action)
 
     def connect_signals(self):
         self.element_list.element_selected.connect(self.on_element_selected)
@@ -3753,6 +3765,10 @@ class ThemeEditorWindow(QMainWindow):
         self.launch_minimized_cb.setChecked(settings.get_setting("launch_minimized", True))
         startup_layout.addWidget(self.launch_minimized_cb)
 
+        self.check_for_updates_cb = QCheckBox("Check for updates on startup")
+        self.check_for_updates_cb.setChecked(settings.get_setting("check_for_updates", True))
+        startup_layout.addWidget(self.check_for_updates_cb)
+
         layout.addWidget(startup_group)
 
         # Behavior group
@@ -3781,6 +3797,7 @@ class ThemeEditorWindow(QMainWindow):
             # Save settings
             settings.set_setting("launch_at_login", self.launch_at_login_cb.isChecked())
             settings.set_setting("launch_minimized", self.launch_minimized_cb.isChecked())
+            settings.set_setting("check_for_updates", self.check_for_updates_cb.isChecked())
             settings.set_setting("minimize_to_tray", self.minimize_to_tray_cb.isChecked())
             settings.set_setting("close_to_tray", self.close_to_tray_cb.isChecked())
 
@@ -3788,6 +3805,89 @@ class ThemeEditorWindow(QMainWindow):
             settings.apply_autostart_setting()
 
             self.status_bar.showMessage("Settings saved", 2000)
+
+    def check_for_updates(self, silent=False):
+        """Check for available updates."""
+        self.update_checker = UpdateChecker()
+
+        if not silent:
+            # Show a message that we're checking
+            self.status_bar.showMessage("Checking for updates...")
+
+        # Connect signals
+        self.update_checker.update_available.connect(self._on_update_available)
+        self.update_checker.no_update.connect(lambda: self._on_no_update(silent))
+        self.update_checker.error.connect(lambda msg: self._on_update_error(msg, silent))
+
+        # Start checking in background
+        self.update_checker.start()
+
+    def _on_update_available(self, latest_version, release_url, release_notes):
+        """Handle update available signal."""
+        from version import __version__
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Update Available")
+        dialog.setMinimumWidth(500)
+
+        layout = QVBoxLayout(dialog)
+
+        # Title
+        title_label = QLabel(f"<b>New version available: {latest_version}</b>")
+        title_label.setStyleSheet("font-size: 14px;")
+        layout.addWidget(title_label)
+
+        current_label = QLabel(f"Current version: {__version__}")
+        layout.addWidget(current_label)
+
+        layout.addSpacing(10)
+
+        # Release notes
+        notes_label = QLabel("What's new:")
+        layout.addWidget(notes_label)
+
+        notes_text = QTextEdit()
+        notes_text.setPlainText(release_notes)
+        notes_text.setReadOnly(True)
+        notes_text.setMaximumHeight(200)
+        layout.addWidget(notes_text)
+
+        # Buttons
+        buttons = QDialogButtonBox()
+        download_btn = buttons.addButton("Download", QDialogButtonBox.ButtonRole.AcceptRole)
+        cancel_btn = buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
+
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Open download URL in browser
+            import webbrowser
+            webbrowser.open(release_url)
+            self.status_bar.showMessage("Opening download page...", 3000)
+        else:
+            self.status_bar.showMessage("Update dismissed", 2000)
+
+    def _on_no_update(self, silent):
+        """Handle no update available signal."""
+        if not silent:
+            QMessageBox.information(
+                self,
+                "No Updates",
+                "You are running the latest version of Thermal Engine."
+            )
+            self.status_bar.showMessage("No updates available", 2000)
+
+    def _on_update_error(self, error_msg, silent):
+        """Handle update check error signal."""
+        if not silent:
+            QMessageBox.warning(
+                self,
+                "Update Check Failed",
+                f"Could not check for updates:\n\n{error_msg}"
+            )
+            self.status_bar.showMessage("Update check failed", 2000)
 
     def changeEvent(self, event):
         """Handle window state changes (minimize)."""

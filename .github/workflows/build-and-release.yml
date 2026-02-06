@@ -111,6 +111,7 @@ jobs:
           --icon="assets/icon.ico" `
           --add-data="elements;elements" `
           --add-data="assets;assets" `
+          --add-data="presets;presets" `
           --add-binary="libusb-1.0.dll;." `
           --hidden-import=PySide6.QtCore `
           --hidden-import=PySide6.QtGui `

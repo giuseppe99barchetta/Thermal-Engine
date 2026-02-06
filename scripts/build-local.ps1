@@ -1,122 +1,84 @@
-# Local Build Script for ThermalEngine
-# Usage: .\scripts\build-local.ps1 (from project root)
-#    or: .\build-local.ps1 (from scripts folder)
+# Local build script for Thermal Engine
+# Mirrors the GitHub Actions workflow for testing
 
-param(
-    [string]$Version = "local-dev",
-    [switch]$SkipInstaller,
-    [switch]$Clean
-)
+Write-Host "=== Thermal Engine Local Build ===" -ForegroundColor Cyan
+Write-Host ""
 
-$ErrorActionPreference = "Stop"
-
-# Change to project root (script can be run from scripts/ or project root)
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = Split-Path -Parent $ScriptDir
-if (Test-Path "$ProjectRoot\main.py") {
-    Set-Location $ProjectRoot
-} elseif (-not (Test-Path "main.py")) {
-    Write-Host "ERROR: Run this script from the project root or scripts folder" -ForegroundColor Red
+# Check if Python is available
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: Python not found. Please install Python 3.10+" -ForegroundColor Red
     exit 1
 }
 
-$BuildDir = "dist"
+Write-Host "[1/5] Installing dependencies..." -ForegroundColor Yellow
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install pyinstaller
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  ThermalEngine Local Build" -ForegroundColor Cyan
-Write-Host "  Version: $Version" -ForegroundColor Cyan
-Write-Host "  Branch: $(git branch --show-current)" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "[2/4] Cleaning previous build..." -ForegroundColor Yellow
+if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
+if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
+if (Test-Path "ThermalEngine.spec") { Remove-Item -Force "ThermalEngine.spec" }
 
-# Clean previous build if requested
-if ($Clean) {
-    Write-Host "`n[1/5] Cleaning previous build..." -ForegroundColor Yellow
-    if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-} else {
-    Write-Host "`n[1/5] Skipping clean (use -Clean to remove previous build)" -ForegroundColor Gray
-}
+Write-Host ""
+Write-Host "[3/4] Building with PyInstaller..." -ForegroundColor Yellow
+Write-Host "  This may take 5-10 minutes..." -ForegroundColor Gray
 
-# Install Python dependencies
-Write-Host "`n[2/5] Installing Python dependencies..." -ForegroundColor Yellow
-python -m pip install --upgrade pip --quiet
-pip install -r requirements.txt --quiet
-pip install nuitka ordered-set zstandard --quiet
-
-# Build with Nuitka
-Write-Host "`n[3/5] Building with Nuitka (this may take several minutes)..." -ForegroundColor Yellow
-$versionNum = $Version.TrimStart('v').Split('-')[0]
-if ($versionNum -notmatch '^\d+\.\d+\.\d+') { $versionNum = "1.0.0" }
-python -m nuitka `
-    --standalone `
-    --windows-console-mode=disable `
-    --windows-icon-from-ico=assets/icon.ico `
-    --windows-company-name="Thermal Engine" `
-    --windows-product-name="ThermalEngine" `
-    --windows-product-version="$versionNum" `
-    --windows-file-version="$versionNum" `
-    --enable-plugin=pyside6 `
-    --include-package=cv2 `
-    --include-package=numpy `
-    --include-package=PIL `
-    --include-package=psutil `
-    --include-package=hid `
-    --include-package=elements `
-    --include-data-dir=presets=presets `
-    --include-data-files=elements/*.py=elements/ `
-    --include-data-files=assets/icon.ico=icon.ico `
-    --include-data-files=assets/icon.png=icon.png `
-    --assume-yes-for-downloads `
-    --output-dir=dist `
-    --output-filename=ThermalEngine.exe `
+pyinstaller --name="ThermalEngine" `
+    --onefile `
+    --windowed `
+    --icon="assets/icon.ico" `
+    --add-data="elements;elements" `
+    --add-data="assets;assets" `
+    --hidden-import=PySide6.QtCore `
+    --hidden-import=PySide6.QtGui `
+    --hidden-import=PySide6.QtWidgets `
+    --hidden-import=device_backends `
+    --hidden-import=video_background `
+    --collect-submodules=device_backends `
+    --hidden-import=usb `
+    --hidden-import=usb.core `
+    --hidden-import=usb.backend `
+    --hidden-import=usb.backend.libusb1 `
+    --collect-submodules=usb `
+    --collect-binaries=usb `
+    --collect-data=usb `
+    --exclude-module=tkinter `
+    --exclude-module=matplotlib `
+    --exclude-module=pandas `
+    --exclude-module=scipy `
+    --exclude-module=PySide6.QtNetwork `
+    --exclude-module=PySide6.QtQml `
+    --exclude-module=PySide6.QtQuick `
+    --exclude-module=PySide6.QtWebEngineWidgets `
+    --exclude-module=PySide6.Qt3D `
+    --exclude-module=PySide6.QtCharts `
+    --exclude-module=PySide6.QtDataVisualization `
     main.py
 
-# Verify build output
-if (-not (Test-Path "dist\main.dist\elements")) {
-    Write-Host "ERROR: elements folder missing!" -ForegroundColor Red
-    exit 1
-}
-if (-not (Test-Path "dist\main.dist\presets")) {
-    Write-Host "ERROR: presets folder missing!" -ForegroundColor Red
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "ERROR: Build failed!" -ForegroundColor Red
     exit 1
 }
 
-# Rename output folder
-if (Test-Path "dist\main.dist") {
-    if (Test-Path "dist\ThermalEngine") {
-        Remove-Item -Recurse -Force "dist\ThermalEngine"
-    }
-    Move-Item -Path "dist\main.dist" -Destination "dist\ThermalEngine" -Force
-}
-Write-Host "  Nuitka build complete"
+Write-Host ""
+Write-Host "[4/4] Build complete!" -ForegroundColor Green
+Write-Host ""
 
-# Create ZIP archive
-Write-Host "`n[4/5] Creating ZIP archive..." -ForegroundColor Yellow
-$zipName = "ThermalEngine-$Version.zip"
-if (Test-Path $zipName) { Remove-Item $zipName }
-Compress-Archive -Path "dist/ThermalEngine/*" -DestinationPath $zipName
-Write-Host "  Created $zipName"
+# Get file size
+$exePath = "dist\ThermalEngine.exe"
+if (Test-Path $exePath) {
+    $fileSize = (Get-Item $exePath).Length
+    $fileSizeMB = [math]::Round($fileSize / 1MB, 2)
 
-# Build installer (optional)
-if (-not $SkipInstaller) {
-    Write-Host "`n[5/5] Building installer with Inno Setup..." -ForegroundColor Yellow
-    $innoPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-    if (Test-Path $innoPath) {
-        & $innoPath "/DMyAppVersion=$Version" "installer.iss"
-        Write-Host "  Installer built successfully"
-    } else {
-        Write-Host "  Inno Setup not found, skipping installer (install with: choco install innosetup)" -ForegroundColor Gray
-    }
+    Write-Host "Output: $exePath" -ForegroundColor Cyan
+    Write-Host "Size: $fileSizeMB MB" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "You can now test the executable:" -ForegroundColor Yellow
+    Write-Host "  .\dist\ThermalEngine.exe" -ForegroundColor White
 } else {
-    Write-Host "`n[5/5] Skipping installer (use without -SkipInstaller to build)" -ForegroundColor Gray
+    Write-Host "ERROR: Executable not found at $exePath" -ForegroundColor Red
+    exit 1
 }
-
-Write-Host "`n========================================" -ForegroundColor Green
-Write-Host "  Build Complete!" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
-Write-Host "Output: dist\ThermalEngine\" -ForegroundColor White
-Write-Host "ZIP:    $zipName" -ForegroundColor White
-Write-Host "Run:    dist\ThermalEngine\ThermalEngine.exe" -ForegroundColor White
-Write-Host ""
-Write-Host "NOTE: ThermalEngine requires HWiNFO for sensor data." -ForegroundColor Yellow
-Write-Host "      Download HWiNFO from: https://www.hwinfo.com/" -ForegroundColor Yellow
-Write-Host ""

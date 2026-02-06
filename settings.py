@@ -12,11 +12,11 @@ IS_WINDOWS = sys.platform == "win32"
 if IS_WINDOWS:
     import winreg
 
-from app_path import get_app_dir, get_resource_path
+from app_path import get_app_dir, get_resource_path, get_user_data_path
 from security import escape_registry_path
 
 APP_NAME = "ThermalEngine"
-SETTINGS_FILE = get_resource_path("settings.json")
+SETTINGS_FILE = get_user_data_path("settings.json")
 
 # Default settings
 DEFAULT_SETTINGS = {
@@ -30,6 +30,7 @@ DEFAULT_SETTINGS = {
     "suppress_60fps_warning": False,  # Show warning when selecting 60 FPS
     "show_grid": True,  # Show grid lines on canvas
     "snap_to_grid": True,  # Snap elements to grid when dragging
+    "check_for_updates": True,  # Check for updates on startup
 }
 
 _settings = None

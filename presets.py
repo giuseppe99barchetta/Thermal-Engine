@@ -15,7 +15,7 @@ from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
 
 from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT
 from element import ThemeElement
-from app_path import get_resource_path
+from app_path import get_resource_path, get_user_data_path, get_bundled_resource_path
 from security import validate_preset_schema, is_safe_filename, sanitize_preset_name
 from settings import get_setting, set_setting
 
@@ -194,7 +194,10 @@ class PresetsPanel(QWidget):
         super().__init__()
         self.presets = {}
         self.current_page = 0
-        self.presets_dir = get_resource_path("presets")
+        # User presets directory (writable, in AppData)
+        self.user_presets_dir = get_user_data_path("presets")
+        # Bundled presets directory (read-only, from installation)
+        self.bundled_presets_dir = get_bundled_resource_path("presets")
         self.setup_ui()
         self.load_presets()
 
@@ -246,24 +249,21 @@ class PresetsPanel(QWidget):
         layout.addStretch()
 
     def ensure_presets_dir(self):
-        """Create presets directory if it doesn't exist."""
-        if not os.path.exists(self.presets_dir):
-            os.makedirs(self.presets_dir)
+        """Create user presets directory if it doesn't exist."""
+        if not os.path.exists(self.user_presets_dir):
+            os.makedirs(self.user_presets_dir)
 
-    def load_presets(self):
-        """Load all presets from the presets folder."""
-        self.presets = {}
+    def _load_presets_from_dir(self, presets_dir, is_builtin=False):
+        """Load presets from a specific directory.
 
-        # Always include the default preset
-        self.presets["Default"] = {
-            "data": DEFAULT_THEME,
-            "builtin": True,
-            "thumbnail_path": None
-        }
+        Args:
+            presets_dir: Directory to load presets from
+            is_builtin: Whether these are bundled (read-only) presets
+        """
+        if not os.path.exists(presets_dir):
+            return
 
-        # Load presets from folder
-        self.ensure_presets_dir()
-        for filename in os.listdir(self.presets_dir):
+        for filename in os.listdir(presets_dir):
             if filename.endswith(".json"):
                 # Validate filename is safe
                 safe, err = is_safe_filename(filename)
@@ -271,7 +271,7 @@ class PresetsPanel(QWidget):
                     print(f"Skipping unsafe filename {filename}: {err}")
                     continue
 
-                filepath = os.path.join(self.presets_dir, filename)
+                filepath = os.path.join(presets_dir, filename)
                 try:
                     with open(filepath, 'r') as f:
                         data = json.load(f)
@@ -289,14 +289,33 @@ class PresetsPanel(QWidget):
                     if not os.path.exists(thumbnail_path):
                         thumbnail_path = None
 
+                    # User presets override bundled presets with the same name
                     self.presets[preset_name] = {
                         "data": data,
-                        "builtin": False,
+                        "builtin": is_builtin,
                         "filepath": filepath,
                         "thumbnail_path": thumbnail_path
                     }
                 except Exception as e:
                     print(f"Failed to load preset {filename}: {e}")
+
+    def load_presets(self):
+        """Load all presets from both bundled and user directories."""
+        self.presets = {}
+
+        # Always include the default preset
+        self.presets["Default"] = {
+            "data": DEFAULT_THEME,
+            "builtin": True,
+            "thumbnail_path": None
+        }
+
+        # Load bundled presets first (from installation directory)
+        self._load_presets_from_dir(self.bundled_presets_dir, is_builtin=True)
+
+        # Load user presets (from AppData) - these can override bundled presets
+        self.ensure_presets_dir()
+        self._load_presets_from_dir(self.user_presets_dir, is_builtin=False)
 
         self.refresh_display()
 
@@ -477,8 +496,9 @@ class PresetsPanel(QWidget):
             QMessageBox.warning(self, "Error", f"Invalid preset name: {err}")
             return False
 
-        filepath = os.path.join(self.presets_dir, filename)
-        thumbnail_path = os.path.join(self.presets_dir, f"{safe_name}.png")
+        # Always save to user presets directory (writable location)
+        filepath = os.path.join(self.user_presets_dir, filename)
+        thumbnail_path = os.path.join(self.user_presets_dir, f"{safe_name}.png")
 
         # Check if overwriting
         if os.path.exists(filepath):

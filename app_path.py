@@ -37,6 +37,32 @@ def get_bundled_resource_path(relative_path):
     return os.path.join(get_bundle_dir(), relative_path)
 
 
+def get_user_data_dir():
+    """Get the user data directory (writable location for user files).
+
+    Uses AppData\Local on Windows for installed apps, or app_dir for development.
+    """
+    if getattr(sys, 'frozen', False):
+        # Running as compiled executable - use AppData\Local
+        if sys.platform == 'win32':
+            appdata = os.environ.get('LOCALAPPDATA')
+            if appdata:
+                user_dir = os.path.join(appdata, 'ThermalEngine')
+                os.makedirs(user_dir, exist_ok=True)
+                return user_dir
+        # Fallback to app dir if not Windows
+        return get_app_dir()
+    else:
+        # Running as script - use app dir
+        return get_app_dir()
+
+
+def get_user_data_path(relative_path):
+    """Get absolute path to user data file (writable location)."""
+    return os.path.join(get_user_data_dir(), relative_path)
+
+
 # Commonly used paths
 APP_DIR = get_app_dir()
 BUNDLE_DIR = get_bundle_dir()
+USER_DATA_DIR = get_user_data_dir()
