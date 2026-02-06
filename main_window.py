@@ -581,14 +581,22 @@ class ThemeEditorWindow(QMainWindow):
 
         self.canvas = CanvasPreview()
 
+        # Set size policy to allow canvas to shrink when window is small
+        # This prevents canvas from covering page controls
+        from PySide6.QtWidgets import QSizePolicy
+        self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Override canvas minimum height to prevent it from covering page controls
+        self.canvas.setMinimumHeight(300)  # Ensure at least 300px height
+
         # Initialize grid settings from preferences
         self.canvas.set_show_grid(settings.get_setting("show_grid", True))
         self.canvas.set_snap_to_grid(settings.get_setting("snap_to_grid", True))
 
-        # Add canvas directly to fill all available space
-        canvas_layout.addWidget(self.canvas)
+        # Add canvas with stretch factor to fill available space
+        # Stretch factor 1 means it will grow, but page controls will stay visible
+        canvas_layout.addWidget(self.canvas, 1)
 
-        # Page controls at bottom
+        # Page controls at bottom (stretch factor 0 = fixed size, always visible)
         page_controls_layout = QHBoxLayout()
         page_controls_layout.addWidget(QLabel("Page:"))
 

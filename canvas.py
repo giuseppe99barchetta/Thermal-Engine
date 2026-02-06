@@ -141,7 +141,8 @@ class CanvasPreview(QWidget):
 
         # Allow widget to expand to fill available space
         # Margins will be calculated dynamically in paintEvent
-        self.setMinimumSize(self.canvas_width + 200, self.canvas_height + 200)
+        # Use smaller minimum size to prevent covering page controls when window is small
+        self.setMinimumSize(400, 300)  # Reasonable minimum that allows page controls to stay visible
         from PySide6.QtWidgets import QSizePolicy
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 

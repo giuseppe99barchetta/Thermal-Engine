@@ -11,6 +11,15 @@ import argparse
 import atexit
 import signal
 import webbrowser
+import io
+
+# Fix for PyInstaller --windowed mode where stdout/stderr are None
+# This prevents AttributeError when logging tries to write to None streams
+# Use UTF-8 encoding to support Unicode characters (like checkmarks ✓)
+if sys.stdout is None:
+    sys.stdout = io.open(os.devnull, 'w', encoding='utf-8')
+if sys.stderr is None:
+    sys.stderr = io.open(os.devnull, 'w', encoding='utf-8')
 
 from PySide6.QtWidgets import (
     QApplication, QMessageBox, QSystemTrayIcon, QMenu,
