@@ -14,7 +14,19 @@ from packaging import version as version_parser
 from PySide6.QtWidgets import QMessageBox, QPushButton, QProgressDialog
 from PySide6.QtCore import QThread, Signal, Qt
 
-from version import __version__
+try:
+    from version import __version__
+except ImportError:
+    # Fallback: try to read version from version.py next to the executable
+    import sys
+    _version_path = os.path.join(os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__), 'version.py')
+    __version__ = "0.0.0"
+    if os.path.exists(_version_path):
+        with open(_version_path) as _f:
+            for _line in _f:
+                if _line.startswith('__version__'):
+                    __version__ = _line.split('=')[1].strip().strip('"').strip("'")
+                    break
 
 GITHUB_REPO = "giuseppe99barchetta/Thermal-Engine"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"

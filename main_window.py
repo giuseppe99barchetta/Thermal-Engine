@@ -3856,7 +3856,10 @@ class ThemeEditorWindow(QMainWindow):
 
     def _on_update_available(self, latest_version, release_url, release_notes):
         """Handle update available signal."""
-        from version import __version__
+        try:
+            from version import __version__
+        except ImportError:
+            __version__ = "0.0.0"
         from PySide6.QtWidgets import QProgressDialog
 
         dialog = QDialog(self)
