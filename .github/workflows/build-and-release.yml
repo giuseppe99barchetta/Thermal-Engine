@@ -98,25 +98,26 @@ jobs:
       run: |
         version = "${{ steps.version_bump.outputs.new_version }}".lstrip("v")
         parts = version.split(".")
-        content = f'''"""
-        Version information for Thermal Engine.
-        This file is automatically updated by the build process.
-        """
-
-        __version__ = "{version}"
-        __version_info__ = ({parts[0]}, {parts[1]}, {parts[2]})
-
-        def get_version():
-            """Get the current version string."""
-            return __version__
-
-        def get_version_tuple():
-            """Get the current version as a tuple."""
-            return __version_info__
-        '''
-        lines = [line.lstrip() for line in content.strip().splitlines()]
+        lines = [
+            '"""',
+            'Version information for Thermal Engine.',
+            'This file is automatically updated by the build process.',
+            '"""',
+            '',
+            f'__version__ = "{version}"',
+            f'__version_info__ = ({parts[0]}, {parts[1]}, {parts[2]})',
+            '',
+            'def get_version():',
+            '    """Get the current version string."""',
+            '    return __version__',
+            '',
+            'def get_version_tuple():',
+            '    """Get the current version as a tuple."""',
+            '    return __version_info__',
+            '',
+        ]
         with open("app_version.py", "w") as f:
-            f.write("\n".join(lines) + "\n")
+            f.write("\n".join(lines))
         print(f"Updated app_version.py to {version}")
         with open("app_version.py") as f:
             print(f.read())
