@@ -34,6 +34,7 @@ pyinstaller --name="ThermalEngine" `
     --hidden-import=PySide6.QtCore `
     --hidden-import=PySide6.QtGui `
     --hidden-import=PySide6.QtWidgets `
+    --hidden-import=version `
     --hidden-import=device_backends `
     --hidden-import=video_background `
     --collect-submodules=device_backends `
