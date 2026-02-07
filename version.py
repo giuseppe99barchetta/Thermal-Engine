@@ -3,8 +3,8 @@ Version information for Thermal Engine.
 This file is automatically updated by the build process.
 """
 
-__version__ = "1.0.0"
-__version_info__ = (1, 0, 0)
+__version__ = "0.13.4"
+__version_info__ = (0, 13, 4)
 
 def get_version():
     """Get the current version string."""
