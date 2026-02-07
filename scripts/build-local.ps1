@@ -31,6 +31,7 @@ pyinstaller --name="ThermalEngine" `
     --icon="assets/icon.ico" `
     --add-data="elements;elements" `
     --add-data="assets;assets" `
+    --add-data="app_version.py;." `
     --hidden-import=PySide6.QtCore `
     --hidden-import=PySide6.QtGui `
     --hidden-import=PySide6.QtWidgets `

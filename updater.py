@@ -14,7 +14,10 @@ from packaging import version as version_parser
 from PySide6.QtWidgets import QMessageBox, QPushButton, QProgressDialog
 from PySide6.QtCore import QThread, Signal, Qt
 
-from app_version import __version__
+try:
+    from app_version import __version__
+except ImportError:
+    __version__ = "0.0.0"
 
 GITHUB_REPO = "giuseppe99barchetta/Thermal-Engine"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
