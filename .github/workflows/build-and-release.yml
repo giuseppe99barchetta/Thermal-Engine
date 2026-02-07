@@ -92,7 +92,7 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
-    - name: Update version.py with release version
+    - name: Update app_version.py with release version
       if: steps.version_bump.outputs.should_release == 'true'
       shell: python
       run: |
@@ -115,10 +115,10 @@ jobs:
             return __version_info__
         '''
         lines = [line.lstrip() for line in content.strip().splitlines()]
-        with open("version.py", "w") as f:
+        with open("app_version.py", "w") as f:
             f.write("\n".join(lines) + "\n")
-        print(f"Updated version.py to {version}")
-        with open("version.py") as f:
+        print(f"Updated app_version.py to {version}")
+        with open("app_version.py") as f:
             print(f.read())
 
     - name: Download libusb DLLs
@@ -145,7 +145,7 @@ jobs:
           --hidden-import=PySide6.QtCore `
           --hidden-import=PySide6.QtGui `
           --hidden-import=PySide6.QtWidgets `
-          --hidden-import=version `
+          --hidden-import=app_version `
           --hidden-import=device_backends `
           --hidden-import=video_background `
           --collect-submodules=device_backends `
