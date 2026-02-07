@@ -3887,7 +3887,7 @@ class ThemeEditorWindow(QMainWindow):
 
         # Buttons
         buttons = QDialogButtonBox()
-        download_btn = buttons.addButton("Download & Install", QDialogButtonBox.ButtonRole.AcceptRole)
+        download_btn = buttons.addButton("Download && Install", QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
 
         buttons.accepted.connect(dialog.accept)

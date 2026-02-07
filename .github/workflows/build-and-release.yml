@@ -92,6 +92,35 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
+    - name: Update version.py with release version
+      if: steps.version_bump.outputs.should_release == 'true'
+      shell: python
+      run: |
+        version = "${{ steps.version_bump.outputs.new_version }}".lstrip("v")
+        parts = version.split(".")
+        content = f'''"""
+        Version information for Thermal Engine.
+        This file is automatically updated by the build process.
+        """
+
+        __version__ = "{version}"
+        __version_info__ = ({parts[0]}, {parts[1]}, {parts[2]})
+
+        def get_version():
+            """Get the current version string."""
+            return __version__
+
+        def get_version_tuple():
+            """Get the current version as a tuple."""
+            return __version_info__
+        '''
+        lines = [line.lstrip() for line in content.strip().splitlines()]
+        with open("version.py", "w") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"Updated version.py to {version}")
+        with open("version.py") as f:
+            print(f.read())
+
     - name: Download libusb DLLs
       if: steps.version_bump.outputs.should_release == 'true'
       run: |
@@ -171,6 +200,80 @@ jobs:
         }
       id: build_installer
 
+    - name: Generate changelog
+      if: steps.version_bump.outputs.should_release == 'true'
+      id: changelog
+      shell: python
+      run: |
+        import subprocess, re
+
+        current_tag = "${{ steps.get_tag.outputs.current_tag }}"
+        new_version = "${{ steps.version_bump.outputs.new_version }}"
+
+        # Get commits between previous tag and HEAD
+        result = subprocess.run(
+            ["git", "log", f"{current_tag}..HEAD", "--pretty=format:%s"],
+            capture_output=True, text=True
+        )
+        commits = result.stdout.strip().split("\n") if result.stdout.strip() else []
+
+        features = []
+        fixes = []
+        breaking = []
+        other = []
+
+        for msg in commits:
+            msg = msg.strip()
+            if not msg:
+                continue
+
+            # Extract description after prefix
+            if msg.startswith("major:"):
+                desc = msg[len("major:"):].strip()
+                breaking.append(desc)
+            elif msg.startswith("feat:"):
+                desc = msg[len("feat:"):].strip()
+                features.append(desc)
+            elif msg.startswith("fix:"):
+                desc = msg[len("fix:"):].strip()
+                fixes.append(desc)
+            else:
+                other.append(msg)
+
+        # Build changelog
+        lines = [f"## What's Changed in {new_version}\n"]
+
+        if breaking:
+            lines.append("### Breaking Changes")
+            for item in breaking:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if features:
+            lines.append("### New Features")
+            for item in features:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if fixes:
+            lines.append("### Bug Fixes & Improvements")
+            for item in fixes:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if other:
+            lines.append("### Other Changes")
+            for item in other:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        changelog = "\n".join(lines)
+        print(changelog)
+
+        # Write to file for the release step
+        with open("CHANGELOG.md", "w", encoding="utf-8") as f:
+            f.write(changelog)
+
     - name: Create Release
       if: steps.version_bump.outputs.should_release == 'true'
       uses: softprops/action-gh-release@v1
@@ -180,7 +283,7 @@ jobs:
         draft: false
         prerelease: false
         files: ${{ steps.build_installer.outputs.installer_name }}
-        generate_release_notes: true
+        body_path: CHANGELOG.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
