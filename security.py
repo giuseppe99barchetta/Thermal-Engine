@@ -147,9 +147,12 @@ def validate_preset_schema(data):
             errors.append("'video_background' must be a dictionary")
         else:
             if 'video_path' in vb and vb['video_path']:
-                safe, _, err = is_safe_path(vb['video_path'], allow_absolute=True)
-                if not safe:
-                    errors.append(f"video_background path: {err}")
+                vp = vb['video_path']
+                # Allow relative asset paths from .thermal packages
+                if not (vp.startswith("assets/") and ".." not in vp):
+                    safe, _, err = is_safe_path(vp, allow_absolute=True)
+                    if not safe:
+                        errors.append(f"video_background path: {err}")
 
     return len(errors) == 0, errors
 
@@ -189,7 +192,11 @@ def validate_element_schema(element, index):
     path_fields = ['image_path', 'gif_path']
     for field in path_fields:
         if field in element and element[field]:
-            safe, _, err = is_safe_path(element[field], allow_absolute=True)
+            path = element[field]
+            # Allow relative asset paths from .thermal packages
+            if path.startswith("assets/") and ".." not in path:
+                continue
+            safe, _, err = is_safe_path(path, allow_absolute=True)
             if not safe:
                 errors.append(f"{prefix}: {field}: {err}")
 

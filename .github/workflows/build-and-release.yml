@@ -143,6 +143,7 @@ jobs:
           --add-data="assets;assets" `
           --add-data="presets;presets" `
           --add-data="app_version.py;." `
+          --add-data="libs;libs" `
           --add-binary="libusb-1.0.dll;." `
           --hidden-import=PySide6.QtCore `
           --hidden-import=PySide6.QtGui `

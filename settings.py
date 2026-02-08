@@ -33,6 +33,9 @@ DEFAULT_SETTINGS = {
     "check_for_updates": True,  # Check for updates on startup
     "last_display_width": 480,  # Last connected display width (default to 480x480)
     "last_display_height": 480,  # Last connected display height
+    "profiles": [],  # Auto-switch profile rules
+    "profiles_enabled": False,  # Whether auto-switching is active
+    "profiles_default_preset": None,  # Preset when no profile matches
 }
 
 _settings = None

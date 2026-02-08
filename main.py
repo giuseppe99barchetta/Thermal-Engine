@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QBrush, QFont
 from PySide6.QtCore import Qt, QSharedMemory
 
-from sensors import init_sensors, HAS_HWINFO
+from sensors import init_sensors, HAS_LHM
 from main_window import ThemeEditorWindow
 from app_path import get_app_dir
 import settings
@@ -201,8 +201,8 @@ def main():
     init_sensors()
 
     # Show HWiNFO setup dialog if not connected (skip if minimized/auto-start)
-    from sensors import HAS_HWINFO
-    if not HAS_HWINFO and not args.minimized:
+    from sensors import HAS_LHM
+    if not HAS_LHM and not args.minimized:
         dialog = HWiNFOSetupDialog()
         dialog.exec()
         # Re-initialize sensors in case user set up HWiNFO

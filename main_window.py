@@ -722,6 +722,16 @@ class ThemeEditorWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        export_theme_action = QAction("Export Theme Package...", self)
+        export_theme_action.triggered.connect(self.export_theme_package)
+        file_menu.addAction(export_theme_action)
+
+        import_theme_action = QAction("Import Theme Package...", self)
+        import_theme_action.triggered.connect(self.import_theme_package)
+        file_menu.addAction(import_theme_action)
+
+        file_menu.addSeparator()
+
         exit_action = QAction("Exit", self)
         exit_action.setShortcut(QKeySequence.StandardKey.Quit)
         exit_action.triggered.connect(self.close)
@@ -1442,6 +1452,71 @@ class ThemeEditorWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to export image:\n{e}")
 
+    def export_theme_package(self):
+        """Export current theme as a .thermal package with embedded assets."""
+        from theme_package import export_theme, THERMAL_EXTENSION
+
+        default_name = f"{self.theme_name}{THERMAL_EXTENSION}"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Theme Package", default_name,
+            f"Thermal Theme (*{THERMAL_EXTENSION});;All Files (*)"
+        )
+        if not path:
+            return
+
+        if not path.endswith(THERMAL_EXTENSION):
+            path += THERMAL_EXTENSION
+
+        theme_data = {
+            "name": self.theme_name,
+            "background_color": self.background_color,
+            "display_width": constants.DISPLAY_WIDTH,
+            "display_height": constants.DISPLAY_HEIGHT,
+            "elements": [e.to_dict() for e in self.elements],
+            "video_background": video_background.to_dict()
+        }
+
+        thumbnail_image = None
+        try:
+            thumbnail_image = self.render_theme_image()
+        except Exception:
+            pass
+
+        success, result = export_theme(theme_data, thumbnail_image, path)
+        if success:
+            self.status_bar.showMessage(f"Theme exported: {os.path.basename(path)}", 3000)
+        else:
+            QMessageBox.critical(self, "Export Failed", f"Failed to export theme:\n{result}")
+
+    def import_theme_package(self):
+        """Import a .thermal theme package."""
+        from theme_package import import_theme, THERMAL_EXTENSION
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Theme Package", "",
+            f"Thermal Theme (*{THERMAL_EXTENSION});;All Files (*)"
+        )
+        if not path:
+            return
+
+        success, error, theme_data = import_theme(path)
+        if not success:
+            QMessageBox.critical(self, "Import Failed", f"Failed to import theme:\n{error}")
+            return
+
+        self.load_preset(theme_data)
+        self.theme_path = None
+        self.status_bar.showMessage(f"Imported theme: {theme_data.get('name', 'Unknown')}", 3000)
+
+        reply = QMessageBox.question(
+            self, "Save as Preset?",
+            f"Theme '{theme_data.get('name', 'Unknown')}' imported successfully.\n\n"
+            "Would you like to save it as a preset?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.save_as_preset()
+
     def get_sensor_data(self):
         """Get sensor data from background threads (non-blocking)."""
         # Get psutil data from background thread
@@ -1471,7 +1546,7 @@ class ThemeEditorWindow(QMainWindow):
         }
 
         # Get HWiNFO sensor data from background thread (non-blocking)
-        if sensors.HAS_HWINFO:
+        if sensors.HAS_LHM:
             try:
                 hwinfo_data = get_cached_sensors()
                 if hwinfo_data:
@@ -1511,11 +1586,11 @@ class ThemeEditorWindow(QMainWindow):
         info.append("")
 
         # HWiNFO status
-        has_hwinfo = getattr(sensors, 'HAS_HWINFO', False)
-        info.append(f"HWiNFO connected: {has_hwinfo}")
+        HAS_LHM = getattr(sensors, 'HAS_LHM', False)
+        info.append(f"HWiNFO connected: {HAS_LHM}")
         info.append("")
 
-        if has_hwinfo:
+        if HAS_LHM:
             info.append("Sensor readings from HWiNFO:")
             info.append("-" * 40)
             try:
