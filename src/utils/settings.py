@@ -12,8 +12,8 @@ IS_WINDOWS = sys.platform == "win32"
 if IS_WINDOWS:
     import winreg
 
-from app_path import get_app_dir, get_resource_path, get_user_data_path
-from security import escape_registry_path
+from src.utils.app_path import get_app_dir, get_resource_path, get_user_data_path
+from src.core.security import escape_registry_path
 
 APP_NAME = "ThermalEngine"
 SETTINGS_FILE = get_user_data_path("settings.json")

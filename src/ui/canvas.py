@@ -9,10 +9,10 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QImage
 
-import constants
-from constants import SOURCE_UNITS
+from src.core import constants
+from src.core.constants import SOURCE_UNITS
 from elements import get_custom_element
-from video_background import video_background
+from src.ui.video_background import video_background
 
 
 def apply_opacity(color, opacity):

@@ -7,14 +7,22 @@ import sys
 import os
 
 
+def _get_project_root():
+    """Get the project root directory when running as script.
+
+    This file lives at src/utils/app_path.py, so we navigate 3 levels up.
+    """
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def get_app_dir():
     """Get the application directory where the exe lives (for user data)."""
     if getattr(sys, 'frozen', False):
         # Running as compiled executable - use exe location for user data
         return os.path.dirname(sys.executable)
     else:
-        # Running as script
-        return os.path.dirname(os.path.abspath(__file__))
+        # Running as script - project root
+        return _get_project_root()
 
 
 def get_bundle_dir():
@@ -23,8 +31,8 @@ def get_bundle_dir():
         # Running as compiled executable - bundled files are in _MEIPASS
         return getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
     else:
-        # Running as script - same as app dir
-        return os.path.dirname(os.path.abspath(__file__))
+        # Running as script - same as app dir (project root)
+        return _get_project_root()
 
 
 def get_resource_path(relative_path):

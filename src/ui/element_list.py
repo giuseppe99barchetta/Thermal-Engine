@@ -10,8 +10,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QIcon
 
-from constants import ELEMENT_TYPES, DEFAULT_ELEMENT_PROPS
-from element import ThemeElement
+from src.core.constants import ELEMENT_TYPES, DEFAULT_ELEMENT_PROPS
+from src.core.element import ThemeElement
 from elements import get_custom_element
 
 

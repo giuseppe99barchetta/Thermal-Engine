@@ -547,7 +547,7 @@ class GradientBarEditor(QWidget):
         return "#ffffff"
 
 
-from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT, DATA_SOURCES, DATA_SOURCES_CATEGORIZED
+from src.core.constants import DISPLAY_WIDTH, DISPLAY_HEIGHT, DATA_SOURCES, DATA_SOURCES_CATEGORIZED
 
 
 class FontPreviewDelegate(QStyledItemDelegate):

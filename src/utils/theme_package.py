@@ -11,8 +11,8 @@ import zipfile
 import shutil
 import logging
 
-from app_path import get_user_data_path
-from security import validate_preset_schema, is_safe_filename, sanitize_preset_name
+from src.utils.app_path import get_user_data_path
+from src.core.security import validate_preset_schema, is_safe_filename, sanitize_preset_name
 
 logger = logging.getLogger(__name__)
 

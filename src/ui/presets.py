@@ -13,11 +13,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
 
-from constants import DISPLAY_WIDTH, DISPLAY_HEIGHT
-from element import ThemeElement
-from app_path import get_resource_path, get_user_data_path, get_bundled_resource_path
-from security import validate_preset_schema, is_safe_filename, sanitize_preset_name
-from settings import get_setting, set_setting
+from src.core.constants import DISPLAY_WIDTH, DISPLAY_HEIGHT
+from src.core.element import ThemeElement
+from src.utils.app_path import get_resource_path, get_user_data_path, get_bundled_resource_path
+from src.core.security import validate_preset_schema, is_safe_filename, sanitize_preset_name
+from src.utils.settings import get_setting, set_setting
 
 # Thumbnail dimensions (maintain aspect ratio of display)
 THUMBNAIL_WIDTH = 150

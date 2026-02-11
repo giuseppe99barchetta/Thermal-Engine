@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QMessageBox, QPushButton, QProgressDialog
 from PySide6.QtCore import QThread, Signal, Qt
 
 try:
-    from app_version import __version__
+    from src.utils.app_version import __version__
 except ImportError:
     __version__ = "0.0.0"
 

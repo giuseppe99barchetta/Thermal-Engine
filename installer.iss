@@ -52,7 +52,7 @@ Name: "startupicon"; Description: "Launch at Windows startup (minimized to tray)
 Source: "dist\ThermalEngine\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Presets - from project root (only install if they don't exist to preserve user customizations)
-Source: "presets\*"; DestDir: "{app}\presets"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs; Attribs: readonly
+Source: "presets\*"; DestDir: "{app}\presets"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
 
 [Icons]
 ; Start Menu shortcut

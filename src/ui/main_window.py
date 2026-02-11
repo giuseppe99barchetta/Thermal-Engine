@@ -112,7 +112,7 @@ PBT_APMSUSPEND = 0x0004
 
 from PIL import Image, ImageDraw, ImageFont, ImageChops
 
-from security import validate_preset_schema, is_safe_path
+from src.core.security import validate_preset_schema, is_safe_path
 
 
 # Global font cache for PIL fonts (shared across instances)
@@ -250,12 +250,12 @@ try:
 except ImportError:
     HAS_HID = False
 
-import constants
-from constants import SOURCE_UNITS
+from src.core import constants
+from src.core.constants import SOURCE_UNITS
 
 # Device backend system for multi-device support
-import device_backends
-from device_backends import (
+from src.core import device_backends
+from src.core.device_backends import (
     DisplayBackend, enumerate_available_devices,
     find_device_definition, create_backend, SUPPORTED_DEVICES
 )
@@ -285,12 +285,12 @@ def get_value_with_unit(value, source, temp_hide_unit=False):
         return f"{value:.1f}{symbol}"
     else:  # percent
         return f"{value:.0f}{symbol}"
-from element import ThemeElement
-import sensors
-from sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
-import settings
-from app_path import get_resource_path, get_bundled_resource_path
-from updater import UpdateChecker, UpdateDownloader
+from src.core.element import ThemeElement
+from src.core import sensors
+from src.core.sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
+from src.utils import settings
+from src.utils.app_path import get_resource_path, get_bundled_resource_path
+from src.utils.updater import UpdateChecker, UpdateDownloader
 
 
 def hex_to_rgba(hex_color, opacity=100):
@@ -302,12 +302,12 @@ def hex_to_rgba(hex_color, opacity=100):
     b = int(hex_color[4:6], 16)
     a = int(255 * opacity / 100)
     return (r, g, b, a)
-from canvas import CanvasPreview
-from properties import PropertiesPanel
-from element_list import ElementListPanel
-from presets import PresetsPanel
+from src.ui.canvas import CanvasPreview
+from src.ui.properties import PropertiesPanel
+from src.ui.element_list import ElementListPanel
+from src.ui.presets import PresetsPanel
 from elements import get_custom_element
-from video_background import video_background, HAS_CV2
+from src.ui.video_background import video_background, HAS_CV2
 
 
 class ThemeEditorWindow(QMainWindow):
@@ -1454,7 +1454,7 @@ class ThemeEditorWindow(QMainWindow):
 
     def export_theme_package(self):
         """Export current theme as a .thermal package with embedded assets."""
-        from theme_package import export_theme, THERMAL_EXTENSION
+        from src.utils.theme_package import export_theme, THERMAL_EXTENSION
 
         default_name = f"{self.theme_name}{THERMAL_EXTENSION}"
         path, _ = QFileDialog.getSaveFileName(
@@ -1490,7 +1490,7 @@ class ThemeEditorWindow(QMainWindow):
 
     def import_theme_package(self):
         """Import a .thermal theme package."""
-        from theme_package import import_theme, THERMAL_EXTENSION
+        from src.utils.theme_package import import_theme, THERMAL_EXTENSION
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Theme Package", "",
@@ -3932,7 +3932,7 @@ class ThemeEditorWindow(QMainWindow):
     def _on_update_available(self, latest_version, release_url, release_notes):
         """Handle update available signal."""
         try:
-            from app_version import __version__
+            from src.utils.app_version import __version__
         except ImportError:
             __version__ = "0.0.0"
         from PySide6.QtWidgets import QProgressDialog

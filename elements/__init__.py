@@ -98,7 +98,7 @@ load_custom_elements()
 
 # Register custom element types with constants
 try:
-    from constants import register_custom_element_types
+    from src.core.constants import register_custom_element_types
     register_custom_element_types(CUSTOM_ELEMENTS.keys())
 except ImportError:
     pass

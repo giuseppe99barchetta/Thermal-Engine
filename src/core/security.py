@@ -5,7 +5,7 @@ Handles path validation, schema validation, and integrity checks.
 
 import os
 import re
-from app_path import get_app_dir
+from src.utils.app_path import get_app_dir
 
 # Allowed directories for file loading (relative to app dir)
 ALLOWED_SUBDIRS = ['presets', 'elements', 'themes', 'images', 'videos']

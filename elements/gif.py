@@ -12,9 +12,9 @@ from PIL import Image as PILImage
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QImage, QPen, QColor
 
-# Add parent directory to path for security import
+# Add parent directory to path for project imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from security import is_safe_path
+from src.core.security import is_safe_path
 
 ELEMENT_TYPE = "gif"
 ELEMENT_NAME = "GIF Image"

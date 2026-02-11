@@ -116,10 +116,12 @@ jobs:
             '    return __version_info__',
             '',
         ]
-        with open("app_version.py", "w") as f:
+        import os
+        os.makedirs("src/utils", exist_ok=True)
+        with open("src/utils/app_version.py", "w") as f:
             f.write("\n".join(lines))
-        print(f"Updated app_version.py to {version}")
-        with open("app_version.py") as f:
+        print(f"Updated src/utils/app_version.py to {version}")
+        with open("src/utils/app_version.py") as f:
             print(f.read())
 
     - name: Download libusb DLLs
@@ -142,16 +144,35 @@ jobs:
           --add-data="elements;elements" `
           --add-data="assets;assets" `
           --add-data="presets;presets" `
-          --add-data="app_version.py;." `
           --add-data="libs;libs" `
           --add-binary="libusb-1.0.dll;." `
           --hidden-import=PySide6.QtCore `
           --hidden-import=PySide6.QtGui `
           --hidden-import=PySide6.QtWidgets `
-          --hidden-import=app_version `
-          --hidden-import=device_backends `
-          --hidden-import=video_background `
-          --collect-submodules=device_backends `
+          --hidden-import=src `
+          --hidden-import=src.core `
+          --hidden-import=src.core.constants `
+          --hidden-import=src.core.element `
+          --hidden-import=src.core.sensors `
+          --hidden-import=src.core.libre_hw_monitor `
+          --hidden-import=src.core.device_backends `
+          --hidden-import=src.core.security `
+          --hidden-import=src.ui `
+          --hidden-import=src.ui.main_window `
+          --hidden-import=src.ui.canvas `
+          --hidden-import=src.ui.element_list `
+          --hidden-import=src.ui.properties `
+          --hidden-import=src.ui.presets `
+          --hidden-import=src.ui.video_background `
+          --hidden-import=src.utils `
+          --hidden-import=src.utils.app_path `
+          --hidden-import=src.utils.app_version `
+          --hidden-import=src.utils.settings `
+          --hidden-import=src.utils.updater `
+          --hidden-import=src.utils.profiles `
+          --hidden-import=src.utils.theme_package `
+          --collect-submodules=src `
+          --collect-submodules=src.core.device_backends `
           --hidden-import=usb `
           --hidden-import=usb.core `
           --hidden-import=usb.backend `

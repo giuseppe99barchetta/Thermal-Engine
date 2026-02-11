@@ -7,7 +7,7 @@ No external programs required.
 import threading
 import time
 
-from libre_hw_monitor import (
+from src.core.libre_hw_monitor import (
     LibreHardwareMonitorReader,
 )
 

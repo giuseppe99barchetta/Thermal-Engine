@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QMessageBox, QDialogButtonBox, QAbstractItemView
 )
 
-from settings import get_setting, set_setting
+from src.utils.settings import get_setting, set_setting
 
 logger = logging.getLogger(__name__)
 

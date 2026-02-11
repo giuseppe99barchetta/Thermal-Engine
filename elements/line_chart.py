@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QPen, QBrush, QPainterPath, QLinearGradient
 
 # Import SOURCE_UNITS for proper unit display
 try:
-    from constants import SOURCE_UNITS
+    from src.core.constants import SOURCE_UNITS
 except ImportError:
     SOURCE_UNITS = {}
 

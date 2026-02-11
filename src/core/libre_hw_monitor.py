@@ -18,7 +18,8 @@ import clr
 def _get_base_path():
     if getattr(sys, "frozen", False):
         return sys._MEIPASS
-    return os.path.dirname(os.path.abspath(__file__))
+    # Navigate from src/core/ to project root
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BASE_DIR = _get_base_path()
 DLL_PATH = os.path.join(BASE_DIR, "libs", "LibreHardwareMonitorLib.dll")

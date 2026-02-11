@@ -20,7 +20,7 @@ except ImportError:
     cv2 = None
     np = None
 
-import constants
+from src.core import constants
 
 
 class VideoBackground:
