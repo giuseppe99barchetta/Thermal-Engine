@@ -166,6 +166,9 @@ def main():
 
     # Single instance check - prevent multiple instances from running
     shared_memory = QSharedMemory("ThermalEngineInstanceLock")
+    # Clean up stale shared memory from a previous crash/forced shutdown
+    if shared_memory.attach():
+        shared_memory.detach()
     if not shared_memory.create(1):
         # Another instance is already running
         QMessageBox.warning(
