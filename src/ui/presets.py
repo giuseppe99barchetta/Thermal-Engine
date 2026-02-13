@@ -469,6 +469,8 @@ class PresetsPanel(QWidget):
         """Handle preset selection."""
         if preset_name in self.presets:
             preset_data = self.presets[preset_name]["data"]
+            # Remember the last loaded preset so it persists across restarts
+            set_setting("last_preset", preset_name)
             self.preset_selected.emit(preset_data)
 
     def on_delete_preset(self, preset_name):
@@ -551,12 +553,24 @@ class PresetsPanel(QWidget):
             self.preset_selected.emit(new_preset_data)
 
     def get_default_preset_data(self):
-        """Get the default preset data, if one is set and exists."""
+        """Get the default preset data, if one is set and exists.
+
+        Priority order:
+        1. Explicit default preset (set by user via right-click menu)
+        2. Last used preset (auto-saved when loading any preset)
+        3. Resolution-appropriate built-in preset
+        """
+        # 1. Explicit default preset
         default_name = get_setting("default_preset", None)
         if default_name and default_name in self.presets:
             return self.presets[default_name]["data"]
 
-        # If no default is set, use resolution-appropriate preset
+        # 2. Last used preset
+        last_name = get_setting("last_preset", None)
+        if last_name and last_name in self.presets:
+            return self.presets[last_name]["data"]
+
+        # 3. Resolution-appropriate built-in preset
         # For 480x480 displays, use "System Monitor" instead of "Default"
         if self.current_display_width == 480 and self.current_display_height == 480:
             if "System Monitor" in self.presets:

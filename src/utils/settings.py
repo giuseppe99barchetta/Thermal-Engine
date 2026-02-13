@@ -25,7 +25,8 @@ DEFAULT_SETTINGS = {
     "minimize_to_tray": True,
     "close_to_tray": True,
     "target_fps": 30,  # 30 FPS is smooth for most PCs
-    "default_preset": None,  # Name of preset to load on startup
+    "default_preset": None,  # Name of preset to load on startup (explicit user choice)
+    "last_preset": None,  # Last used preset (auto-saved on every preset load)
     "overdrive_mode": False,
     "suppress_60fps_warning": False,  # Show warning when selecting 60 FPS
     "show_grid": True,  # Show grid lines on canvas
@@ -158,12 +159,36 @@ def is_autostart_enabled():
         return False
 
 
+def _remove_startup_folder_shortcut():
+    """Remove any Startup folder shortcut to avoid duplicate launches.
+
+    The installer may create a shortcut in the Windows Startup folder,
+    but the app manages autostart via the registry. Having both causes
+    the app to launch twice on boot.
+    """
+    try:
+        startup_folder = os.path.join(
+            os.environ.get("APPDATA", ""),
+            "Microsoft", "Windows", "Start Menu", "Programs", "Startup"
+        )
+        shortcut_path = os.path.join(startup_folder, f"{APP_NAME}.lnk")
+        if os.path.exists(shortcut_path):
+            os.remove(shortcut_path)
+            print(f"[Settings] Removed Startup folder shortcut to avoid duplicate launch")
+    except Exception as e:
+        print(f"[Settings] Could not remove Startup shortcut: {e}")
+
+
 def apply_autostart_setting():
     """Apply the current autostart setting to the registry. Windows-only."""
     if not IS_WINDOWS:
         return
     enabled = get_setting("launch_at_login", True)
     set_autostart(enabled)
+    # Always clean up Startup folder shortcut - the registry entry is the
+    # single source of truth for autostart. The installer may have created
+    # a shortcut in the Startup folder, causing a duplicate launch.
+    _remove_startup_folder_shortcut()
 
 
 # Initialize settings on module load
