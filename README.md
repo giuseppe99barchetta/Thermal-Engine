@@ -291,11 +291,6 @@ pyinstaller --name="Thermal-Engine" --windowed --add-data="elements;elements" --
 
 MIT License - See LICENSE file for details.
 
-## Credits
-
-- [PySide6](https://www.qt.io/qt-for-python) - Qt GUI framework
-- [Pillow](https://pillow.readthedocs.io/) - Image processing
-
 ## Contributing
 
 Contributions welcome! Please open an issue or PR.
