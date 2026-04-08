@@ -88,6 +88,21 @@ SUPPORTED_DEVICES = [
         endpoint_out=None,  # Auto-discovered (0x01)
         endpoint_in=None,   # Auto-discovered (0x81)
     ),
+
+    # Thermalright FW 360 (USB bulk, ChiZhu Tech USBDISPLAY, same VID:PID as Trofeo)
+    DeviceDefinition(
+        name="Thermalright FW 360",
+        vendor_id=0x0416,
+        product_id=0x5302,
+        backend_type="usb_bulk",
+        width=480,   # Square display (480x480)
+        height=480,  # Square display
+        experimental=False,
+        # Protocol: ChiZhu Tech USBDISPLAY (same as FW 360 Ultra)
+        # Shares VID:PID with Trofeo AIO - select this device if you have an FW 360
+        endpoint_out=None,  # Auto-discovered
+        endpoint_in=None,   # Auto-discovered
+    ),
 ]
 
 
