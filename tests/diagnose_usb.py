@@ -86,6 +86,7 @@ print()
 
 # Check for Thermalright FW 360 Ultra specifically
 print("[4/4] Looking for Thermalright FW 360 Ultra (87AD:70DB)...")
+print("  Note: Thermalright FW 360 (non-Ultra) uses 0416:5302 - see BONUS section below.")
 print()
 
 try:
@@ -94,7 +95,9 @@ try:
     if target_device is None:
         print("  [FAIL] Thermalright FW 360 Ultra NOT FOUND")
         print()
-        print("  Possible reasons:")
+        print("  If you have a Thermalright FW 360 (non-Ultra), check the BONUS section below.")
+        print()
+        print("  Possible reasons (for FW 360 Ultra):")
         print("  1. Device is not connected via USB")
         print("  2. Device is in use by TR Control Center (close it)")
         print("  3. Wrong VID/PID (check Device Manager)")
@@ -147,19 +150,38 @@ except Exception as e:
 
 print()
 
-# Check for Trofeo AIO (existing support)
-print("[BONUS] Looking for Thermalright Trofeo AIO (0416:5302)...")
+# Check for devices at 0416:5302 (Trofeo AIO or FW 360)
+print("[BONUS] Looking for Thermalright Trofeo AIO / FW 360 (0416:5302)...")
 print()
 
 try:
     trofeo_device = usb.core.find(idVendor=0x0416, idProduct=0x5302)
 
     if trofeo_device is None:
-        print("  [FAIL] Trofeo AIO not found (this is OK if you don't have one)")
+        print("  [FAIL] No device found at 0416:5302 (this is OK if you don't have one)")
     else:
-        print("  [OK] FOUND Thermalright Trofeo AIO!")
-        print(f"  Bus: {trofeo_device.bus}, Address: {trofeo_device.address}")
-        print("  This device is fully supported.")
+        # Determine which device it is based on manufacturer/product strings
+        try:
+            manufacturer = usb.util.get_string(trofeo_device, trofeo_device.iManufacturer) if trofeo_device.iManufacturer else ""
+        except Exception:
+            manufacturer = ""
+        try:
+            product = usb.util.get_string(trofeo_device, trofeo_device.iProduct) if trofeo_device.iProduct else ""
+        except Exception:
+            product = ""
+
+        if "USBDISPLAY" in manufacturer or "USBDISPLAY" in product:
+            print("  [OK] FOUND Thermalright FW 360!")
+            print(f"  Bus: {trofeo_device.bus}, Address: {trofeo_device.address}")
+            print(f"  Manufacturer: {manufacturer or '(unable to read)'}")
+            print(f"  Product: {product or '(unable to read)'}")
+            print("  This device is supported as FW 360 (USB bulk/USBDISPLAY protocol).")
+        else:
+            print("  [OK] FOUND Thermalright Trofeo AIO!")
+            print(f"  Bus: {trofeo_device.bus}, Address: {trofeo_device.address}")
+            print(f"  Manufacturer: {manufacturer or '(unable to read)'}")
+            print(f"  Product: {product or '(unable to read)'}")
+            print("  This device is fully supported.")
 except Exception as e:
     print(f"  Error: {e}")
 
@@ -178,7 +200,7 @@ try:
     hid_devices = hid.enumerate()
 
     fw360_hid = [d for d in hid_devices if d['vendor_id'] == 0x87AD and d['product_id'] == 0x70DB]
-    trofeo_hid = [d for d in hid_devices if d['vendor_id'] == 0x0416 and d['product_id'] == 0x5302]
+    trofeo_or_fw360_hid = [d for d in hid_devices if d['vendor_id'] == 0x0416 and d['product_id'] == 0x5302]
 
     if fw360_hid:
         print(f"  [OK] FW 360 Ultra found as HID device!")
@@ -190,11 +212,21 @@ try:
     else:
         print("  [FAIL] FW 360 Ultra not found as HID device (expected)")
 
-    if trofeo_hid:
-        print(f"  [OK] Trofeo AIO found as HID device!")
-        print("  This device is fully supported via HID.")
+    if trofeo_or_fw360_hid:
+        for d in trofeo_or_fw360_hid:
+            mfr = d.get('manufacturer_string', '')
+            prod = d.get('product_string', '')
+            if 'USBDISPLAY' in mfr or 'USBDISPLAY' in prod:
+                print(f"  [OK] FW 360 found as HID device at 0416:5302!")
+                print(f"    Path: {d['path']}")
+                print(f"    Manufacturer: {mfr or 'N/A'}")
+                print(f"    Product: {prod or 'N/A'}")
+                print("  This device is supported as FW 360 (select 'Thermalright FW 360' in Thermal-Engine).")
+            else:
+                print(f"  [OK] Trofeo AIO found as HID device!")
+                print("  This device is fully supported via HID.")
     else:
-        print("  [FAIL] Trofeo AIO not found as HID device")
+        print("  [FAIL] Trofeo AIO / FW 360 not found as HID device")
 
 except Exception as e:
     print(f"  Error checking HID devices: {e}")
