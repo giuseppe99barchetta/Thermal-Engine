@@ -293,7 +293,6 @@ MIT License - See LICENSE file for details.
 
 ## Credits
 
-- [HWiNFO](https://www.hwinfo.com/) - Hardware sensor data provider
 - [PySide6](https://www.qt.io/qt-for-python) - Qt GUI framework
 - [Pillow](https://pillow.readthedocs.io/) - Image processing
 
