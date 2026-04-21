@@ -361,6 +361,9 @@ class ThemeEditorWindow(QMainWindow):
         self._was_connected_before_sleep = False
         self._last_wake_time = 0
 
+        # Preset loading tracking (defer until after window shown)
+        self._preset_loaded_on_startup = False
+
         # Start background threads for sensor data
         start_psutil_thread()
 
@@ -372,9 +375,6 @@ class ThemeEditorWindow(QMainWindow):
         self.add_default_elements()
         self.setup_performance_monitor()
 
-        # Load default preset if one is set
-        self.load_default_preset_on_startup()
-
         # Auto-connect to display after window is shown
         QTimer.singleShot(500, self.auto_connect)
 
@@ -382,10 +382,22 @@ class ThemeEditorWindow(QMainWindow):
         if settings.get_setting("check_for_updates", True):
             QTimer.singleShot(2000, lambda: self.check_for_updates(silent=True))
 
+    def showEvent(self, event):
+        """Load default preset after window is first shown and fully rendered."""
+        super().showEvent(event)
+        # Load preset only once, after window is shown and canvas is sized
+        if not self._preset_loaded_on_startup:
+            self._preset_loaded_on_startup = True
+            self.load_default_preset_on_startup()
+
     def auto_connect(self):
         """Attempt to connect to display automatically on startup."""
         if self.connect_display(show_error=False):
             self.status_bar.showMessage("Auto-connected to display")
+            # Reload preset with correct display dimensions after connection
+            # This ensures proportions render correctly if display resolution changed
+            if self._preset_loaded_on_startup:
+                self.load_default_preset_on_startup()
         else:
             self.status_bar.showMessage("Display not found - click Connect when ready")
 
