@@ -1,6 +1,6 @@
 # Thermal Engine
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/nathanielh)
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/suggestarr)
 
 A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring themes with real-time CPU/GPU sensor data, gauges, clocks, images, and video backgrounds.
 
@@ -70,7 +70,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 ### Download (Recommended)
 
-1. Go to [Releases](https://github.com/nathanielhernandez/ThermalEngine/releases)
+1. Go to [Releases](https://github.com/giuseppe99barchetta/ThermalEngine/releases)
 2. Download `ThermalEngine-vX.X.X.zip` (portable) or `ThermalEngine-vX.X.X-Setup.exe` (installer)
 3. **Portable**: Extract the ZIP and run `ThermalEngine.exe`
 4. **Installer**: Run the setup and launch from Start Menu
@@ -80,7 +80,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/nathanielhernandez/Thermal-Engine.git
+   git clone https://github.com/giuseppe99barchetta/Thermal-Engine.git
    cd Thermal-Engine
    ```
 
