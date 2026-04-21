@@ -6,7 +6,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 ![Preview](https://img.shields.io/badge/Display-Multiple%20Sizes-blue) ![Python](https://img.shields.io/badge/Python-3.10+-green) ![License](https://img.shields.io/badge/License-MIT-yellow) ![Auto%20Release](https://img.shields.io/badge/Auto%20Release-Enabled-success)
 
-<img width="1306" height="732" alt="image" src="https://github.com/user-attachments/assets/d6eafe44-8ea3-4f00-a6bd-2c0b672de1d8" />
+<img width="1306" height="732" alt="image" src="/assets/thermal-engine.png" />
 
 
 ## Features
