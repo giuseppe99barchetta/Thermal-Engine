@@ -2569,7 +2569,8 @@ class PropertiesPanel(QWidget):
     def browse_gif(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select GIF", "",
-            "GIF Images (*.gif)"
+            "GIF Images (*.gif)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if path:
             self.gif_path_edit.setText(path)
@@ -2605,7 +2606,8 @@ class PropertiesPanel(QWidget):
     def browse_image(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Image", "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
+            "Images (*.png *.jpg *.jpeg *.bmp *.gif)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if path:
             self.image_path_edit.setText(path)

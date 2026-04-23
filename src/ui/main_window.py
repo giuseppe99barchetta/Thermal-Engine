@@ -1292,7 +1292,8 @@ class ThemeEditorWindow(QMainWindow):
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Video Background", "",
-            "Video Files (*.mp4 *.avi *.mkv *.mov *.webm);;All Files (*)"
+            "Video Files (*.mp4 *.avi *.mkv *.mov *.webm);;All Files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if path:
             # Update UI immediately
@@ -1408,7 +1409,8 @@ class ThemeEditorWindow(QMainWindow):
     def open_theme(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Theme", "",
-            "Theme Files (*.json);;All Files (*)"
+            "Theme Files (*.json);;All Files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if path:
             try:
@@ -1458,7 +1460,8 @@ class ThemeEditorWindow(QMainWindow):
     def save_theme_as(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Theme", f"{self.theme_name}.json",
-            "Theme Files (*.json);;All Files (*)"
+            "Theme Files (*.json);;All Files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if path:
             self._save_to_path(path)
@@ -1486,7 +1489,8 @@ class ThemeEditorWindow(QMainWindow):
     def export_image(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Export Image", f"{self.theme_name}.png",
-            "PNG Image (*.png);;JPEG Image (*.jpg)"
+            "PNG Image (*.png);;JPEG Image (*.jpg)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if path:
             try:
@@ -1503,7 +1507,8 @@ class ThemeEditorWindow(QMainWindow):
         default_name = f"{self.theme_name}{THERMAL_EXTENSION}"
         path, _ = QFileDialog.getSaveFileName(
             self, "Export Theme Package", default_name,
-            f"Thermal Theme (*{THERMAL_EXTENSION});;All Files (*)"
+            f"Thermal Theme (*{THERMAL_EXTENSION});;All Files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if not path:
             return
@@ -1538,7 +1543,8 @@ class ThemeEditorWindow(QMainWindow):
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Theme Package", "",
-            f"Thermal Theme (*{THERMAL_EXTENSION});;All Files (*)"
+            f"Thermal Theme (*{THERMAL_EXTENSION});;All Files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog
         )
         if not path:
             return
