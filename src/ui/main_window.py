@@ -2123,9 +2123,9 @@ class ThemeEditorWindow(QMainWindow):
         while self._render_thread_running:
             try:
                 if self.device and self._overdrive_mode:
-                    # Update sensor values
+                    # Update sensor values for current page only
                     sensor_data = self.get_sensor_data()
-                    for element in self.elements:
+                    for element in self.get_current_page_elements():
                         if element.source != "static" and element.source in sensor_data:
                             element.value = sensor_data[element.source]
 
