@@ -400,10 +400,10 @@ class ThemeEditorWindow(QMainWindow):
         """Attempt to connect to display automatically on startup."""
         if self.connect_display(show_error=False):
             self.status_bar.showMessage("Auto-connected to display")
-            # Reload preset with correct display dimensions after connection
-            # This ensures proportions render correctly if display resolution changed
-            if self._preset_loaded_on_startup:
-                self.load_default_preset_on_startup()
+            # Load preset with correct display dimensions after connection.
+            # Also handles minimized-to-tray startup where showEvent never fires.
+            self._preset_loaded_on_startup = True
+            self.load_default_preset_on_startup()
         else:
             self.status_bar.showMessage("Display not found - click Connect when ready")
 
