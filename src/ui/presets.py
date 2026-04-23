@@ -582,13 +582,14 @@ class PresetsPanel(QWidget):
 
         return None
 
-    def save_preset(self, name, theme_data, thumbnail_image=None):
+    def save_preset(self, name, theme_data, thumbnail_image=None, silent=False):
         """Save a theme as a preset with optional thumbnail.
 
         Args:
             name: Preset name
             theme_data: Theme data dict
             thumbnail_image: Optional PIL Image to save as thumbnail
+            silent: If True, skip overwrite confirmation dialog (for autosave)
         """
         self.ensure_presets_dir()
 
@@ -599,15 +600,16 @@ class PresetsPanel(QWidget):
         filename = f"{safe_name}.json"
         safe, err = is_safe_filename(filename)
         if not safe:
-            QMessageBox.warning(self, "Error", f"Invalid preset name: {err}")
+            if not silent:
+                QMessageBox.warning(self, "Error", f"Invalid preset name: {err}")
             return False
 
         # Always save to user presets directory (writable location)
         filepath = os.path.join(self.user_presets_dir, filename)
         thumbnail_path = os.path.join(self.user_presets_dir, f"{safe_name}.png")
 
-        # Check if overwriting
-        if os.path.exists(filepath):
+        # Check if overwriting (skip dialog in silent/autosave mode)
+        if os.path.exists(filepath) and not silent:
             reply = QMessageBox.question(
                 self, "Overwrite Preset",
                 f"A preset named '{name}' already exists. Overwrite?",
@@ -639,6 +641,7 @@ class PresetsPanel(QWidget):
                 "filepath": filepath,
                 "thumbnail_path": thumbnail_path if thumbnail_path and os.path.exists(thumbnail_path) else None
             }
+            set_setting("default_preset", name)
             self.refresh_display()
             self.preset_saved.emit(name)
             return True

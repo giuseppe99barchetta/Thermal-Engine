@@ -370,6 +370,12 @@ class ThemeEditorWindow(QMainWindow):
         # Preset loading tracking (defer until after window shown)
         self._preset_loaded_on_startup = False
 
+        # Autosave: debounce timer, fires 3s after last change
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(3000)
+        self._autosave_timer.timeout.connect(self._do_autosave)
+
         # Start background threads for sensor data
         start_psutil_thread()
 
@@ -890,6 +896,13 @@ class ThemeEditorWindow(QMainWindow):
         self.presets_panel.preset_selected.connect(self.load_preset)
         self.presets_panel.preset_saved.connect(self.on_preset_saved)
 
+        # Autosave on any change
+        self.properties_panel.property_changed.connect(self._schedule_autosave)
+        self.properties_panel.alignment_changed.connect(self._schedule_autosave)
+        self.element_list.elements_changed.connect(self._schedule_autosave)
+        self.canvas.element_moved.connect(self._schedule_autosave)
+        self.canvas.element_resized.connect(self._schedule_autosave)
+
     def setup_performance_monitor(self):
         """Setup timer to update performance stats."""
         self.perf_update_timer = QTimer(self)
@@ -1057,6 +1070,33 @@ class ThemeEditorWindow(QMainWindow):
         visible_elements = [el for el in self.elements if getattr(el, 'page', 1) == self.current_page]
         self.canvas.set_elements(visible_elements)
         self.canvas.update()
+
+    def _schedule_autosave(self, *args):
+        """Restart autosave debounce timer. Saves 3s after last change."""
+        if self.theme_name and self.theme_name.strip() and self.theme_name != "Untitled Theme":
+            self._autosave_timer.start()
+
+    def _do_autosave(self):
+        """Silently save current theme as preset (called by autosave timer)."""
+        if not self.theme_name or self.theme_name.strip() == "" or self.theme_name == "Untitled Theme":
+            return
+        theme_data = {
+            "name": self.theme_name,
+            "background_color": self.background_color,
+            "display_width": constants.DISPLAY_WIDTH,
+            "display_height": constants.DISPLAY_HEIGHT,
+            "elements": [e.to_dict() for e in self.elements],
+            "video_background": video_background.to_dict()
+        }
+        thumbnail_image = None
+        try:
+            thumbnail_image = self.render_theme_image()
+            if thumbnail_image and thumbnail_image.mode == 'RGBA':
+                thumbnail_image = thumbnail_image.convert('RGB')
+        except Exception:
+            pass
+        self.presets_panel.save_preset(self.theme_name, theme_data, thumbnail_image, silent=True)
+        self.status_bar.showMessage(f"Autosaved: {self.theme_name}", 2000)
 
     def _on_property_changed(self):
         """Invalidate render cache when element properties change."""
@@ -1280,6 +1320,7 @@ class ThemeEditorWindow(QMainWindow):
             self.background_color = color.name()
             self.bg_color_btn.setStyleSheet(f"background-color: {color.name()};")
             self.canvas.set_background_color(color.name())
+            self._schedule_autosave()
 
     def choose_video_background(self):
         """Select a video file for background."""
