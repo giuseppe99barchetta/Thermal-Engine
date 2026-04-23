@@ -1292,7 +1292,7 @@ class ThemeEditorWindow(QMainWindow):
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Video Background", "",
-            "Video Files (*.mp4 *.avi *.mkv *.mov *.webm);;All Files (*)",
+            "Video Files (*.mp4 *.avi *.mkv *.mov *.webm *.gif);;All Files (*)",
             options=QFileDialog.Option.DontUseNativeDialog
         )
         if path:
