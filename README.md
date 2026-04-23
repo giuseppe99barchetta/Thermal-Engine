@@ -31,7 +31,11 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
   - Rectangles
 - **Video backgrounds** with fit modes
 - **Preset system** for saving and loading themes
-- **Multi-select** with alignment tools
+- **Multi-select** with alignment tools (align left/right/top/bottom/center, distribute evenly)
+- **Copy / Paste elements** (`Ctrl+C` / `Ctrl+V`) with automatic offset
+- **Z-order controls**: Bring to Front, Bring Forward, Send Backward, Send to Back via Edit menu or keyboard shortcuts
+- **Auto Profiles**: automatically switch presets based on the foreground app or system load state (idle / gaming)
+- **Theme packages**: export and import themes as `.thermal` or `.zip` archives with embedded images
 - **Element grouping** for organizing complex themes
 - **Undo/Redo** support
 - **System tray** support with minimize-to-tray
@@ -142,6 +146,21 @@ If your display appears upside-down or rotated, adjust the orientation:
 
 The setting is saved automatically and applied to all frames.
 
+### Auto Profiles
+
+Auto Profiles automatically switch the active preset based on context:
+
+**App-based switching** — loads a preset when a specific application becomes the foreground window:
+1. Go to **Settings > Auto Profiles...**
+2. Enable **"Enable auto profile switching"**
+3. Add rules: enter the process name (e.g. `chrome.exe`) and choose the preset to load
+4. Optionally set a **default preset** to revert to when no rule matches
+
+**System State switching** — loads a preset based on CPU load:
+- **Idle preset**: loaded after the CPU stays below the idle threshold for the configured duration (default: ≤15% for 60 s)
+- **Gaming preset**: loaded after the CPU exceeds the gaming threshold for the configured duration (default: ≥60% for 10 s)
+- Thresholds and delays are configurable inside the same dialog
+
 ### Creating a Theme
 
 1. **Add elements** from the Elements panel (left side)
@@ -173,6 +192,12 @@ The setting is saved automatically and applied to all frames.
 | Ctrl+Shift+G | Ungroup |
 | Delete | Delete selected |
 | Ctrl+Click | Multi-select elements |
+| Ctrl+C | Copy selected elements |
+| Ctrl+V | Paste elements (+20px offset) |
+| Ctrl+Shift+] | Bring to Front |
+| Ctrl+] | Bring Forward |
+| Ctrl+[ | Send Backward |
+| Ctrl+Shift+[ | Send to Back |
 
 ### Sensor Sources
 

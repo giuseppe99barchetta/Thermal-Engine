@@ -334,6 +334,9 @@ class ThemeEditorWindow(QMainWindow):
         self.redo_stack = []
         self.max_undo_levels = 50
 
+        # Clipboard for copy/paste
+        self._clipboard = []
+
         # Canvas update throttling (skip canvas updates during high-speed rendering)
         self._canvas_update_counter = 0
         self._canvas_update_interval = 3  # Update canvas every N frames when connected
@@ -378,6 +381,13 @@ class ThemeEditorWindow(QMainWindow):
 
         # Start background threads for sensor data
         start_psutil_thread()
+
+        # Auto Profiles
+        from src.utils.profiles import ProfileManager, ForegroundAppMonitor, SystemStateMonitor
+        self._profile_manager = ProfileManager()
+        self._foreground_monitor = None
+        self._system_state_monitor = None
+        self._start_profile_monitors()
 
         self.setup_ui()
         self.setup_console()
@@ -750,6 +760,10 @@ class ThemeEditorWindow(QMainWindow):
         export_theme_action.triggered.connect(self.export_theme_package)
         file_menu.addAction(export_theme_action)
 
+        export_zip_action = QAction("Export Theme as ZIP...", self)
+        export_zip_action.triggered.connect(self.export_theme_zip)
+        file_menu.addAction(export_zip_action)
+
         import_theme_action = QAction("Import Theme Package...", self)
         import_theme_action.triggered.connect(self.import_theme_package)
         file_menu.addAction(import_theme_action)
@@ -775,6 +789,40 @@ class ThemeEditorWindow(QMainWindow):
         self.redo_action.triggered.connect(self.redo)
         self.redo_action.setEnabled(False)
         edit_menu.addAction(self.redo_action)
+
+        edit_menu.addSeparator()
+
+        copy_action = QAction("Copy", self)
+        copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_action.triggered.connect(self.copy_selected_elements)
+        edit_menu.addAction(copy_action)
+
+        paste_action = QAction("Paste", self)
+        paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        paste_action.triggered.connect(self.paste_elements)
+        edit_menu.addAction(paste_action)
+
+        edit_menu.addSeparator()
+
+        bring_front_action = QAction("Bring to Front", self)
+        bring_front_action.setShortcut(QKeySequence("Ctrl+Shift+]"))
+        bring_front_action.triggered.connect(self.bring_to_front)
+        edit_menu.addAction(bring_front_action)
+
+        bring_forward_action = QAction("Bring Forward", self)
+        bring_forward_action.setShortcut(QKeySequence("Ctrl+]"))
+        bring_forward_action.triggered.connect(self.bring_forward)
+        edit_menu.addAction(bring_forward_action)
+
+        send_backward_action = QAction("Send Backward", self)
+        send_backward_action.setShortcut(QKeySequence("Ctrl+["))
+        send_backward_action.triggered.connect(self.send_backward)
+        edit_menu.addAction(send_backward_action)
+
+        send_back_action = QAction("Send to Back", self)
+        send_back_action.setShortcut(QKeySequence("Ctrl+Shift+["))
+        send_back_action.triggered.connect(self.send_to_back)
+        edit_menu.addAction(send_back_action)
 
         # View menu
         view_menu = menubar.addMenu("View")
@@ -860,6 +908,12 @@ class ThemeEditorWindow(QMainWindow):
         settings_action = QAction("Preferences...", self)
         settings_action.triggered.connect(self.show_settings)
         settings_menu.addAction(settings_action)
+
+        settings_menu.addSeparator()
+
+        auto_profiles_action = QAction("Auto Profiles...", self)
+        auto_profiles_action.triggered.connect(self.show_auto_profiles)
+        settings_menu.addAction(auto_profiles_action)
 
         settings_menu.addSeparator()
 
@@ -1196,6 +1250,366 @@ class ThemeEditorWindow(QMainWindow):
         """Update enabled state of undo/redo actions."""
         self.undo_action.setEnabled(len(self.undo_stack) > 0)
         self.redo_action.setEnabled(len(self.redo_stack) > 0)
+
+    # ------------------------------------------------------------------ #
+    #  Copy / Paste
+    # ------------------------------------------------------------------ #
+
+    def copy_selected_elements(self):
+        """Copy selected elements to clipboard."""
+        indices = self._get_selected_global_indices()
+        if not indices:
+            return
+        self._clipboard = [self.elements[i].to_dict() for i in indices]
+        self.status_bar.showMessage(
+            f"Copied {len(self._clipboard)} element(s)", 2000
+        )
+
+    def paste_elements(self):
+        """Paste elements from clipboard with a small offset."""
+        if not self._clipboard:
+            return
+        self.save_undo_state()
+        new_elements = []
+        for elem_dict in self._clipboard:
+            new_el = ThemeElement.from_dict(elem_dict)
+            new_el.x += 20
+            new_el.y += 20
+            new_el.name = f"{new_el.name}_copy"
+            new_el.page = self.current_page
+            self.elements.append(new_el)
+            new_elements.append(new_el)
+        self.element_list.set_elements(self.elements)
+        self.refresh_canvas()
+        # Select newly pasted elements
+        new_indices = [self.elements.index(el) for el in new_elements]
+        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
+        canvas_indices = [page_elements.index(el) for el in new_elements if el in page_elements]
+        self.canvas.set_selected_indices(canvas_indices)
+        self.status_bar.showMessage(
+            f"Pasted {len(new_elements)} element(s)", 2000
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Z-Order
+    # ------------------------------------------------------------------ #
+
+    def _get_selected_global_indices(self):
+        """Map canvas.selected_indices → indices into self.elements."""
+        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
+        result = []
+        for ci in self.canvas.selected_indices:
+            if 0 <= ci < len(page_elements):
+                try:
+                    result.append(self.elements.index(page_elements[ci]))
+                except ValueError:
+                    pass
+        return result
+
+    def bring_to_front(self):
+        """Move selected elements to index 0 (front)."""
+        indices = sorted(self._get_selected_global_indices())
+        if not indices:
+            return
+        self.save_undo_state()
+        selected_els = [self.elements[i] for i in indices]
+        for el in selected_els:
+            self.elements.remove(el)
+        for i, el in enumerate(selected_els):
+            self.elements.insert(i, el)
+        self._refresh_after_zorder()
+
+    def bring_forward(self):
+        """Move selected elements one step toward front (lower index)."""
+        indices = sorted(self._get_selected_global_indices())
+        if not indices or indices[0] == 0:
+            return
+        self.save_undo_state()
+        for idx in indices:
+            if idx > 0:
+                self.elements[idx], self.elements[idx - 1] = (
+                    self.elements[idx - 1], self.elements[idx]
+                )
+        self._refresh_after_zorder()
+
+    def send_backward(self):
+        """Move selected elements one step toward back (higher index)."""
+        indices = sorted(self._get_selected_global_indices(), reverse=True)
+        if not indices or indices[0] == len(self.elements) - 1:
+            return
+        self.save_undo_state()
+        for idx in indices:
+            if idx < len(self.elements) - 1:
+                self.elements[idx], self.elements[idx + 1] = (
+                    self.elements[idx + 1], self.elements[idx]
+                )
+        self._refresh_after_zorder()
+
+    def send_to_back(self):
+        """Move selected elements to the end (back)."""
+        indices = sorted(self._get_selected_global_indices(), reverse=True)
+        if not indices:
+            return
+        self.save_undo_state()
+        selected_els = [self.elements[i] for i in sorted(indices)]
+        for el in selected_els:
+            self.elements.remove(el)
+        self.elements.extend(selected_els)
+        self._refresh_after_zorder()
+
+    def _refresh_after_zorder(self):
+        self.element_list.set_elements(self.elements)
+        self.refresh_canvas()
+        self.status_bar.showMessage("Z-order updated", 1500)
+
+    # ------------------------------------------------------------------ #
+    #  Auto Profiles
+    # ------------------------------------------------------------------ #
+
+    def _start_profile_monitors(self):
+        """Start foreground app monitor and system state monitor."""
+        from src.utils.profiles import ForegroundAppMonitor, SystemStateMonitor
+
+        if self._foreground_monitor is None:
+            self._foreground_monitor = ForegroundAppMonitor()
+            self._foreground_monitor.app_changed.connect(self._on_foreground_app_changed)
+            if self._profile_manager.enabled:
+                self._foreground_monitor.start()
+
+        if self._system_state_monitor is None:
+            self._system_state_monitor = SystemStateMonitor()
+            self._system_state_monitor.state_changed.connect(self._on_system_state_changed)
+            if self._profile_manager.system_profile_enabled:
+                self._system_state_monitor.start()
+
+    def _on_foreground_app_changed(self, process_name, window_title):
+        """Handle foreground app change for profile switching."""
+        preset_name = self._profile_manager.match_app(process_name, window_title)
+        if preset_name:
+            preset_data = self.presets_panel.get_preset_data_by_name(preset_name)
+            if preset_data:
+                self.load_preset(preset_data)
+                self.status_bar.showMessage(
+                    f"Auto profile: {preset_name} (app: {process_name})", 3000
+                )
+
+    def _on_system_state_changed(self, state):
+        """Handle system state change (idle/gaming/normal) for profile switching."""
+        if not self._profile_manager.system_profile_enabled:
+            return
+        preset_name = None
+        if state == "idle":
+            preset_name = self._profile_manager.system_idle_preset
+        elif state == "gaming":
+            preset_name = self._profile_manager.system_gaming_preset
+        if preset_name:
+            preset_data = self.presets_panel.get_preset_data_by_name(preset_name)
+            if preset_data:
+                self.load_preset(preset_data)
+                self.status_bar.showMessage(
+                    f"System state → {state}: loaded preset '{preset_name}'", 3000
+                )
+
+    def show_auto_profiles(self):
+        """Show the Auto Profiles configuration dialog."""
+        from src.utils.profiles import ProfileDialog
+        available = self.presets_panel.get_preset_names()
+        dialog = ProfileDialog(self._profile_manager, available, self)
+        if dialog.exec():
+            # Restart monitors based on new settings
+            if self._foreground_monitor:
+                if self._profile_manager.enabled:
+                    if not self._foreground_monitor.isRunning():
+                        self._foreground_monitor.start()
+                else:
+                    self._foreground_monitor.stop()
+
+            if self._system_state_monitor:
+                if self._profile_manager.system_profile_enabled:
+                    if not self._system_state_monitor.isRunning():
+                        self._system_state_monitor.start()
+                else:
+                    self._system_state_monitor.stop()
+
+    # ------------------------------------------------------------------ #
+    #  Copy / Paste
+    # ------------------------------------------------------------------ #
+
+    def copy_selected_elements(self):
+        """Copy selected elements to clipboard."""
+        indices = self._get_selected_global_indices()
+        if not indices:
+            return
+        self._clipboard = [self.elements[i].to_dict() for i in indices]
+        self.status_bar.showMessage(
+            f"Copied {len(self._clipboard)} element(s)", 2000
+        )
+
+    def paste_elements(self):
+        """Paste elements from clipboard with a small offset."""
+        if not self._clipboard:
+            return
+        self.save_undo_state()
+        new_elements = []
+        for elem_dict in self._clipboard:
+            new_el = ThemeElement.from_dict(elem_dict)
+            new_el.x += 20
+            new_el.y += 20
+            new_el.name = f"{new_el.name}_copy"
+            new_el.page = self.current_page
+            self.elements.append(new_el)
+            new_elements.append(new_el)
+        self.element_list.set_elements(self.elements)
+        self.refresh_canvas()
+        # Select newly pasted elements
+        new_indices = [self.elements.index(el) for el in new_elements]
+        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
+        canvas_indices = [page_elements.index(el) for el in new_elements if el in page_elements]
+        self.canvas.set_selected_indices(canvas_indices)
+        self.status_bar.showMessage(
+            f"Pasted {len(new_elements)} element(s)", 2000
+        )
+
+    # ------------------------------------------------------------------ #
+    #  Z-Order
+    # ------------------------------------------------------------------ #
+
+    def _get_selected_global_indices(self):
+        """Map canvas.selected_indices → indices into self.elements."""
+        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
+        result = []
+        for ci in self.canvas.selected_indices:
+            if 0 <= ci < len(page_elements):
+                try:
+                    result.append(self.elements.index(page_elements[ci]))
+                except ValueError:
+                    pass
+        return result
+
+    def bring_to_front(self):
+        """Move selected elements to index 0 (front)."""
+        indices = sorted(self._get_selected_global_indices())
+        if not indices:
+            return
+        self.save_undo_state()
+        selected_els = [self.elements[i] for i in indices]
+        for el in selected_els:
+            self.elements.remove(el)
+        for i, el in enumerate(selected_els):
+            self.elements.insert(i, el)
+        self._refresh_after_zorder()
+
+    def bring_forward(self):
+        """Move selected elements one step toward front (lower index)."""
+        indices = sorted(self._get_selected_global_indices())
+        if not indices or indices[0] == 0:
+            return
+        self.save_undo_state()
+        for idx in indices:
+            if idx > 0:
+                self.elements[idx], self.elements[idx - 1] = (
+                    self.elements[idx - 1], self.elements[idx]
+                )
+        self._refresh_after_zorder()
+
+    def send_backward(self):
+        """Move selected elements one step toward back (higher index)."""
+        indices = sorted(self._get_selected_global_indices(), reverse=True)
+        if not indices or indices[0] == len(self.elements) - 1:
+            return
+        self.save_undo_state()
+        for idx in indices:
+            if idx < len(self.elements) - 1:
+                self.elements[idx], self.elements[idx + 1] = (
+                    self.elements[idx + 1], self.elements[idx]
+                )
+        self._refresh_after_zorder()
+
+    def send_to_back(self):
+        """Move selected elements to the end (back)."""
+        indices = sorted(self._get_selected_global_indices(), reverse=True)
+        if not indices:
+            return
+        self.save_undo_state()
+        selected_els = [self.elements[i] for i in sorted(indices)]
+        for el in selected_els:
+            self.elements.remove(el)
+        self.elements.extend(selected_els)
+        self._refresh_after_zorder()
+
+    def _refresh_after_zorder(self):
+        self.element_list.set_elements(self.elements)
+        self.refresh_canvas()
+        self.status_bar.showMessage("Z-order updated", 1500)
+
+    # ------------------------------------------------------------------ #
+    #  Auto Profiles
+    # ------------------------------------------------------------------ #
+
+    def _start_profile_monitors(self):
+        """Start foreground app monitor and system state monitor."""
+        from src.utils.profiles import ForegroundAppMonitor, SystemStateMonitor
+
+        if self._foreground_monitor is None:
+            self._foreground_monitor = ForegroundAppMonitor()
+            self._foreground_monitor.app_changed.connect(self._on_foreground_app_changed)
+            if self._profile_manager.enabled:
+                self._foreground_monitor.start()
+
+        if self._system_state_monitor is None:
+            self._system_state_monitor = SystemStateMonitor()
+            self._system_state_monitor.state_changed.connect(self._on_system_state_changed)
+            if self._profile_manager.system_profile_enabled:
+                self._system_state_monitor.start()
+
+    def _on_foreground_app_changed(self, process_name, window_title):
+        """Handle foreground app change for profile switching."""
+        preset_name = self._profile_manager.match_app(process_name, window_title)
+        if preset_name:
+            preset_data = self.presets_panel.get_preset_data_by_name(preset_name)
+            if preset_data:
+                self.load_preset(preset_data)
+                self.status_bar.showMessage(
+                    f"Auto profile: {preset_name} (app: {process_name})", 3000
+                )
+
+    def _on_system_state_changed(self, state):
+        """Handle system state change (idle/gaming/normal) for profile switching."""
+        if not self._profile_manager.system_profile_enabled:
+            return
+        preset_name = None
+        if state == "idle":
+            preset_name = self._profile_manager.system_idle_preset
+        elif state == "gaming":
+            preset_name = self._profile_manager.system_gaming_preset
+        if preset_name:
+            preset_data = self.presets_panel.get_preset_data_by_name(preset_name)
+            if preset_data:
+                self.load_preset(preset_data)
+                self.status_bar.showMessage(
+                    f"System state → {state}: loaded preset '{preset_name}'", 3000
+                )
+
+    def show_auto_profiles(self):
+        """Show the Auto Profiles configuration dialog."""
+        from src.utils.profiles import ProfileDialog
+        available = self.presets_panel.get_preset_names()
+        dialog = ProfileDialog(self._profile_manager, available, self)
+        if dialog.exec():
+            # Restart monitors based on new settings
+            if self._foreground_monitor:
+                if self._profile_manager.enabled:
+                    if not self._foreground_monitor.isRunning():
+                        self._foreground_monitor.start()
+                else:
+                    self._foreground_monitor.stop()
+
+            if self._system_state_monitor:
+                if self._profile_manager.system_profile_enabled:
+                    if not self._system_state_monitor.isRunning():
+                        self._system_state_monitor.start()
+                else:
+                    self._system_state_monitor.stop()
 
     def load_preset(self, preset_data):
         """Load a preset into the editor."""
@@ -1579,12 +1993,12 @@ class ThemeEditorWindow(QMainWindow):
             QMessageBox.critical(self, "Export Failed", f"Failed to export theme:\n{result}")
 
     def import_theme_package(self):
-        """Import a .thermal theme package."""
+        """Import a .thermal or .zip theme package."""
         from src.utils.theme_package import import_theme, THERMAL_EXTENSION
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Theme Package", "",
-            f"Thermal Theme (*{THERMAL_EXTENSION});;All Files (*)",
+            f"Theme Packages (*{THERMAL_EXTENSION} *.zip);;All Files (*)",
             options=QFileDialog.Option.DontUseNativeDialog
         )
         if not path:
@@ -1607,6 +2021,45 @@ class ThemeEditorWindow(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.save_as_preset()
+
+    def export_theme_zip(self):
+        """Export current theme as a standard .zip archive with embedded images."""
+        from src.utils.theme_package import export_theme
+
+        default_name = f"{self.theme_name}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Theme as ZIP", default_name,
+            "ZIP Archive (*.zip);;All Files (*)",
+            options=QFileDialog.Option.DontUseNativeDialog
+        )
+        if not path:
+            return
+
+        if not path.endswith(".zip"):
+            path += ".zip"
+
+        theme_data = {
+            "name": self.theme_name,
+            "background_color": self.background_color,
+            "display_width": constants.DISPLAY_WIDTH,
+            "display_height": constants.DISPLAY_HEIGHT,
+            "elements": [e.to_dict() for e in self.elements],
+            "video_background": video_background.to_dict()
+        }
+
+        thumbnail_image = None
+        try:
+            thumbnail_image = self.render_theme_image()
+        except Exception:
+            pass
+
+        success, result = export_theme(theme_data, thumbnail_image, path)
+        if success:
+            self.status_bar.showMessage(
+                f"Theme exported as ZIP: {os.path.basename(path)}", 3000
+            )
+        else:
+            QMessageBox.critical(self, "Export Failed", f"Failed to export theme:\n{result}")
 
     def get_sensor_data(self):
         """Get sensor data from background threads (non-blocking)."""

@@ -582,6 +582,15 @@ class PresetsPanel(QWidget):
 
         return None
 
+    def get_preset_names(self):
+        """Return a sorted list of all available preset names."""
+        return sorted(self.presets.keys())
+
+    def get_preset_data_by_name(self, name):
+        """Return preset data dict for the given name, or None if not found."""
+        entry = self.presets.get(name)
+        return entry["data"] if entry else None
+
     def save_preset(self, name, theme_data, thumbnail_image=None, silent=False):
         """Save a theme as a preset with optional thumbnail.
 

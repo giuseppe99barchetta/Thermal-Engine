@@ -8,11 +8,14 @@ import sys
 import time
 import logging
 
+import psutil
+
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QComboBox, QCheckBox,
-    QHeaderView, QMessageBox, QDialogButtonBox, QAbstractItemView
+    QHeaderView, QMessageBox, QDialogButtonBox, QAbstractItemView,
+    QGroupBox, QFormLayout, QSpinBox,
 )
 
 from src.utils.settings import get_setting, set_setting
@@ -99,6 +102,73 @@ class ForegroundAppMonitor(QThread):
             self.msleep(self.poll_interval_ms)
 
 
+class SystemStateMonitor(QThread):
+    """Monitors CPU usage to detect idle vs gaming/high-load states."""
+
+    state_changed = Signal(str)  # 'idle', 'gaming', or 'normal'
+
+    def __init__(self, poll_interval_ms=5000):
+        super().__init__()
+        self.poll_interval_ms = poll_interval_ms
+        self._running = True
+        self._current_state = "normal"
+
+    def stop(self):
+        self._running = False
+        self.wait(5000)
+
+    def run(self):
+        # Prime psutil CPU measurement
+        try:
+            psutil.cpu_percent(interval=None)
+        except Exception:
+            pass
+
+        idle_seconds_count = 0
+        gaming_seconds_count = 0
+        interval_s = self.poll_interval_ms / 1000.0
+
+        while self._running:
+            try:
+                idle_threshold = get_setting("system_idle_threshold", 15)
+                gaming_threshold = get_setting("system_gaming_threshold", 60)
+                idle_secs = get_setting("system_idle_seconds", 60)
+                gaming_secs = get_setting("system_gaming_seconds", 10)
+
+                cpu = psutil.cpu_percent(interval=None)
+
+                if cpu <= idle_threshold:
+                    idle_seconds_count += interval_s
+                    gaming_seconds_count = 0
+                elif cpu >= gaming_threshold:
+                    gaming_seconds_count += interval_s
+                    idle_seconds_count = 0
+                else:
+                    idle_seconds_count = 0
+                    gaming_seconds_count = 0
+
+                new_state = self._current_state
+                if idle_seconds_count >= idle_secs:
+                    new_state = "idle"
+                elif gaming_seconds_count >= gaming_secs:
+                    new_state = "gaming"
+                elif cpu > idle_threshold and self._current_state == "idle":
+                    new_state = "normal"
+                    idle_seconds_count = 0
+                elif cpu < gaming_threshold and self._current_state == "gaming":
+                    new_state = "normal"
+                    gaming_seconds_count = 0
+
+                if new_state != self._current_state:
+                    self._current_state = new_state
+                    self.state_changed.emit(new_state)
+
+            except Exception as e:
+                logger.error(f"SystemStateMonitor error: {e}")
+
+            self.msleep(self.poll_interval_ms)
+
+
 class ProfileManager:
     """Manages profile rules and matching logic."""
 
@@ -108,17 +178,27 @@ class ProfileManager:
         self._cooldown_until = 0
         self._active_profile = None
         self._default_preset = None
+        # System state profiles
+        self.system_profile_enabled = False
+        self.system_idle_preset = None
+        self.system_gaming_preset = None
         self.load_profiles()
 
     def load_profiles(self):
         self._profiles = get_setting("profiles", [])
         self._enabled = get_setting("profiles_enabled", False)
         self._default_preset = get_setting("profiles_default_preset", None)
+        self.system_profile_enabled = get_setting("system_profile_enabled", False)
+        self.system_idle_preset = get_setting("system_idle_preset", None)
+        self.system_gaming_preset = get_setting("system_gaming_preset", None)
 
     def save_profiles(self):
         set_setting("profiles", self._profiles)
         set_setting("profiles_enabled", self._enabled)
         set_setting("profiles_default_preset", self._default_preset)
+        set_setting("system_profile_enabled", self.system_profile_enabled)
+        set_setting("system_idle_preset", self.system_idle_preset)
+        set_setting("system_gaming_preset", self.system_gaming_preset)
 
     @property
     def enabled(self):
@@ -262,6 +342,9 @@ class ProfileDialog(QDialog):
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
 
+        # System State section
+        self._build_system_state_section(layout)
+
         # OK / Cancel
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -269,6 +352,72 @@ class ProfileDialog(QDialog):
         buttons.accepted.connect(self._accept_changes)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _build_system_state_section(self, layout):
+        """Build the System State profile section UI."""
+        group = QGroupBox("System State Profiles")
+        g_layout = QVBoxLayout(group)
+
+        self.system_enable_cb = QCheckBox("Enable system state switching")
+        self.system_enable_cb.setChecked(self.profile_manager.system_profile_enabled)
+        g_layout.addWidget(self.system_enable_cb)
+
+        form = QFormLayout()
+
+        # Idle
+        self.idle_combo = QComboBox()
+        self.idle_combo.addItem("(None)", None)
+        for name in self.available_presets:
+            self.idle_combo.addItem(name, name)
+        idle_val = self.profile_manager.system_idle_preset
+        if idle_val:
+            idx = self.idle_combo.findData(idle_val)
+            if idx >= 0:
+                self.idle_combo.setCurrentIndex(idx)
+        form.addRow("Idle preset:", self.idle_combo)
+
+        self.idle_threshold_spin = QSpinBox()
+        self.idle_threshold_spin.setRange(1, 99)
+        self.idle_threshold_spin.setSuffix("% CPU")
+        self.idle_threshold_spin.setValue(get_setting("system_idle_threshold", 15))
+        self.idle_threshold_spin.setToolTip("CPU% below this → considered idle")
+        form.addRow("Idle threshold:", self.idle_threshold_spin)
+
+        self.idle_seconds_spin = QSpinBox()
+        self.idle_seconds_spin.setRange(5, 3600)
+        self.idle_seconds_spin.setSuffix(" sec")
+        self.idle_seconds_spin.setValue(get_setting("system_idle_seconds", 60))
+        self.idle_seconds_spin.setToolTip("Seconds below threshold before switching to idle preset")
+        form.addRow("Idle delay:", self.idle_seconds_spin)
+
+        # Gaming
+        self.gaming_combo = QComboBox()
+        self.gaming_combo.addItem("(None)", None)
+        for name in self.available_presets:
+            self.gaming_combo.addItem(name, name)
+        gaming_val = self.profile_manager.system_gaming_preset
+        if gaming_val:
+            idx = self.gaming_combo.findData(gaming_val)
+            if idx >= 0:
+                self.gaming_combo.setCurrentIndex(idx)
+        form.addRow("Gaming preset:", self.gaming_combo)
+
+        self.gaming_threshold_spin = QSpinBox()
+        self.gaming_threshold_spin.setRange(1, 99)
+        self.gaming_threshold_spin.setSuffix("% CPU")
+        self.gaming_threshold_spin.setValue(get_setting("system_gaming_threshold", 60))
+        self.gaming_threshold_spin.setToolTip("CPU% above this → considered gaming/high-load")
+        form.addRow("Gaming threshold:", self.gaming_threshold_spin)
+
+        self.gaming_seconds_spin = QSpinBox()
+        self.gaming_seconds_spin.setRange(1, 300)
+        self.gaming_seconds_spin.setSuffix(" sec")
+        self.gaming_seconds_spin.setValue(get_setting("system_gaming_seconds", 10))
+        self.gaming_seconds_spin.setToolTip("Seconds above threshold before switching to gaming preset")
+        form.addRow("Gaming delay:", self.gaming_seconds_spin)
+
+        g_layout.addLayout(form)
+        layout.addWidget(group)
 
     def _populate_table(self):
         self.table.setRowCount(0)
@@ -342,5 +491,15 @@ class ProfileDialog(QDialog):
         self.profile_manager._profiles = new_profiles
         self.profile_manager.enabled = self.enable_cb.isChecked()
         self.profile_manager.default_preset = self.default_combo.currentData()
+
+        # System state settings
+        self.profile_manager.system_profile_enabled = self.system_enable_cb.isChecked()
+        self.profile_manager.system_idle_preset = self.idle_combo.currentData()
+        self.profile_manager.system_gaming_preset = self.gaming_combo.currentData()
+        set_setting("system_idle_threshold", self.idle_threshold_spin.value())
+        set_setting("system_idle_seconds", self.idle_seconds_spin.value())
+        set_setting("system_gaming_threshold", self.gaming_threshold_spin.value())
+        set_setting("system_gaming_seconds", self.gaming_seconds_spin.value())
+
         self.profile_manager.save_profiles()
         self.accept()
