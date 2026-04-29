@@ -1149,14 +1149,23 @@ class CanvasPreview(QWidget):
         height = int(element.height * self.scale)
 
         if element.image_path and os.path.exists(element.image_path):
-            pixmap = QPixmap(element.image_path)
-            if element.scale_proportionally:
-                # Maintain aspect ratio - fit within bounds
-                pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            else:
-                # Stretch to fill exact dimensions
-                pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            painter.drawPixmap(x, y, pixmap)
+            # ⚡ Bolt: Cache expensive QPixmap loading and scaling operations
+            # This prevents disk I/O and synchronous scaling on every UI paint event
+            cache_key = f"{element.image_path}_{width}_{height}_{element.scale_proportionally}"
+
+            if getattr(element, '_cached_pixmap_key', None) != cache_key:
+                pixmap = QPixmap(element.image_path)
+                if element.scale_proportionally:
+                    # Maintain aspect ratio - fit within bounds
+                    pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                else:
+                    # Stretch to fill exact dimensions
+                    pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+                element._cached_pixmap = pixmap
+                element._cached_pixmap_key = cache_key
+
+            painter.drawPixmap(x, y, element._cached_pixmap)
         else:
             painter.fillRect(x, y, width, height, QColor(40, 40, 60))
             painter.setPen(QPen(QColor(100, 100, 120)))
