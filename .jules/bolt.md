@@ -1,3 +1,5 @@
-## 2024-05-24 - PySide6 Paint Event Image Caching
-**Learning:** In PySide6/PyQt applications, the `paintEvent` method can be called extremely frequently (up to 60 times a second if there are animations or frequently updating gauges). Inside this hot path, calling `QPixmap(path)` and `.scaled(...)` blocks the UI thread with synchronous disk I/O and CPU-intensive image resizing, causing major frame drops and high CPU usage.
-**Action:** When drawing images in `paintEvent`, ALWAYS check if a cached `QPixmap` is available first. Use a dynamic cache key based on `path`, `width`, `height`, and `scale_mode` to ensure the cache stays valid during resizing but avoids redundant disk loads for static dimensions. Store the cached object on the data model or a dedicated cache dictionary.
+## 2025-03-01 - Bounding Box Alpha Compositing
+
+**Learning:** When using PIL (`Pillow`), `alpha_composite` over a full-screen transparent image is significantly slower than cropping the overlay to its non-transparent bounding box (`getbbox()`) and alpha compositing just that region using an offset `(x, y)`. Full screen composites were taking ~9s for 10,000 iterations, whereas bounded composites took ~1.5s (a ~6x performance improvement). Also, using direct attribute access on objects with a defined set of default attributes is faster than `getattr`.
+
+**Action:** When creating layers or caching rendered UI elements in Python with PIL, always use `getbbox()` to find the active region and composite only that smaller area to the base canvas rather than relying on full-canvas transparent overlays.
