@@ -4640,7 +4640,7 @@ class ThemeEditorWindow(QMainWindow):
                 try:
                     if os.path.exists(installer_path):
                         # Launch installer in detached process
-                        subprocess.Popen([installer_path], shell=True)
+                        subprocess.Popen([installer_path])
                         # Close the application
                         QApplication.instance().quit()
                     else:
