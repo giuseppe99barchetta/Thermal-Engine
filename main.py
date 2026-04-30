@@ -7,10 +7,6 @@ Entry point for the application.
 
 import sys
 import os
-import argparse
-import atexit
-import signal
-import webbrowser
 import io
 
 # Fix for PyInstaller --windowed mode where stdout/stderr are None
@@ -20,6 +16,11 @@ if sys.stdout is None:
     sys.stdout = io.open(os.devnull, 'w', encoding='utf-8')
 if sys.stderr is None:
     sys.stderr = io.open(os.devnull, 'w', encoding='utf-8')
+
+import argparse
+import atexit
+import signal
+import webbrowser
 
 from PySide6.QtWidgets import (
     QApplication, QMessageBox, QSystemTrayIcon, QMenu,
