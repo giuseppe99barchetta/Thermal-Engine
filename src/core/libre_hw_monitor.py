@@ -9,6 +9,7 @@ No external programs required.
 
 import os
 import sys
+import threading
 import clr
 
 # -----------------------------
@@ -49,8 +50,13 @@ class LibreHardwareMonitorReader:
         self.computer.IsMotherboardEnabled = True
         self.computer.IsStorageEnabled = False
         self.computer.Open()
+        self._cache = threading.local()
 
     def _iter_sensors(self):
+        if hasattr(self._cache, "sensors"):
+            yield from self._cache.sensors
+            return
+
         for hw in self.computer.Hardware:
             hw.Update()
 
@@ -166,17 +172,21 @@ class LibreHardwareMonitorReader:
         )
 
     def get_thermal_sensors(self):
-        return {
-            "cpu_temp": self.get_cpu_temp(),
-            "cpu_clock": int(self.get_cpu_clock()),
-            "cpu_power": self.get_cpu_power(),
-            "gpu_temp": self.get_gpu_temp(),
-            "gpu_percent": self.get_gpu_usage(),
-            "gpu_clock": int(self.get_gpu_clock()),
-            "gpu_memory_clock": int(self.get_gpu_memory_clock()),
-            "gpu_memory_percent": self.get_gpu_memory_usage(),
-            "gpu_power": self.get_gpu_power(),
-        }
+        self._cache.sensors = list(self._iter_sensors())
+        try:
+            return {
+                "cpu_temp": self.get_cpu_temp(),
+                "cpu_clock": int(self.get_cpu_clock()),
+                "cpu_power": self.get_cpu_power(),
+                "gpu_temp": self.get_gpu_temp(),
+                "gpu_percent": self.get_gpu_usage(),
+                "gpu_clock": int(self.get_gpu_clock()),
+                "gpu_memory_clock": int(self.get_gpu_memory_clock()),
+                "gpu_memory_percent": self.get_gpu_memory_usage(),
+                "gpu_power": self.get_gpu_power(),
+            }
+        finally:
+            del self._cache.sensors
 
 
 # -----------------------------
