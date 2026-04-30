@@ -586,6 +586,8 @@ class ThemeEditorWindow(QMainWindow):
         self.bg_color_btn = QPushButton()
         self.bg_color_btn.setFixedSize(30, 25)
         self.bg_color_btn.setStyleSheet(f"background-color: {self.background_color};")
+        self.bg_color_btn.setToolTip("Change background color")
+        self.bg_color_btn.setAccessibleName("Change background color")
         self.bg_color_btn.clicked.connect(self.choose_background_color)
         name_layout.addWidget(self.bg_color_btn)
 
@@ -636,6 +638,8 @@ class ThemeEditorWindow(QMainWindow):
 
         self.prev_page_btn = QPushButton("◀")
         self.prev_page_btn.setFixedWidth(40)
+        self.prev_page_btn.setToolTip("Previous Page")
+        self.prev_page_btn.setAccessibleName("Previous Page")
         self.prev_page_btn.clicked.connect(self.prev_page)
         page_controls_layout.addWidget(self.prev_page_btn)
 
@@ -647,16 +651,20 @@ class ThemeEditorWindow(QMainWindow):
 
         self.next_page_btn = QPushButton("▶")
         self.next_page_btn.setFixedWidth(40)
+        self.next_page_btn.setToolTip("Next Page")
+        self.next_page_btn.setAccessibleName("Next Page")
         self.next_page_btn.clicked.connect(self.next_page)
         page_controls_layout.addWidget(self.next_page_btn)
 
         self.add_page_btn = QPushButton("+ Add Page")
         self.add_page_btn.setFixedWidth(90)
+        self.add_page_btn.setToolTip("Add a new page")
         self.add_page_btn.clicked.connect(self.add_page)
         page_controls_layout.addWidget(self.add_page_btn)
 
         self.delete_page_btn = QPushButton("Delete Page")
         self.delete_page_btn.setFixedWidth(90)
+        self.delete_page_btn.setToolTip("Delete current page")
         self.delete_page_btn.clicked.connect(self.delete_page)
         page_controls_layout.addWidget(self.delete_page_btn)
 

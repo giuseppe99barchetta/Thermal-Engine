@@ -1,0 +1,3 @@
+## 2024-03-24 - Icon-only Buttons Need setAccessibleName in PySide6
+**Learning:** PySide6/PyQt applications require `setAccessibleName` (equivalent to ARIA label) for icon-only buttons for screen reader accessibility. Tooltips (`setToolTip`) alone are for sighted users and not enough for accessibility.
+**Action:** When adding icon-only buttons in PySide6/Qt apps, consistently add both `setToolTip` and `setAccessibleName`.
