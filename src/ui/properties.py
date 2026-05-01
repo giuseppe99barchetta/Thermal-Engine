@@ -1089,6 +1089,7 @@ class PropertiesPanel(QWidget):
         self.align_left_btn.setCheckable(True)
         self.align_left_btn.setFixedSize(28, 24)
         self.align_left_btn.setToolTip("Align Left")
+        self.align_left_btn.setAccessibleName("Align Left")
         self.align_left_btn.clicked.connect(lambda: self.set_alignment("left"))
         align_layout.addWidget(self.align_left_btn)
 
@@ -1097,6 +1098,7 @@ class PropertiesPanel(QWidget):
         self.align_center_btn.setCheckable(True)
         self.align_center_btn.setFixedSize(28, 24)
         self.align_center_btn.setToolTip("Align Center")
+        self.align_center_btn.setAccessibleName("Align Center")
         self.align_center_btn.clicked.connect(lambda: self.set_alignment("center"))
         align_layout.addWidget(self.align_center_btn)
 
@@ -1105,6 +1107,7 @@ class PropertiesPanel(QWidget):
         self.align_right_btn.setCheckable(True)
         self.align_right_btn.setFixedSize(28, 24)
         self.align_right_btn.setToolTip("Align Right")
+        self.align_right_btn.setAccessibleName("Align Right")
         self.align_right_btn.clicked.connect(lambda: self.set_alignment("right"))
         align_layout.addWidget(self.align_right_btn)
         align_layout.addStretch()
@@ -1465,6 +1468,7 @@ class PropertiesPanel(QWidget):
         self.align_h_left_btn.setIcon(create_alignment_icon('h_left'))
         self.align_h_left_btn.setFixedSize(32, 26)
         self.align_h_left_btn.setToolTip("Align Left Edges")
+        self.align_h_left_btn.setAccessibleName("Align Left Edges")
         self.align_h_left_btn.clicked.connect(self.align_left)
         h_align_layout.addWidget(self.align_h_left_btn)
 
@@ -1472,6 +1476,7 @@ class PropertiesPanel(QWidget):
         self.align_h_center_btn.setIcon(create_alignment_icon('h_center'))
         self.align_h_center_btn.setFixedSize(32, 26)
         self.align_h_center_btn.setToolTip("Align Horizontal Centers")
+        self.align_h_center_btn.setAccessibleName("Align Horizontal Centers")
         self.align_h_center_btn.clicked.connect(self.align_h_center)
         h_align_layout.addWidget(self.align_h_center_btn)
 
@@ -1479,6 +1484,7 @@ class PropertiesPanel(QWidget):
         self.align_h_right_btn.setIcon(create_alignment_icon('h_right'))
         self.align_h_right_btn.setFixedSize(32, 26)
         self.align_h_right_btn.setToolTip("Align Right Edges")
+        self.align_h_right_btn.setAccessibleName("Align Right Edges")
         self.align_h_right_btn.clicked.connect(self.align_right)
         h_align_layout.addWidget(self.align_h_right_btn)
         h_align_layout.addStretch()
@@ -1493,6 +1499,7 @@ class PropertiesPanel(QWidget):
         self.align_v_top_btn.setIcon(create_alignment_icon('v_top'))
         self.align_v_top_btn.setFixedSize(32, 26)
         self.align_v_top_btn.setToolTip("Align Top Edges")
+        self.align_v_top_btn.setAccessibleName("Align Top Edges")
         self.align_v_top_btn.clicked.connect(self.align_top)
         v_align_layout.addWidget(self.align_v_top_btn)
 
@@ -1500,6 +1507,7 @@ class PropertiesPanel(QWidget):
         self.align_v_middle_btn.setIcon(create_alignment_icon('v_middle'))
         self.align_v_middle_btn.setFixedSize(32, 26)
         self.align_v_middle_btn.setToolTip("Align Vertical Centers")
+        self.align_v_middle_btn.setAccessibleName("Align Vertical Centers")
         self.align_v_middle_btn.clicked.connect(self.align_v_middle)
         v_align_layout.addWidget(self.align_v_middle_btn)
 
@@ -1507,6 +1515,7 @@ class PropertiesPanel(QWidget):
         self.align_v_bottom_btn.setIcon(create_alignment_icon('v_bottom'))
         self.align_v_bottom_btn.setFixedSize(32, 26)
         self.align_v_bottom_btn.setToolTip("Align Bottom Edges")
+        self.align_v_bottom_btn.setAccessibleName("Align Bottom Edges")
         self.align_v_bottom_btn.clicked.connect(self.align_bottom)
         v_align_layout.addWidget(self.align_v_bottom_btn)
         v_align_layout.addStretch()
@@ -1521,6 +1530,7 @@ class PropertiesPanel(QWidget):
         self.dist_h_btn.setIcon(create_alignment_icon('dist_h'))
         self.dist_h_btn.setFixedSize(32, 26)
         self.dist_h_btn.setToolTip("Distribute Horizontally")
+        self.dist_h_btn.setAccessibleName("Distribute Horizontally")
         self.dist_h_btn.clicked.connect(self.distribute_horizontal)
         dist_layout.addWidget(self.dist_h_btn)
 
@@ -1528,6 +1538,7 @@ class PropertiesPanel(QWidget):
         self.dist_v_btn.setIcon(create_alignment_icon('dist_v'))
         self.dist_v_btn.setFixedSize(32, 26)
         self.dist_v_btn.setToolTip("Distribute Vertically")
+        self.dist_v_btn.setAccessibleName("Distribute Vertically")
         self.dist_v_btn.clicked.connect(self.distribute_vertical)
         dist_layout.addWidget(self.dist_v_btn)
 
