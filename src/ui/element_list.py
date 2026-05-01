@@ -483,26 +483,11 @@ class ElementListPanel(QWidget):
         if indices:
             self.elements_will_change.emit()
 
-            # Collect unique groups from elements being duplicated
-            groups_to_duplicate = set()
-            for idx in indices:
-                if self.elements[idx].group:
-                    groups_to_duplicate.add(self.elements[idx].group)
-
             # Get all existing group names
             existing_groups = set(el.group for el in self.elements if el.group)
 
             # Create mapping from old group names to new unique names
             group_name_map = {}
-            for old_name in groups_to_duplicate:
-                base_name = old_name
-                counter = 1
-                new_name = f"{base_name} ({counter})"
-                while new_name in existing_groups or new_name in group_name_map.values():
-                    counter += 1
-                    new_name = f"{base_name} ({counter})"
-                group_name_map[old_name] = new_name
-                existing_groups.add(new_name)  # Track for subsequent duplicates
 
             for idx in indices:
                 original = self.elements[idx]
@@ -510,9 +495,21 @@ class ElementListPanel(QWidget):
                 new_element.name = f"{original.name}_copy"
                 new_element.x += 20
                 new_element.y += 20
-                # Use the new group name if this element was in a duplicated group
-                if original.group and original.group in group_name_map:
-                    new_element.group = group_name_map[original.group]
+
+                original_group = original.group
+                if original_group:
+                    mapped_group = group_name_map.get(original_group)
+                    if mapped_group is None:
+                        counter = 1
+                        new_name = f"{original_group} ({counter})"
+                        while new_name in existing_groups:
+                            counter += 1
+                            new_name = f"{original_group} ({counter})"
+                        mapped_group = new_name
+                        group_name_map[original_group] = mapped_group
+                        existing_groups.add(mapped_group)
+
+                    new_element.group = mapped_group
                 self.elements.append(new_element)
             self.refresh_list()
             self.elements_changed.emit()

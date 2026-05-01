@@ -6,10 +6,9 @@ Supports multiple display types with different communication protocols:
 - Experimental USB bulk/interrupt displays (e.g., Thermalright FW 360 Ultra)
 """
 
-import sys
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 # Configure logging
 logging.basicConfig(
@@ -325,17 +324,17 @@ class USBBulkBackend(DisplayBackend):
 
         try:
             logger.info(f"Manufacturer: {usb.util.get_string(self.device, self.device.iManufacturer)}")
-        except:
+        except Exception:
             logger.info("Manufacturer: (unavailable)")
 
         try:
             logger.info(f"Product: {usb.util.get_string(self.device, self.device.iProduct)}")
-        except:
+        except Exception:
             logger.info("Product: (unavailable)")
 
         try:
             logger.info(f"Serial: {usb.util.get_string(self.device, self.device.iSerialNumber)}")
-        except:
+        except Exception:
             logger.info("Serial: (unavailable)")
 
         logger.info(f"Class: {self.device.bDeviceClass:02X} (Vendor Specific)")
@@ -508,7 +507,7 @@ class USBBulkBackend(DisplayBackend):
             # Try to read device descriptor to check if still connected
             _ = self.device.idVendor
             return True
-        except:
+        except Exception:
             return False
 
 

@@ -7,7 +7,10 @@ Displays animated GIF images with proper frame timing.
 import os
 import time
 import sys
+import logging
 from PIL import Image as PILImage
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QImage, QPen, QColor
@@ -125,7 +128,7 @@ def get_gif_data(path):
         oldest_path = _gif_cache_order.pop(0)
         if oldest_path in _gif_cache:
             del _gif_cache[oldest_path]
-            print(f"[GIF] Evicted from cache: {oldest_path}")
+            logger.info(f"Evicted from cache: {oldest_path}")
 
     _gif_cache[path] = gif_data
     _gif_cache_order.append(path)
@@ -266,7 +269,7 @@ def render_image(draw, img, element):
     if gif_path:
         safe, _, err = is_safe_path(gif_path, allow_absolute=True)
         if not safe:
-            print(f"GIF unsafe path blocked: {gif_path} - {err}")
+            logger.warning(f"GIF unsafe path blocked: {gif_path} - {err}")
             return
 
     if not gif_path or not os.path.exists(gif_path):

@@ -216,6 +216,14 @@ def import_theme(zip_path):
                         continue
 
                     target_path = os.path.join(import_dir, asset_filename)
+
+                    # Prevent Zip Slip: ensure the resolved target path is within the import directory
+                    resolved_target = os.path.abspath(target_path)
+                    resolved_import_dir = os.path.abspath(import_dir)
+                    if not resolved_target.startswith(resolved_import_dir + os.sep):
+                        logger.warning(f"Skipping asset that escapes import directory: {name}")
+                        continue
+
                     with zf.open(name) as src, open(target_path, 'wb') as dst:
                         shutil.copyfileobj(src, dst)
 
