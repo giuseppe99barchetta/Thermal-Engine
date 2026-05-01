@@ -97,6 +97,28 @@ for category, sources in DATA_SOURCES_CATEGORIZED.items():
             "symbol": unit_symbol
         }
 
+def get_value_with_unit(value, source, temp_hide_unit=False):
+    """Format a value with its appropriate unit symbol."""
+    unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
+    symbol = unit_info["symbol"]
+    unit_type = unit_info["type"]
+
+    if unit_type == "clock":
+        return f"{value:.0f}{symbol}"
+    elif unit_type == "temp":
+        # Option to show only ° instead of °C
+        if temp_hide_unit:
+            return f"{value:.0f}°"
+        return f"{value:.0f}{symbol}"
+    elif unit_type == "power":
+        return f"{value:.0f}{symbol}"
+    elif unit_type == "size":
+        return f"{value:.1f}{symbol}"
+    elif unit_type == "speed":
+        return f"{value:.1f}{symbol}"
+    else:  # percent
+        return f"{value:.0f}{symbol}"
+
 # Default element properties by type
 DEFAULT_ELEMENT_PROPS = {
     "circle_gauge": {"radius": 120, "x": 200, "y": 240, "text": "GAUGE"},

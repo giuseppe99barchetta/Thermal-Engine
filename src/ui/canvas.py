@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QImage
 
 from src.core import constants
-from src.core.constants import SOURCE_UNITS
+from src.core.constants import SOURCE_UNITS, get_value_with_unit
 from elements import get_custom_element
 from src.ui.video_background import video_background
 
@@ -70,28 +70,6 @@ def interpolate_gradient_color(gradient_stops, position):
             return QColor(r, g, b)
 
     return QColor(sorted_stops[-1][1])
-
-
-def get_value_with_unit(value, source, temp_hide_unit=False):
-    """Format a value with its appropriate unit symbol."""
-    unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
-    symbol = unit_info["symbol"]
-    unit_type = unit_info["type"]
-
-    if unit_type == "clock":
-        return f"{value:.0f}{symbol}"
-    elif unit_type == "temp":
-        if temp_hide_unit:
-            return f"{value:.0f}°"
-        return f"{value:.0f}{symbol}"
-    elif unit_type == "power":
-        return f"{value:.0f}{symbol}"
-    elif unit_type == "size":
-        return f"{value:.1f}{symbol}"
-    elif unit_type == "speed":
-        return f"{value:.1f}{symbol}"
-    else:  # percent
-        return f"{value:.0f}{symbol}"
 
 
 class CanvasPreview(QWidget):
