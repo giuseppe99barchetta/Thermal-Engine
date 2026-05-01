@@ -73,12 +73,12 @@ class TestLibreHardwareMonitorOptimization(unittest.TestCase):
         self.assertEqual(self.mock_cpu.Update.call_count, 1)
         self.assertEqual(self.mock_gpu.Update.call_count, 1)
 
-    def test_cache_cleared_after_call(self):
+    def test_update_called_once_per_retrieval(self):
         # Call get_thermal_sensors
         self.reader.get_thermal_sensors()
 
-        # Verify cache is empty
-        self.assertFalse(hasattr(self.reader._cache, "sensors"))
+        self.assertEqual(self.mock_cpu.Update.call_count, 1)
+        self.assertEqual(self.mock_gpu.Update.call_count, 1)
 
         # Call it again and verify Update count increases by only 1
         self.reader.get_thermal_sensors()
