@@ -325,17 +325,17 @@ class USBBulkBackend(DisplayBackend):
 
         try:
             logger.info(f"Manufacturer: {usb.util.get_string(self.device, self.device.iManufacturer)}")
-        except:
+        except Exception:
             logger.info("Manufacturer: (unavailable)")
 
         try:
             logger.info(f"Product: {usb.util.get_string(self.device, self.device.iProduct)}")
-        except:
+        except Exception:
             logger.info("Product: (unavailable)")
 
         try:
             logger.info(f"Serial: {usb.util.get_string(self.device, self.device.iSerialNumber)}")
-        except:
+        except Exception:
             logger.info("Serial: (unavailable)")
 
         logger.info(f"Class: {self.device.bDeviceClass:02X} (Vendor Specific)")
@@ -508,7 +508,7 @@ class USBBulkBackend(DisplayBackend):
             # Try to read device descriptor to check if still connected
             _ = self.device.idVendor
             return True
-        except:
+        except Exception:
             return False
 
 
