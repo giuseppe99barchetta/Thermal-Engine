@@ -9,10 +9,9 @@ import urllib.request
 import urllib.error
 import os
 import tempfile
-import subprocess
 from packaging import version as version_parser
-from PySide6.QtWidgets import QMessageBox, QPushButton, QProgressDialog
-from PySide6.QtCore import QThread, Signal, Qt
+from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QThread, Signal
 
 try:
     from src.utils.app_version import __version__

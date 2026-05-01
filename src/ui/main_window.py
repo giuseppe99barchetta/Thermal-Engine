@@ -251,7 +251,7 @@ except ImportError:
     HAS_HID = False
 
 from src.core import constants
-from src.core.constants import SOURCE_UNITS
+from src.core.constants import SOURCE_UNITS, get_value_with_unit
 
 # Device backend system for multi-device support
 from src.core import device_backends
@@ -264,27 +264,6 @@ from src.core.device_backends import (
 logger = logging.getLogger(__name__)
 
 
-def get_value_with_unit(value, source, temp_hide_unit=False):
-    """Format a value with its appropriate unit symbol."""
-    unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
-    symbol = unit_info["symbol"]
-    unit_type = unit_info["type"]
-
-    if unit_type == "clock":
-        return f"{value:.0f}{symbol}"
-    elif unit_type == "temp":
-        # Option to show only ° instead of °C
-        if temp_hide_unit:
-            return f"{value:.0f}°"
-        return f"{value:.0f}{symbol}"
-    elif unit_type == "power":
-        return f"{value:.0f}{symbol}"
-    elif unit_type == "size":
-        return f"{value:.1f}{symbol}"
-    elif unit_type == "speed":
-        return f"{value:.1f}{symbol}"
-    else:  # percent
-        return f"{value:.0f}{symbol}"
 from src.core.element import ThemeElement
 from src.core import sensors
 from src.core.sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
