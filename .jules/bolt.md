@@ -7,6 +7,10 @@
 ## 2023-10-25 - Transparent Bbox Short-Circuiting
 **Learning:** When optimizing Pillow's `alpha_composite` by using a bounded crop, if the overlay image is completely transparent (i.e. `getbbox()` returns `None`), falling back to `base.alpha_composite(overlay)` is unnecessary. Compositing a fully transparent image has no visual effect but still incurs a performance penalty as Pillow processes the pixels.
 **Action:** When using a custom bounded `alpha_composite` helper, short-circuit the operation entirely by using `pass` or `return` when `bbox` is `None` rather than falling back to the unoptimized full-screen composite.
+
+## 2024-05-18 - QTreeWidget topLevelItemCount micro-optimization
+**Learning:** Evaluated `topLevelItemCount()` once before passing it into `range()` inside `src/ui/element_list.py` to prevent any possibility of redundant property access during loop construction. While Python evaluates `range()` arguments exactly once upon loop start naturally, pre-evaluating widget properties provides a consistent structure and addresses specific perceived inefficiencies in legacy loops.
+**Action:** When iterating over QTreeWidget elements, cache property accesses like `topLevelItemCount()` outside loops or `range()` calls for consistency and slightly stricter semantic correctness, avoiding property getter calls directly as arguments where unnecessary.
 ## 2024-05-19 - Eliminate N+1 Sensor Evaluations in Hardware Monitor
  **Learning:** In LibreHardwareMonitorReader, using a generator for `_iter_sensors()` that caches locally via `threading.local()` caused N+1 issues when getters were called sequentially (because `_iter_sensors()` was re-evaluated every time if not within the batch `get_thermal_sensors()` method).
  **Action:** Instead of complex generator-based caching, compute all sensors upfront in a `_get_sensors()` method that returns a list, and pass this list downwards on the call stack to all getters to ensure `hw.Update()` runs exactly once per cycle without relying on thread locals.
