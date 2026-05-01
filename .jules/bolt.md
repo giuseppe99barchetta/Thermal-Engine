@@ -7,3 +7,7 @@
 ## 2023-10-25 - Transparent Bbox Short-Circuiting
 **Learning:** When optimizing Pillow's `alpha_composite` by using a bounded crop, if the overlay image is completely transparent (i.e. `getbbox()` returns `None`), falling back to `base.alpha_composite(overlay)` is unnecessary. Compositing a fully transparent image has no visual effect but still incurs a performance penalty as Pillow processes the pixels.
 **Action:** When using a custom bounded `alpha_composite` helper, short-circuit the operation entirely by using `pass` or `return` when `bbox` is `None` rather than falling back to the unoptimized full-screen composite.
+
+## 2024-05-18 - QTreeWidget topLevelItemCount micro-optimization
+**Learning:** Evaluated `topLevelItemCount()` once before passing it into `range()` inside `src/ui/element_list.py` to prevent any possibility of redundant property access during loop construction. While Python evaluates `range()` arguments exactly once upon loop start naturally, pre-evaluating widget properties provides a consistent structure and addresses specific perceived inefficiencies in legacy loops.
+**Action:** When iterating over QTreeWidget elements, cache property accesses like `topLevelItemCount()` outside loops or `range()` calls for consistency and slightly stricter semantic correctness, avoiding property getter calls directly as arguments where unnecessary.

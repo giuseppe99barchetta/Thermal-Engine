@@ -279,7 +279,8 @@ class ElementListPanel(QWidget):
 
         if preserve_state:
             # Save expanded groups
-            for i in range(self.tree_widget.topLevelItemCount()):
+            count = self.tree_widget.topLevelItemCount()
+            for i in range(count):
                 item = self.tree_widget.topLevelItem(i)
                 if item.data(0, Qt.ItemDataRole.UserRole + 1) == "group":
                     if item.isExpanded():
@@ -363,7 +364,8 @@ class ElementListPanel(QWidget):
         # Restore expanded state and selection
         if preserve_state:
             # Restore expanded groups
-            for i in range(self.tree_widget.topLevelItemCount()):
+            count = self.tree_widget.topLevelItemCount()
+            for i in range(count):
                 item = self.tree_widget.topLevelItem(i)
                 if item.data(0, Qt.ItemDataRole.UserRole + 1) == "group":
                     group_name = item.data(0, Qt.ItemDataRole.UserRole)
@@ -435,7 +437,8 @@ class ElementListPanel(QWidget):
                 element.group = group_name
                 new_elements.append(element)
 
-        for i in range(self.tree_widget.topLevelItemCount()):
+        count = self.tree_widget.topLevelItemCount()
+        for i in range(count):
             process_item(self.tree_widget.topLevelItem(i))
 
         self.elements[:] = new_elements
@@ -846,7 +849,8 @@ class ElementListPanel(QWidget):
         self.tree_widget.clearSelection()
         if item_type == 'group':
             # Select the group by name
-            for i in range(self.tree_widget.topLevelItemCount()):
+            count = self.tree_widget.topLevelItemCount()
+            for i in range(count):
                 item = self.tree_widget.topLevelItem(i)
                 if item.data(0, Qt.ItemDataRole.UserRole + 1) == "group":
                     if item.data(0, Qt.ItemDataRole.UserRole) == item_data:
