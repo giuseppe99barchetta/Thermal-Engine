@@ -27,7 +27,7 @@ GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 class UpdateChecker(QThread):
     """Background thread to check for updates."""
 
-    update_available = Signal(str, str, str)  # version, download_url, release_notes
+    update_available = Signal(str, str, str, str)  # version, download_url, release_notes, expected_hash
     no_update = Signal()
     error = Signal(str)
 
@@ -49,9 +49,13 @@ class UpdateChecker(QThread):
 
             # Find the installer asset
             download_url = GITHUB_RELEASES_URL
+            expected_hash = None
             for asset in data.get('assets', []):
                 if 'Setup.exe' in asset.get('name', ''):
                     download_url = asset.get('browser_download_url', GITHUB_RELEASES_URL)
+                    digest = asset.get('digest', '')
+                    if digest.startswith('sha256:'):
+                        expected_hash = digest.split('sha256:')[1]
                     break
 
             # Compare versions
@@ -60,7 +64,7 @@ class UpdateChecker(QThread):
                 latest = version_parser.parse(latest_version)
 
                 if latest > current:
-                    self.update_available.emit(latest_version, download_url, release_notes)
+                    self.update_available.emit(latest_version, download_url, release_notes, expected_hash or "")
                 else:
                     self.no_update.emit()
             except Exception as e:
@@ -79,10 +83,11 @@ class UpdateDownloader(QThread):
     finished = Signal(str)  # installer_path
     error = Signal(str)
 
-    def __init__(self, download_url, version):
+    def __init__(self, download_url, version, expected_hash=None):
         super().__init__()
         self.download_url = download_url
         self.version = version
+        self.expected_hash = expected_hash
         self._cancelled = False
 
     def cancel(self):
@@ -124,6 +129,20 @@ class UpdateDownloader(QThread):
                         os.remove(installer_path)
                     return
 
+                # Verify hash if expected_hash is provided
+                if self.expected_hash:
+                    import hashlib
+                    hasher = hashlib.sha256()
+                    with open(installer_path, 'rb') as f:
+                        for chunk in iter(lambda: f.read(8192), b""):
+                            hasher.update(chunk)
+
+                    if hasher.hexdigest().lower() != self.expected_hash.lower():
+                        if os.path.exists(installer_path):
+                            os.remove(installer_path)
+                        self.error.emit("Security error: Downloaded file failed integrity check. The file may have been tampered with.")
+                        return
+
                 self.finished.emit(installer_path)
 
         except urllib.error.URLError as e:
@@ -142,7 +161,7 @@ def check_for_updates(parent=None, silent=False):
     """
     checker = UpdateChecker()
 
-    def on_update_available(version, download_url, release_notes):
+    def on_update_available(version, download_url, release_notes, expected_hash=None):
         # Create custom message box with download button
         msg_box = QMessageBox(parent)
         msg_box.setWindowTitle("Update Available")
