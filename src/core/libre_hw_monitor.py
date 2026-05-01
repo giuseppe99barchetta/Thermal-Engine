@@ -50,30 +50,28 @@ class LibreHardwareMonitorReader:
         self.computer.IsMotherboardEnabled = True
         self.computer.IsStorageEnabled = False
         self.computer.Open()
-        self._cache = threading.local()
 
-    def _iter_sensors(self):
-        if hasattr(self._cache, "sensors"):
-            yield from self._cache.sensors
-            return
-
+    def _get_sensors(self):
+        sensors = []
         for hw in self.computer.Hardware:
             hw.Update()
-
             for sensor in hw.Sensors:
                 if sensor.Value is not None:
-                    yield hw.Name, sensor
-
+                    sensors.append((hw.Name, sensor))
             for sub in hw.SubHardware:
                 sub.Update()
                 for sensor in sub.Sensors:
                     if sensor.Value is not None:
-                        yield f"{hw.Name} {sub.Name}", sensor
+                        sensors.append((f"{hw.Name} {sub.Name}", sensor))
+        return sensors
 
-    def _find_sensor(self, names, sensor_type):
+    def _find_sensor(self, names, sensor_type, sensors=None):
+        if sensors is None:
+            sensors = self._get_sensors()
+
         names = [n.lower() for n in names]
 
-        for hw_name, sensor in self._iter_sensors():
+        for hw_name, sensor in sensors:
             if sensor.SensorType != sensor_type:
                 continue
 
@@ -89,43 +87,52 @@ class LibreHardwareMonitorReader:
     # Public API (drop-in)
     # -----------------------------
 
-    def get_cpu_temp(self):
+    def get_cpu_temp(self, sensors=None):
         return self._find_sensor(
             ["cpu package", "tctl", "tdie", "cpu die"],
-            SensorType.Temperature
+            SensorType.Temperature,
+            sensors
         )
 
-    def get_cpu_clock(self):
+    def get_cpu_clock(self, sensors=None):
         return self._find_sensor(
             ["core 0 clock", "cpu core"],
-            SensorType.Clock
+            SensorType.Clock,
+            sensors
         )
 
-    def get_cpu_power(self):
+    def get_cpu_power(self, sensors=None):
         return self._find_sensor(
             ["cpu package power", "ppt", "cpu power"],
-            SensorType.Power
+            SensorType.Power,
+            sensors
         )
 
-    def get_gpu_temp(self):
+    def get_gpu_temp(self, sensors=None):
         return self._find_sensor(
             ["gpu core", "gpu temperature"],
-            SensorType.Temperature
+            SensorType.Temperature,
+            sensors
         )
 
-    def get_gpu_clock(self):
+    def get_gpu_clock(self, sensors=None):
         return self._find_sensor(
             ["gpu core clock", "gpu clock"],
-            SensorType.Clock
+            SensorType.Clock,
+            sensors
         )
 
-    def get_gpu_memory_clock(self):
+    def get_gpu_memory_clock(self, sensors=None):
         return self._find_sensor(
             ["memory clock"],
-            SensorType.Clock
+            SensorType.Clock,
+            sensors
         )
 
-    def get_gpu_usage(self):
+    def get_gpu_usage(self, sensors=None):
+        if sensors is None:
+            sensors = self._get_sensors()
+
         candidates = [
             "gpu core",
             "gpu total",
@@ -135,58 +142,51 @@ class LibreHardwareMonitorReader:
         ]
 
         best = 0.0
+        fallback = 0.0
 
-        for hw_name, sensor in self._iter_sensors():
+        for hw_name, sensor in sensors:
             if sensor.SensorType != SensorType.Load:
                 continue
 
             label = f"{hw_name} {sensor.Name}".lower()
 
-            if "gpu" not in label:
-                continue
+            if "gpu" in label:
+                for c in candidates:
+                    if c in label:
+                        best = max(best, float(sensor.Value))
 
-            for c in candidates:
-                if c in label:
-                    best = max(best, float(sensor.Value))
+            if fallback == 0.0 and "3d" in label:
+                fallback = float(sensor.Value)
 
-        # Fallback (NVIDIA / casi strani)
-        if best == 0.0:
-            for hw_name, sensor in self._iter_sensors():
-                if sensor.SensorType == SensorType.Load:
-                    label = f"{hw_name} {sensor.Name}".lower()
-                    if "3d" in label:
-                        return float(sensor.Value)
+        return best if best > 0.0 else fallback
 
-        return best
-
-    def get_gpu_memory_usage(self):
+    def get_gpu_memory_usage(self, sensors=None):
         return self._find_sensor(
             ["memory load", "memory usage"],
-            SensorType.Load
+            SensorType.Load,
+            sensors
         )
 
-    def get_gpu_power(self):
+    def get_gpu_power(self, sensors=None):
         return self._find_sensor(
             ["gpu power", "board power"],
-            SensorType.Power
+            SensorType.Power,
+            sensors
         )
 
     def get_thermal_sensors(self):
-        self._cache.sensors = list(self._iter_sensors())
-        try:
-            return {
-                "cpu_temp": self.get_cpu_temp(),
-                "cpu_clock": int(self.get_cpu_clock()),
-                "cpu_power": self.get_cpu_power(),
-                "gpu_temp": self.get_gpu_temp(),
-                "gpu_percent": self.get_gpu_usage(),
-                "gpu_clock": int(self.get_gpu_clock()),
-                "gpu_memory_clock": int(self.get_gpu_memory_clock()),
-                "gpu_memory_percent": self.get_gpu_memory_usage(),
-                "gpu_power": self.get_gpu_power(),
-            }
-        finally:
-            del self._cache.sensors
+        sensors = self._get_sensors()
+        return {
+            "cpu_temp": self.get_cpu_temp(sensors),
+            "cpu_clock": int(self.get_cpu_clock(sensors)),
+            "cpu_power": self.get_cpu_power(sensors),
+            "gpu_temp": self.get_gpu_temp(sensors),
+            "gpu_percent": self.get_gpu_usage(sensors),
+            "gpu_clock": int(self.get_gpu_clock(sensors)),
+            "gpu_memory_clock": int(self.get_gpu_memory_clock(sensors)),
+            "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
+            "gpu_power": self.get_gpu_power(sensors),
+        }
 
 
 # -----------------------------

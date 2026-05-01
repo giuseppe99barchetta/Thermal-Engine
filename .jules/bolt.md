@@ -7,6 +7,9 @@
 ## 2023-10-25 - Transparent Bbox Short-Circuiting
 **Learning:** When optimizing Pillow's `alpha_composite` by using a bounded crop, if the overlay image is completely transparent (i.e. `getbbox()` returns `None`), falling back to `base.alpha_composite(overlay)` is unnecessary. Compositing a fully transparent image has no visual effect but still incurs a performance penalty as Pillow processes the pixels.
 **Action:** When using a custom bounded `alpha_composite` helper, short-circuit the operation entirely by using `pass` or `return` when `bbox` is `None` rather than falling back to the unoptimized full-screen composite.
+## 2024-05-19 - Eliminate N+1 Sensor Evaluations in Hardware Monitor
+ **Learning:** In LibreHardwareMonitorReader, using a generator for `_iter_sensors()` that caches locally via `threading.local()` caused N+1 issues when getters were called sequentially (because `_iter_sensors()` was re-evaluated every time if not within the batch `get_thermal_sensors()` method).
+ **Action:** Instead of complex generator-based caching, compute all sensors upfront in a `_get_sensors()` method that returns a list, and pass this list downwards on the call stack to all getters to ensure `hw.Update()` runs exactly once per cycle without relying on thread locals.
 ## 2024-05-24 - Group Name Mapping Optimization
 **Learning:** In element duplication loops, iterating over elements repeatedly to collect properties before performing operations introduces unnecessary O(N) overhead. Furthermore, checking if a generated name exists in a dict's `.values()` inside a while loop turns name generation into an O(N^2) operation, causing massive performance drops.
 **Action:** When mapping unique properties (like group names) during duplication, populate mapping dictionaries lazily in a single iteration pass. Also ensure that when adding items, use $O(1)$ lookups in a pre-populated `set` rather than scanning `.values()` of dicts repeatedly.
