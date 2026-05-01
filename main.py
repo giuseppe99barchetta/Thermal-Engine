@@ -32,7 +32,6 @@ from PySide6.QtCore import Qt, QSharedMemory
 from src.core.sensors import init_sensors, HAS_LHM
 from src.ui.main_window import ThemeEditorWindow
 from src.utils.app_path import get_app_dir
-from src.utils import settings
 
 
 class HWiNFOSetupDialog(QDialog):
