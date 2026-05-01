@@ -6,10 +6,9 @@ Supports multiple display types with different communication protocols:
 - Experimental USB bulk/interrupt displays (e.g., Thermalright FW 360 Ultra)
 """
 
-import sys
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 # Configure logging
 logging.basicConfig(
