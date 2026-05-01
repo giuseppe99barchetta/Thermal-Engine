@@ -2958,6 +2958,16 @@ class ThemeEditorWindow(QMainWindow):
         """Get elements for current page."""
         return [el for el in self.elements if getattr(el, 'page', 1) == self.current_page]
 
+    def _fast_alpha_composite(self, base, overlay):
+        """Helper method to composite only the bounding box of an overlay.
+        This is significantly faster than full-screen compositing."""
+        bbox = overlay.getbbox()
+        if bbox:
+            base.alpha_composite(overlay.crop(bbox), (bbox[0], bbox[1]))
+        else:
+            # If bbox is None, the overlay is completely transparent, so we don't need to composite anything
+            pass
+
     def render_theme_image(self):
         # Use video frame as background if enabled, otherwise solid color
         if video_background.enabled:
@@ -3087,7 +3097,7 @@ class ThemeEditorWindow(QMainWindow):
         else:
             # Fallback for empty renders
             self._element_render_cache[elem_id] = (overlay, current_state_hash, (0, 0))
-            img.alpha_composite(overlay)
+            self._fast_alpha_composite(img, overlay)
 
     def render_rectangle_rgba(self, img, element, opacity):
         """Render a rectangle with opacity, optional border radius, and glass effect."""
@@ -3141,7 +3151,7 @@ class ThemeEditorWindow(QMainWindow):
             else:
                 overlay_draw.rectangle(coords, outline=border_rgba, width=1)
 
-            img.alpha_composite(overlay)
+            self._fast_alpha_composite(img, overlay)
 
         elif opacity >= 100:
             draw = ImageDraw.Draw(img)
@@ -3158,7 +3168,7 @@ class ThemeEditorWindow(QMainWindow):
                 overlay_draw.rounded_rectangle(coords, radius=border_radius, fill=rgba)
             else:
                 overlay_draw.rectangle(coords, fill=rgba)
-            img.alpha_composite(overlay)
+            self._fast_alpha_composite(img, overlay)
 
     def render_text_rgba(self, img, element, font, opacity):
         """Render text with opacity."""
@@ -3208,7 +3218,7 @@ class ThemeEditorWindow(QMainWindow):
                 overlay_alpha = Image.composite(overlay_alpha, Image.new('L', img.size, 0), mask)
                 overlay.putalpha(overlay_alpha)
 
-            img.alpha_composite(overlay)
+            self._fast_alpha_composite(img, overlay)
 
     def render_text(self, draw, img, element, font):
         # Determine text to display based on source
@@ -3420,7 +3430,7 @@ class ThemeEditorWindow(QMainWindow):
             bg_layer = Image.merge('RGBA', (r, g, b, a))
 
         # Composite background layer onto the main overlay
-        overlay.alpha_composite(bg_layer)
+        self._fast_alpha_composite(overlay, bg_layer)
 
         # Draw value arc - use float for smoother animation
         sweep = 270 * min(value, 100) / 100
@@ -3510,7 +3520,7 @@ class ThemeEditorWindow(QMainWindow):
                 value_layer = Image.merge('RGBA', (r, g, b, a))
 
             # Composite value layer onto the main overlay
-            overlay.alpha_composite(value_layer)
+            self._fast_alpha_composite(overlay, value_layer)
 
         # Draw value text
         value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
@@ -3543,7 +3553,7 @@ class ThemeEditorWindow(QMainWindow):
         )
 
         # Composite onto main image
-        img.alpha_composite(overlay)
+        self._fast_alpha_composite(img, overlay)
 
     def render_bar_gauge_rgba(self, img, element, font, color_opacity, bg_opacity):
         """Render bar gauge with opacity support."""
@@ -3597,7 +3607,7 @@ class ThemeEditorWindow(QMainWindow):
             bg_layer = Image.merge('RGBA', (r, g, b, a))
 
         # Composite background layer onto overlay
-        overlay.alpha_composite(bg_layer)
+        self._fast_alpha_composite(overlay, bg_layer)
 
         # Draw fill on separate layer
         fill_width = int(width * min(value, 100) / 100)
@@ -3662,7 +3672,7 @@ class ThemeEditorWindow(QMainWindow):
                 fill_layer = Image.merge('RGBA', (r, g, b, a))
 
             # Composite fill layer onto overlay
-            overlay.alpha_composite(fill_layer)
+            self._fast_alpha_composite(overlay, fill_layer)
 
         # Draw border if enabled
         bar_border = getattr(element, 'bar_border', False)
@@ -3719,7 +3729,7 @@ class ThemeEditorWindow(QMainWindow):
                 border_layer = Image.merge('RGBA', (r, g, b, a))
 
             # Composite border layer onto overlay
-            overlay.alpha_composite(border_layer)
+            self._fast_alpha_composite(overlay, border_layer)
 
         # Now use overlay's draw for text (text doesn't need the layer approach)
         draw = ImageDraw.Draw(overlay)
@@ -3897,7 +3907,7 @@ class ThemeEditorWindow(QMainWindow):
                     draw.text((text_x, center_y), element.text, fill=label_rgba, font=label_font, anchor="lm")
 
         # Composite onto main image
-        img.alpha_composite(overlay)
+        self._fast_alpha_composite(img, overlay)
 
     def render_analog_clock_rgba(self, img, element, color_opacity, bg_opacity):
         """Render analog clock with opacity support and per-second caching.
@@ -4045,8 +4055,8 @@ class ThemeEditorWindow(QMainWindow):
         )
 
         # Composite face + hands onto main image
-        img.alpha_composite(clock_face_overlay)
-        img.alpha_composite(hands_overlay)
+        self._fast_alpha_composite(img, clock_face_overlay)
+        self._fast_alpha_composite(img, hands_overlay)
 
     def render_circle_gauge(self, draw, element, font, font_small):
         x, y = element.x, element.y
