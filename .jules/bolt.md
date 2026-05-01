@@ -10,3 +10,6 @@
 ## 2024-05-19 - Eliminate N+1 Sensor Evaluations in Hardware Monitor
  **Learning:** In LibreHardwareMonitorReader, using a generator for `_iter_sensors()` that caches locally via `threading.local()` caused N+1 issues when getters were called sequentially (because `_iter_sensors()` was re-evaluated every time if not within the batch `get_thermal_sensors()` method).
  **Action:** Instead of complex generator-based caching, compute all sensors upfront in a `_get_sensors()` method that returns a list, and pass this list downwards on the call stack to all getters to ensure `hw.Update()` runs exactly once per cycle without relying on thread locals.
+## 2024-05-24 - Group Name Mapping Optimization
+**Learning:** In element duplication loops, iterating over elements repeatedly to collect properties before performing operations introduces unnecessary O(N) overhead. Furthermore, checking if a generated name exists in a dict's `.values()` inside a while loop turns name generation into an O(N^2) operation, causing massive performance drops.
+**Action:** When mapping unique properties (like group names) during duplication, populate mapping dictionaries lazily in a single iteration pass. Also ensure that when adding items, use $O(1)$ lookups in a pre-populated `set` rather than scanning `.values()` of dicts repeatedly.
