@@ -4531,7 +4531,7 @@ class ThemeEditorWindow(QMainWindow):
         # Start checking in background
         self.update_checker.start()
 
-    def _on_update_available(self, latest_version, release_url, release_notes):
+    def _on_update_available(self, latest_version, release_url, release_notes, expected_hash=""):
         """Handle update available signal."""
         try:
             from src.utils.app_version import __version__
@@ -4576,11 +4576,11 @@ class ThemeEditorWindow(QMainWindow):
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Start automatic download
-            self._download_and_install_update(latest_version, release_url)
+            self._download_and_install_update(latest_version, release_url, expected_hash)
         else:
             self.status_bar.showMessage("Update dismissed", 2000)
 
-    def _download_and_install_update(self, version, download_url):
+    def _download_and_install_update(self, version, download_url, expected_hash=""):
         """Download installer and prompt for installation."""
         from PySide6.QtWidgets import QProgressDialog
         import subprocess
@@ -4600,7 +4600,7 @@ class ThemeEditorWindow(QMainWindow):
         progress.setMinimumDuration(0)
 
         # Start download
-        self.update_downloader = UpdateDownloader(download_url, version)
+        self.update_downloader = UpdateDownloader(download_url, version, expected_hash)
 
         def on_progress(downloaded, total):
             if total > 0:
