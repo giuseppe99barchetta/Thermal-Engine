@@ -63,6 +63,8 @@ class ElementListPanel(QWidget):
 
         self.add_btn = QPushButton("+ Add")
         self.add_btn.clicked.connect(self.add_element)
+        self.add_btn.setToolTip("Add new element")
+        self.add_btn.setAccessibleName("Add new element")
         add_layout.addWidget(self.add_btn)
 
         layout.addLayout(add_layout)
@@ -78,10 +80,14 @@ class ElementListPanel(QWidget):
 
         self.duplicate_btn = QPushButton("Duplicate")
         self.duplicate_btn.clicked.connect(self.duplicate_element)
+        self.duplicate_btn.setToolTip("Duplicate selected elements")
+        self.duplicate_btn.setAccessibleName("Duplicate selected elements")
         btn_layout.addWidget(self.duplicate_btn)
 
         self.remove_btn = QPushButton("Remove")
         self.remove_btn.clicked.connect(self.remove_element)
+        self.remove_btn.setToolTip("Remove selected elements")
+        self.remove_btn.setAccessibleName("Remove selected elements")
         btn_layout.addWidget(self.remove_btn)
 
         layout.addLayout(btn_layout)
@@ -91,11 +97,13 @@ class ElementListPanel(QWidget):
         self.group_btn = QPushButton("Group")
         self.group_btn.clicked.connect(self.group_selected)
         self.group_btn.setToolTip("Group selected elements (Ctrl+G)")
+        self.group_btn.setAccessibleName("Group selected elements (Ctrl+G)")
         group_layout.addWidget(self.group_btn)
 
         self.ungroup_btn = QPushButton("Ungroup")
         self.ungroup_btn.clicked.connect(self.ungroup_selected)
         self.ungroup_btn.setToolTip("Ungroup selected elements (Ctrl+Shift+G)")
+        self.ungroup_btn.setAccessibleName("Ungroup selected elements (Ctrl+Shift+G)")
         group_layout.addWidget(self.ungroup_btn)
 
         layout.addLayout(group_layout)
@@ -105,11 +113,13 @@ class ElementListPanel(QWidget):
         self.lock_btn = QPushButton("Lock")
         self.lock_btn.clicked.connect(self.lock_selected)
         self.lock_btn.setToolTip("Lock selected elements (prevent editing)")
+        self.lock_btn.setAccessibleName("Lock selected elements (prevent editing)")
         lock_layout.addWidget(self.lock_btn)
 
         self.unlock_btn = QPushButton("Unlock")
         self.unlock_btn.clicked.connect(self.unlock_selected)
         self.unlock_btn.setToolTip("Unlock selected elements")
+        self.unlock_btn.setAccessibleName("Unlock selected elements")
         lock_layout.addWidget(self.unlock_btn)
 
         layout.addLayout(lock_layout)
@@ -118,10 +128,14 @@ class ElementListPanel(QWidget):
 
         self.up_btn = QPushButton("Move Up")
         self.up_btn.clicked.connect(self.move_up)
+        self.up_btn.setToolTip("Move selected elements up")
+        self.up_btn.setAccessibleName("Move selected elements up")
         move_layout.addWidget(self.up_btn)
 
         self.down_btn = QPushButton("Move Down")
         self.down_btn.clicked.connect(self.move_down)
+        self.down_btn.setToolTip("Move selected elements down")
+        self.down_btn.setAccessibleName("Move selected elements down")
         move_layout.addWidget(self.down_btn)
 
         layout.addLayout(move_layout)
