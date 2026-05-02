@@ -17,3 +17,7 @@
 ## 2024-05-24 - Group Name Mapping Optimization
 **Learning:** In element duplication loops, iterating over elements repeatedly to collect properties before performing operations introduces unnecessary O(N) overhead. Furthermore, checking if a generated name exists in a dict's `.values()` inside a while loop turns name generation into an O(N^2) operation, causing massive performance drops.
 **Action:** When mapping unique properties (like group names) during duplication, populate mapping dictionaries lazily in a single iteration pass. Also ensure that when adding items, use $O(1)$ lookups in a pre-populated `set` rather than scanning `.values()` of dicts repeatedly.
+
+## 2025-05-28 - USB Enumeration Caching
+ **Learning:** USB device enumeration via `usb.core.find` is an expensive operation that performs a full bus scan. Performing this scan every time a connection is initiated (e.g. on application startup or profile switch) adds significant latency, especially on systems with many USB devices. Caching the found device instance drastically reduces connection time for subsequent requests.
+ **Action:** For hardware backends that use expensive discovery methods (like pyusb or hidapi), cache the discovered device handle in a class-level dictionary. Implement a safety mechanism to invalidate the cache entry if a hardware communication error (e.g. "Entity not found") occurs, ensuring the application can recover if the device is physically reconnected or reset.

@@ -238,6 +238,10 @@ class USBBulkBackend(DisplayBackend):
     - Thermalright FW 360 Ultra (0x87AD:0x70DB)
     """
 
+    # Class-level cache for found USB devices to avoid repeated slow enumeration
+    # Key: (vendor_id, product_id), Value: usb.core.Device
+    _device_cache = {}
+
     def __init__(self, device_def: DeviceDefinition):
         super().__init__(device_def)
         self.device = None
@@ -262,12 +266,22 @@ class USBBulkBackend(DisplayBackend):
             return False
 
         try:
-            # Find device
-            logger.info(f"Searching for device {self.device_def.vendor_id:04X}:{self.device_def.product_id:04X}")
-            self.device = usb.core.find(
-                idVendor=self.device_def.vendor_id,
-                idProduct=self.device_def.product_id
-            )
+            # Check cache first to avoid slow enumeration
+            cache_key = (self.device_def.vendor_id, self.device_def.product_id)
+            self.device = self._device_cache.get(cache_key)
+
+            if self.device:
+                logger.info(f"Using cached device: {self.device_def.name}")
+            else:
+                # Find device
+                logger.info(f"Searching for device {self.device_def.vendor_id:04X}:{self.device_def.product_id:04X}")
+                self.device = usb.core.find(
+                    idVendor=self.device_def.vendor_id,
+                    idProduct=self.device_def.product_id
+                )
+
+                if self.device:
+                    self._device_cache[cache_key] = self.device
 
             if self.device is None:
                 logger.error(f"Device not found: {self.device_def.name}")
@@ -291,7 +305,13 @@ class USBBulkBackend(DisplayBackend):
                 self.device.set_configuration()
                 logger.info("✓ Configuration set")
             except usb.core.USBError as e:
+                # If set_configuration fails, the device might be stale
                 logger.warning(f"Could not set configuration: {e}")
+                if "Entity not found" in str(e) or "No such device" in str(e):
+                    cache_key = (self.device_def.vendor_id, self.device_def.product_id)
+                    if cache_key in self._device_cache:
+                        del self._device_cache[cache_key]
+                        logger.info("Removed stale device from cache")
                 # Continue anyway - device might already be configured
 
             # Enumerate endpoints
