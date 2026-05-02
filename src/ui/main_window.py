@@ -86,12 +86,16 @@ class ConsoleWindow(QDialog):
 
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.clicked.connect(self.console_text.clear)
+        self.clear_btn.setToolTip("Clear console")
+        self.clear_btn.setAccessibleName("Clear console")
         button_layout.addWidget(self.clear_btn)
 
         button_layout.addStretch()
 
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.hide)
+        self.close_btn.setToolTip("Close console")
+        self.close_btn.setAccessibleName("Close console")
         button_layout.addWidget(self.close_btn)
 
         layout.addLayout(button_layout)
@@ -559,6 +563,7 @@ class ThemeEditorWindow(QMainWindow):
         self.quick_save_btn.setFixedWidth(60)
         self.quick_save_btn.clicked.connect(self.quick_save)
         self.quick_save_btn.setToolTip("Save to presets folder (Ctrl+S)")
+        self.quick_save_btn.setAccessibleName("Save to presets folder (Ctrl+S)")
         name_layout.addWidget(self.quick_save_btn)
 
         name_layout.addWidget(QLabel("Background:"))
@@ -574,6 +579,8 @@ class ThemeEditorWindow(QMainWindow):
         self.video_btn = QPushButton("None")
         self.video_btn.setFixedWidth(80)
         self.video_btn.clicked.connect(self.choose_video_background)
+        self.video_btn.setToolTip("Choose video background")
+        self.video_btn.setAccessibleName("Choose video background")
         name_layout.addWidget(self.video_btn)
 
         self.video_fit_combo = QComboBox()

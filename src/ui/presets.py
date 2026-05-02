@@ -244,6 +244,8 @@ class PresetsPanel(QWidget):
         self.new_preset_btn = QPushButton("+ New")
         self.new_preset_btn.setFixedWidth(60)
         self.new_preset_btn.clicked.connect(self.create_new_preset)
+        self.new_preset_btn.setToolTip("Create new preset")
+        self.new_preset_btn.setAccessibleName("Create new preset")
         title_row.addWidget(self.new_preset_btn)
 
         layout.addLayout(title_row)
@@ -262,6 +264,8 @@ class PresetsPanel(QWidget):
         self.prev_btn = QPushButton("◀ Prev")
         self.prev_btn.clicked.connect(self.prev_page)
         self.prev_btn.setFixedWidth(70)
+        self.prev_btn.setToolTip("Previous presets page")
+        self.prev_btn.setAccessibleName("Previous presets page")
         pagination_layout.addWidget(self.prev_btn)
 
         self.page_label = QLabel("Page 1/1")
@@ -271,6 +275,8 @@ class PresetsPanel(QWidget):
         self.next_btn = QPushButton("Next ▶")
         self.next_btn.clicked.connect(self.next_page)
         self.next_btn.setFixedWidth(70)
+        self.next_btn.setToolTip("Next presets page")
+        self.next_btn.setAccessibleName("Next presets page")
         pagination_layout.addWidget(self.next_btn)
 
         layout.addWidget(self.pagination_widget)
