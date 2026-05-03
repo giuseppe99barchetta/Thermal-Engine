@@ -50,19 +50,31 @@ class LibreHardwareMonitorReader:
         self.computer.IsMotherboardEnabled = True
         self.computer.IsStorageEnabled = False
         self.computer.Open()
+        self._cached_sensors = []
+        self._cache_initialized = False
 
     def _get_sensors(self):
+        if self._cache_initialized:
+            for hw in self.computer.Hardware:
+                hw.Update()
+                for sub in hw.SubHardware:
+                    sub.Update()
+            return self._cached_sensors
+
         sensors = []
         for hw in self.computer.Hardware:
             hw.Update()
             for sensor in hw.Sensors:
-                if sensor.Value is not None:
-                    sensors.append((hw.Name, sensor))
+                # Do NOT filter by sensor.Value is not None here,
+                # as sensors might be None initially or become None later.
+                sensors.append((sensor, f"{hw.Name} {sensor.Name}".lower()))
             for sub in hw.SubHardware:
                 sub.Update()
                 for sensor in sub.Sensors:
-                    if sensor.Value is not None:
-                        sensors.append((f"{hw.Name} {sub.Name}", sensor))
+                    sensors.append((sensor, f"{hw.Name} {sub.Name} {sensor.Name}".lower()))
+
+        self._cached_sensors = sensors
+        self._cache_initialized = True
         return sensors
 
     def _find_sensor(self, names, sensor_type, sensors=None):
@@ -71,15 +83,15 @@ class LibreHardwareMonitorReader:
 
         names = [n.lower() for n in names]
 
-        for hw_name, sensor in sensors:
+        for sensor, label in sensors:
             if sensor.SensorType != sensor_type:
                 continue
 
-            label = f"{hw_name} {sensor.Name}".lower()
-
             for n in names:
                 if n in label:
-                    return float(sensor.Value)
+                    if sensor.Value is not None:
+                        return float(sensor.Value)
+                    return 0.0
 
         return 0.0
 
@@ -144,11 +156,12 @@ class LibreHardwareMonitorReader:
         best = 0.0
         fallback = 0.0
 
-        for hw_name, sensor in sensors:
+        for sensor, label in sensors:
             if sensor.SensorType != SensorType.Load:
                 continue
 
-            label = f"{hw_name} {sensor.Name}".lower()
+            if sensor.Value is None:
+                continue
 
             if "gpu" in label:
                 for c in candidates:
