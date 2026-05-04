@@ -4,3 +4,7 @@
 ## 2025-03-01 - O(N*M) String Matching in Hardware Sensor Polling
 **Learning:** In `LibreHardwareMonitorReader`, `_find_sensor` and `get_gpu_usage` were executing O(N*M) string matching (`n in label.lower()`) on every polling cycle (often every second). This was surprisingly slow and created a polling overhead bottleneck. However, LibreHardwareMonitor sensor objects and labels are stable after `Open()`.
 **Action:** Cache the reference to the resolved `sensor` object during the first match instead of re-scanning strings every poll. Look out for static architectures where we can memoize the lookup result rather than just caching the raw string lists.
+
+## $(date +%Y-%m-%d) - Non-Blocking Waits in Synchronous Core Logic
+ **Learning:** Using `time.sleep()` inside synchronous library or backend logic (`src/core/device_backends.py`) that gets called directly from a PySide6 GUI thread severely blocks the UI thread, causing visual freezing during initialization. Hardcoding `time.sleep` makes this unavoidable.
+ **Action:** To maintain UI responsiveness without refactoring legacy synchronous methods into async codebases, dynamically detect if a `QCoreApplication` is running. If so, execute a non-blocking wait using `QEventLoop` and `QTimer`. Keep `time.sleep()` strictly as a fallback for headless test scenarios where Qt doesn't exist. Always wrap Qt imports in `try/except ImportError` in `src/core/` to prevent introducing hard framework dependencies into lower-level modules.
