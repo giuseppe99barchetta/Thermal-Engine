@@ -425,8 +425,21 @@ class USBBulkBackend(DisplayBackend):
             logger.info(f"✓ Initialization command sent ({bytes_written} bytes)")
 
             # Small delay for device to process init
-            import time
-            time.sleep(0.1)
+            # Use QEventLoop if a Qt app is running to prevent UI freeze
+            qt_app_running = False
+            try:
+                from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
+                if QCoreApplication.instance() is not None:
+                    loop = QEventLoop()
+                    QTimer.singleShot(100, loop.quit)
+                    loop.exec()
+                    qt_app_running = True
+            except ImportError:
+                pass
+
+            if not qt_app_running:
+                import time
+                time.sleep(0.1)
 
         except Exception as e:
             logger.error(f"Failed to send init command: {e}")
