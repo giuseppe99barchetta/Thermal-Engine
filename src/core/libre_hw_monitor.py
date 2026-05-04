@@ -52,6 +52,8 @@ class LibreHardwareMonitorReader:
         self.computer.Open()
         self._cached_sensors = []
         self._cache_initialized = False
+        self._sensor_mapping_cache = {}
+        self._gpu_usage_sensors = None
 
     def _get_sensors(self):
         if self._cache_initialized:
@@ -81,18 +83,30 @@ class LibreHardwareMonitorReader:
         if sensors is None:
             sensors = self._get_sensors()
 
-        names = [n.lower() for n in names]
+        # Cache the sensor object that matched to avoid O(N*M) string matching on every poll
+        cache_key = (tuple(names), sensor_type)
+        if cache_key in self._sensor_mapping_cache:
+            sensor = self._sensor_mapping_cache[cache_key]
+            if sensor is not None and sensor.Value is not None:
+                return float(sensor.Value)
+            elif sensor is not None:
+                return 0.0
+            return 0.0
+
+        names_lower = [n.lower() for n in names]
 
         for sensor, label in sensors:
             if sensor.SensorType != sensor_type:
                 continue
 
-            for n in names:
+            for n in names_lower:
                 if n in label:
+                    self._sensor_mapping_cache[cache_key] = sensor
                     if sensor.Value is not None:
                         return float(sensor.Value)
                     return 0.0
 
+        self._sensor_mapping_cache[cache_key] = None
         return 0.0
 
     # -----------------------------
@@ -145,33 +159,42 @@ class LibreHardwareMonitorReader:
         if sensors is None:
             sensors = self._get_sensors()
 
-        candidates = [
-            "gpu core",
-            "gpu total",
-            "d3d",
-            "3d",
-            "compute",
-        ]
+        if self._gpu_usage_sensors is None:
+            candidates = [
+                "gpu core",
+                "gpu total",
+                "d3d",
+                "3d",
+                "compute",
+            ]
+            self._gpu_usage_sensors = []
+            self._gpu_usage_fallback = None
+
+            for sensor, label in sensors:
+                if sensor.SensorType != SensorType.Load:
+                    continue
+
+                if "gpu" in label:
+                    for c in candidates:
+                        if c in label:
+                            self._gpu_usage_sensors.append(sensor)
+                            break
+
+                if self._gpu_usage_fallback is None and "3d" in label:
+                    self._gpu_usage_fallback = sensor
 
         best = 0.0
-        fallback = 0.0
+        for sensor in self._gpu_usage_sensors:
+            if sensor.Value is not None:
+                best = max(best, float(sensor.Value))
 
-        for sensor, label in sensors:
-            if sensor.SensorType != SensorType.Load:
-                continue
+        if best > 0.0:
+            return best
 
-            if sensor.Value is None:
-                continue
+        if self._gpu_usage_fallback and self._gpu_usage_fallback.Value is not None:
+            return float(self._gpu_usage_fallback.Value)
 
-            if "gpu" in label:
-                for c in candidates:
-                    if c in label:
-                        best = max(best, float(sensor.Value))
-
-            if fallback == 0.0 and "3d" in label:
-                fallback = float(sensor.Value)
-
-        return best if best > 0.0 else fallback
+        return 0.0
 
     def get_gpu_memory_usage(self, sensors=None):
         return self._find_sensor(
