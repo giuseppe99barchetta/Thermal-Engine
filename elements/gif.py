@@ -8,6 +8,7 @@ import os
 import time
 import sys
 import logging
+import functools
 from PIL import Image as PILImage
 
 logger = logging.getLogger(__name__)
@@ -30,11 +31,6 @@ DEFAULT_PROPS = {
     "gif_path": "",
     "scale_mode": "fit",  # "fit", "fill", "stretch"
 }
-
-# Cache for loaded GIFs - stores frames and timing info per path
-_gif_cache = {}
-_gif_cache_max_size = 10  # Maximum number of GIFs to cache
-_gif_cache_order = []  # Track insertion order for LRU eviction
 
 # Playback state per element
 _playback_state = {}
@@ -105,35 +101,16 @@ class GifData:
             return False
 
 
+@functools.lru_cache(maxsize=32)
 def get_gif_data(path):
     """Get or load GIF data from cache with LRU eviction."""
-    global _gif_cache_order
-
     if not path:
         return None
-
-    if path in _gif_cache:
-        # Move to end of order list (most recently used)
-        if path in _gif_cache_order:
-            _gif_cache_order.remove(path)
-        _gif_cache_order.append(path)
-        return _gif_cache[path]
 
     # Load new GIF
     gif_data = GifData(path)
     gif_data.load()
-
-    # Evict oldest entries if cache is full
-    while len(_gif_cache) >= _gif_cache_max_size and _gif_cache_order:
-        oldest_path = _gif_cache_order.pop(0)
-        if oldest_path in _gif_cache:
-            del _gif_cache[oldest_path]
-            logger.info(f"Evicted from cache: {oldest_path}")
-
-    _gif_cache[path] = gif_data
-    _gif_cache_order.append(path)
-
-    return _gif_cache[path]
+    return gif_data
 
 
 def get_current_frame_index(element, gif_data):
@@ -197,6 +174,17 @@ def get_scaled_frame(frame, element_width, element_height, scale_mode):
         return result
 
 
+
+
+@functools.lru_cache(maxsize=128)
+def get_scaled_frame_cached(gif_path, frame_idx, element_width, element_height, scale_mode):
+    """Get scaled frame from cache."""
+    gif_data = get_gif_data(gif_path)
+    if not gif_data or not gif_data.loaded or frame_idx >= len(gif_data.frames):
+        return None
+    frame = gif_data.frames[frame_idx]
+    return get_scaled_frame(frame, element_width, element_height, scale_mode)
+
 def draw_preview(painter, element, x, y, scale):
     """Draw the GIF in the Qt preview canvas."""
     width = int(element.width * scale)
@@ -238,8 +226,10 @@ def draw_preview(painter, element, x, y, scale):
     frame_idx = get_current_frame_index(element, gif_data)
     frame = gif_data.frames[frame_idx]
 
-    # Scale frame to element size
-    scaled_frame = get_scaled_frame(frame, element.width, element.height, scale_mode)
+    # Scale frame to element size (cached)
+    scaled_frame = get_scaled_frame_cached(gif_path, frame_idx, element.width, element.height, scale_mode)
+    if not scaled_frame:
+        return
 
     # Scale for preview
     if scale != 1.0:
@@ -284,8 +274,10 @@ def render_image(draw, img, element):
     frame_idx = get_current_frame_index(element, gif_data)
     frame = gif_data.frames[frame_idx]
 
-    # Scale frame to element size
-    scaled_frame = get_scaled_frame(frame, width, height, scale_mode)
+    # Scale frame to element size (cached)
+    scaled_frame = get_scaled_frame_cached(gif_path, frame_idx, width, height, scale_mode)
+    if not scaled_frame:
+        return
 
     # Apply opacity if needed
     if opacity < 100:
@@ -310,6 +302,7 @@ def render_image(draw, img, element):
 
 def clear_cache():
     """Clear the GIF cache to free memory."""
-    global _gif_cache, _playback_state
-    _gif_cache = {}
+    global _playback_state
+    get_gif_data.cache_clear()
+    get_scaled_frame_cached.cache_clear()
     _playback_state = {}

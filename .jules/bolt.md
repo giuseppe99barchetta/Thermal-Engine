@@ -4,3 +4,6 @@
 ## 2025-03-01 - O(N*M) String Matching in Hardware Sensor Polling
 **Learning:** In `LibreHardwareMonitorReader`, `_find_sensor` and `get_gpu_usage` were executing O(N*M) string matching (`n in label.lower()`) on every polling cycle (often every second). This was surprisingly slow and created a polling overhead bottleneck. However, LibreHardwareMonitor sensor objects and labels are stable after `Open()`.
 **Action:** Cache the reference to the resolved `sensor` object during the first match instead of re-scanning strings every poll. Look out for static architectures where we can memoize the lookup result rather than just caching the raw string lists.
+## 2026-05-04 - Caching Pillow Operations with functools.lru_cache
+**Learning:** Pillow `Image` objects are unhashable, which means Python's `@functools.lru_cache` cannot be directly applied to functions that accept them as arguments.
+**Action:** When attempting to cache expensive image operations (like resizing), refactor the function signature to accept hashable primitive identifiers (e.g., `(file_path, frame_index)`) and retrieve the `PILImage` object from a dictionary or list *inside* the cached function body.
