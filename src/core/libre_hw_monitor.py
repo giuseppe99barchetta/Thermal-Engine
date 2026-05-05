@@ -1,241 +1,220 @@
 """
-LibreHardwareMonitor Reader
+Safe hardware monitor reader.
 
-Open-source replacement for HWiNFO.
-Reads CPU / GPU / RAM / Power / Clocks directly via LibreHardwareMonitor DLL.
-
-No external programs required.
+This module intentionally avoids bundled kernel monitoring drivers.
+It uses user-mode Windows APIs and psutil only, so Windows Defender does not
+see a vulnerable driver extracted at runtime.
 """
 
-import os
+import ctypes
 import sys
-import threading
-import clr
 
-# -----------------------------
-# Load LibreHardwareMonitor DLL
-# -----------------------------
+import psutil
 
-def _get_base_path():
-    if getattr(sys, "frozen", False):
-        return sys._MEIPASS
-    # Navigate from src/core/ to project root
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-BASE_DIR = _get_base_path()
-DLL_PATH = os.path.join(BASE_DIR, "libs", "LibreHardwareMonitorLib.dll")
+DEFAULT_SENSOR_DATA = {
+    "cpu_temp": 0.0,
+    "cpu_clock": 0.0,
+    "cpu_power": 0.0,
+    "gpu_temp": 0.0,
+    "gpu_percent": 0.0,
+    "gpu_clock": 0.0,
+    "gpu_memory_clock": 0.0,
+    "gpu_memory_percent": 0.0,
+    "gpu_power": 0.0,
+}
 
-if not os.path.exists(DLL_PATH):
-    raise FileNotFoundError(
-        "LibreHardwareMonitorLib.dll not found.\n"
-        "Download it from:\n"
-        "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases\n"
-        "and place it in /libs"
-    )
 
-clr.AddReference(os.path.abspath(DLL_PATH))
+class _PdhGpuReader:
+    PDH_FMT_DOUBLE = 0x00000200
+    ERROR_SUCCESS = 0
+    PDH_MORE_DATA = 0x800007D2
 
-from LibreHardwareMonitor.Hardware import Computer, SensorType
+    class _PDH_FMT_COUNTERVALUE_DOUBLE(ctypes.Structure):
+        _fields_ = [
+            ("CStatus", ctypes.c_ulong),
+            ("doubleValue", ctypes.c_double),
+        ]
 
-# -----------------------------
-# Reader
-# -----------------------------
-
-class LibreHardwareMonitorReader:
     def __init__(self):
-        self.computer = Computer()
-        self.computer.IsCpuEnabled = True
-        self.computer.IsGpuEnabled = True
-        self.computer.IsMemoryEnabled = True
-        self.computer.IsMotherboardEnabled = True
-        self.computer.IsStorageEnabled = False
-        self.computer.Open()
-        self._cached_sensors = []
-        self._cache_initialized = False
-        self._sensor_mapping_cache = {}
-        self._gpu_usage_sensors = None
+        self._pdh = ctypes.WinDLL("pdh.dll")
+        self._query = ctypes.c_void_p()
+        self._counters = []
+        self._setup_api()
+        self._open()
 
-    def _get_sensors(self):
-        if self._cache_initialized:
-            for hw in self.computer.Hardware:
-                hw.Update()
-                for sub in hw.SubHardware:
-                    sub.Update()
-            return self._cached_sensors
+    def _setup_api(self):
+        self._pdh.PdhOpenQueryW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self._pdh.PdhOpenQueryW.restype = ctypes.c_ulong
 
-        sensors = []
-        for hw in self.computer.Hardware:
-            hw.Update()
-            for sensor in hw.Sensors:
-                # Do NOT filter by sensor.Value is not None here,
-                # as sensors might be None initially or become None later.
-                sensors.append((sensor, f"{hw.Name} {sensor.Name}".lower()))
-            for sub in hw.SubHardware:
-                sub.Update()
-                for sensor in sub.Sensors:
-                    sensors.append((sensor, f"{hw.Name} {sub.Name} {sensor.Name}".lower()))
+        self._pdh.PdhAddEnglishCounterW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        self._pdh.PdhAddEnglishCounterW.restype = ctypes.c_ulong
 
-        self._cached_sensors = sensors
-        self._cache_initialized = True
-        return sensors
+        self._pdh.PdhAddCounterW.argtypes = self._pdh.PdhAddEnglishCounterW.argtypes
+        self._pdh.PdhAddCounterW.restype = ctypes.c_ulong
 
-    def _find_sensor(self, names, sensor_type, sensors=None):
-        if sensors is None:
-            sensors = self._get_sensors()
+        self._pdh.PdhCollectQueryData.argtypes = [ctypes.c_void_p]
+        self._pdh.PdhCollectQueryData.restype = ctypes.c_ulong
 
-        # Cache the sensor object that matched to avoid O(N*M) string matching on every poll
-        cache_key = (tuple(names), sensor_type)
-        if cache_key in self._sensor_mapping_cache:
-            sensor = self._sensor_mapping_cache[cache_key]
-            if sensor is not None and sensor.Value is not None:
-                return float(sensor.Value)
-            elif sensor is not None:
-                return 0.0
-            return 0.0
+        self._pdh.PdhGetFormattedCounterValue.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.POINTER(ctypes.c_ulong),
+            ctypes.POINTER(self._PDH_FMT_COUNTERVALUE_DOUBLE),
+        ]
+        self._pdh.PdhGetFormattedCounterValue.restype = ctypes.c_ulong
 
-        names_lower = [n.lower() for n in names]
+        self._pdh.PdhExpandWildCardPathW.argtypes = [
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.POINTER(ctypes.c_ulong),
+            ctypes.c_ulong,
+        ]
+        self._pdh.PdhExpandWildCardPathW.restype = ctypes.c_ulong
 
-        for sensor, label in sensors:
-            if sensor.SensorType != sensor_type:
+        self._pdh.PdhCloseQuery.argtypes = [ctypes.c_void_p]
+        self._pdh.PdhCloseQuery.restype = ctypes.c_ulong
+
+    def _open(self):
+        status = self._pdh.PdhOpenQueryW(None, 0, ctypes.byref(self._query))
+        if status != self.ERROR_SUCCESS:
+            raise OSError(f"PdhOpenQueryW failed: 0x{status:08x}")
+
+        for path in self._expand_paths(r"\GPU Engine(*)\Utilization Percentage"):
+            lowered = path.lower()
+            if not any(engine in lowered for engine in ("engtype_3d", "engtype_compute")):
                 continue
 
-            for n in names_lower:
-                if n in label:
-                    self._sensor_mapping_cache[cache_key] = sensor
-                    if sensor.Value is not None:
-                        return float(sensor.Value)
-                    return 0.0
+            counter = ctypes.c_void_p()
+            status = self._pdh.PdhAddEnglishCounterW(
+                self._query,
+                path,
+                0,
+                ctypes.byref(counter),
+            )
+            if status != self.ERROR_SUCCESS:
+                status = self._pdh.PdhAddCounterW(
+                    self._query,
+                    path,
+                    0,
+                    ctypes.byref(counter),
+                )
+            if status == self.ERROR_SUCCESS:
+                self._counters.append(counter)
 
-        self._sensor_mapping_cache[cache_key] = None
-        return 0.0
+        if not self._counters:
+            raise OSError("No GPU Engine utilization counters available")
 
-    # -----------------------------
-    # Public API (drop-in)
-    # -----------------------------
+        self._pdh.PdhCollectQueryData(self._query)
 
-    def get_cpu_temp(self, sensors=None):
-        return self._find_sensor(
-            ["cpu package", "tctl", "tdie", "cpu die"],
-            SensorType.Temperature,
-            sensors
+    def _expand_paths(self, wildcard_path):
+        size = ctypes.c_ulong(0)
+        status = self._pdh.PdhExpandWildCardPathW(
+            None,
+            wildcard_path,
+            None,
+            ctypes.byref(size),
+            0,
         )
+        if status not in (self.PDH_MORE_DATA, self.ERROR_SUCCESS) or size.value == 0:
+            return []
 
-    def get_cpu_clock(self, sensors=None):
-        return self._find_sensor(
-            ["core 0 clock", "cpu core"],
-            SensorType.Clock,
-            sensors
+        buffer = ctypes.create_unicode_buffer(size.value)
+        status = self._pdh.PdhExpandWildCardPathW(
+            None,
+            wildcard_path,
+            buffer,
+            ctypes.byref(size),
+            0,
         )
+        if status != self.ERROR_SUCCESS:
+            return []
 
-    def get_cpu_power(self, sensors=None):
-        return self._find_sensor(
-            ["cpu package power", "ppt", "cpu power"],
-            SensorType.Power,
-            sensors
-        )
+        raw = buffer[:size.value]
+        return [part for part in raw.split("\x00") if part]
 
-    def get_gpu_temp(self, sensors=None):
-        return self._find_sensor(
-            ["gpu core", "gpu temperature"],
-            SensorType.Temperature,
-            sensors
-        )
+    def get_gpu_usage(self):
+        status = self._pdh.PdhCollectQueryData(self._query)
+        if status != self.ERROR_SUCCESS:
+            return 0.0
 
-    def get_gpu_clock(self, sensors=None):
-        return self._find_sensor(
-            ["gpu core clock", "gpu clock"],
-            SensorType.Clock,
-            sensors
-        )
+        total = 0.0
+        value_type = ctypes.c_ulong(0)
+        value = self._PDH_FMT_COUNTERVALUE_DOUBLE()
+        for counter in self._counters:
+            status = self._pdh.PdhGetFormattedCounterValue(
+                counter,
+                self.PDH_FMT_DOUBLE,
+                ctypes.byref(value_type),
+                ctypes.byref(value),
+            )
+            if status == self.ERROR_SUCCESS and value.CStatus == self.ERROR_SUCCESS:
+                total += max(0.0, value.doubleValue)
 
-    def get_gpu_memory_clock(self, sensors=None):
-        return self._find_sensor(
-            ["memory clock"],
-            SensorType.Clock,
-            sensors
-        )
+        return min(100.0, total)
 
-    def get_gpu_usage(self, sensors=None):
-        if sensors is None:
-            sensors = self._get_sensors()
+    def close(self):
+        if self._query:
+            self._pdh.PdhCloseQuery(self._query)
+            self._query = ctypes.c_void_p()
 
-        if self._gpu_usage_sensors is None:
-            candidates = [
-                "gpu core",
-                "gpu total",
-                "d3d",
-                "3d",
-                "compute",
-            ]
-            self._gpu_usage_sensors = []
-            self._gpu_usage_fallback = None
 
-            for sensor, label in sensors:
-                if sensor.SensorType != SensorType.Load:
-                    continue
+class LibreHardwareMonitorReader:
+    """Compatibility wrapper with old class name, but no bundled driver."""
 
-                if "gpu" in label:
-                    for c in candidates:
-                        if c in label:
-                            self._gpu_usage_sensors.append(sensor)
-                            break
-
-                if self._gpu_usage_fallback is None and "3d" in label:
-                    self._gpu_usage_fallback = sensor
-
-        best = 0.0
-        for sensor in self._gpu_usage_sensors:
-            if sensor.Value is not None:
-                best = max(best, float(sensor.Value))
-
-        if best > 0.0:
-            return best
-
-        if self._gpu_usage_fallback and self._gpu_usage_fallback.Value is not None:
-            return float(self._gpu_usage_fallback.Value)
-
-        return 0.0
-
-    def get_gpu_memory_usage(self, sensors=None):
-        return self._find_sensor(
-            ["memory load", "memory usage"],
-            SensorType.Load,
-            sensors
-        )
-
-    def get_gpu_power(self, sensors=None):
-        return self._find_sensor(
-            ["gpu power", "board power"],
-            SensorType.Power,
-            sensors
-        )
+    def __init__(self):
+        self._gpu_reader = None
+        if sys.platform == "win32":
+            try:
+                self._gpu_reader = _PdhGpuReader()
+            except Exception:
+                self._gpu_reader = None
 
     def get_thermal_sensors(self):
-        sensors = self._get_sensors()
-        return {
-            "cpu_temp": self.get_cpu_temp(sensors),
-            "cpu_clock": int(self.get_cpu_clock(sensors)),
-            "cpu_power": self.get_cpu_power(sensors),
-            "gpu_temp": self.get_gpu_temp(sensors),
-            "gpu_percent": self.get_gpu_usage(sensors),
-            "gpu_clock": int(self.get_gpu_clock(sensors)),
-            "gpu_memory_clock": int(self.get_gpu_memory_clock(sensors)),
-            "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
-            "gpu_power": self.get_gpu_power(sensors),
-        }
+        data = DEFAULT_SENSOR_DATA.copy()
+        data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
+
+        freq = psutil.cpu_freq()
+        if freq and freq.current:
+            data["cpu_clock"] = float(freq.current)
+
+        vm = psutil.virtual_memory()
+        data["ram_percent"] = float(vm.percent)
+        data["ram_used"] = float(vm.used) / (1024 ** 3)
+        data["ram_available"] = float(vm.available) / (1024 ** 3)
+
+        if self._gpu_reader:
+            data["gpu_percent"] = self._gpu_reader.get_gpu_usage()
+
+        return data
+
+    def close(self):
+        if self._gpu_reader:
+            self._gpu_reader.close()
+            self._gpu_reader = None
 
 
-# -----------------------------
-# Global helpers (same pattern)
-# -----------------------------
+SafeHardwareMonitorReader = LibreHardwareMonitorReader
 
 _reader = None
+
 
 def get_hwinfo_reader():
     global _reader
     if _reader is None:
         _reader = LibreHardwareMonitorReader()
     return _reader
+
 
 def is_hwinfo_available():
     try:
@@ -244,20 +223,13 @@ def is_hwinfo_available():
     except Exception:
         return False
 
+
 def get_hwinfo_sensors():
     reader = get_hwinfo_reader()
     return reader.get_thermal_sensors()
 
 
-# -----------------------------
-# Test
-# -----------------------------
-
 if __name__ == "__main__":
-    r = LibreHardwareMonitorReader()
-    sensors = r.get_thermal_sensors()
-
-    print("LibreHardwareMonitor sensors")
-    print("=" * 40)
-    for k, v in sensors.items():
-        print(f"{k}: {v}")
+    reader = LibreHardwareMonitorReader()
+    for key, value in reader.get_thermal_sensors().items():
+        print(f"{key}: {value}")

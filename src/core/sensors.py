@@ -1,22 +1,22 @@
 """
-Sensor monitoring using LibreHardwareMonitor (open-source).
+Sensor monitoring using safe user-mode APIs.
 
-No external programs required.
+No kernel driver required.
 """
 
 import threading
 import time
 
 from src.core.libre_hw_monitor import (
-    LibreHardwareMonitorReader,
+    SafeHardwareMonitorReader,
 )
 
 # Configuration
 _SENSOR_UPDATE_INTERVAL = 0.5
 
 # Track initialization state
-HAS_LHM = False
-LHM_ERROR = None
+HAS_SAFE_MONITOR = False
+SENSOR_ERROR = None
 
 # Background sensor thread
 _sensor_thread = None
@@ -70,12 +70,12 @@ def _apply_smoothing(raw_data):
 def _get_reader():
     global _reader
     if _reader is None:
-        _reader = LibreHardwareMonitorReader()
+        _reader = SafeHardwareMonitorReader()
     return _reader
 
 
 def _sensor_polling_thread():
-    global _latest_sensor_data, _sensor_thread_running, HAS_LHM
+    global _latest_sensor_data, _sensor_thread_running, HAS_SAFE_MONITOR, HAS_LHM
 
     while _sensor_thread_running:
         try:
@@ -83,19 +83,22 @@ def _sensor_polling_thread():
             data = reader.get_thermal_sensors()
 
             if data and any(v > 0 for v in data.values()):
-                if not HAS_LHM:
+                if not HAS_SAFE_MONITOR:
+                    HAS_SAFE_MONITOR = True
                     HAS_LHM = True
-                    print("[Sensors] Connected to LibreHardwareMonitor")
+                    print("[Sensors] Connected to safe hardware monitor")
 
                 smoothed = _apply_smoothing(data)
                 with _sensor_data_lock:
                     _latest_sensor_data = smoothed
             else:
-                if HAS_LHM:
+                if HAS_SAFE_MONITOR:
+                    HAS_SAFE_MONITOR = False
                     HAS_LHM = False
-                    print("[Sensors] LibreHardwareMonitor returned no data")
+                    print("[Sensors] Safe hardware monitor returned no data")
 
         except Exception as e:
+            HAS_SAFE_MONITOR = False
             HAS_LHM = False
             print(f"[Sensors] Poll error: {e}")
 
@@ -103,7 +106,7 @@ def _sensor_polling_thread():
 
 
 def init_sensors(app_dir=None):
-    global HAS_LHM, LHM_ERROR
+    global HAS_SAFE_MONITOR, SENSOR_ERROR, HAS_LHM, LHM_ERROR
     global _sensor_thread, _sensor_thread_running
 
     if _sensor_thread_running:
@@ -115,16 +118,20 @@ def init_sensors(app_dir=None):
         if initial:
             with _sensor_data_lock:
                 _latest_sensor_data.update(initial)
+            HAS_SAFE_MONITOR = True
             HAS_LHM = True
-            print("[Sensors] LibreHardwareMonitor initialized")
+            print("[Sensors] Safe hardware monitor initialized")
         else:
+            HAS_SAFE_MONITOR = False
             HAS_LHM = False
-            print("[Sensors] LibreHardwareMonitor started (no data yet)")
+            print("[Sensors] Safe hardware monitor started (no data yet)")
 
     except Exception as e:
+        HAS_SAFE_MONITOR = False
         HAS_LHM = False
-        LHM_ERROR = str(e)
-        print(f"[Sensors] LibreHardwareMonitor init failed: {e}")
+        SENSOR_ERROR = str(e)
+        LHM_ERROR = SENSOR_ERROR
+        print(f"[Sensors] Safe hardware monitor init failed: {e}")
 
     _sensor_thread_running = True
     _sensor_thread = threading.Thread(
@@ -134,7 +141,7 @@ def init_sensors(app_dir=None):
     _sensor_thread.start()
 
     print("[Sensors] Background polling started")
-    return HAS_LHM
+    return HAS_SAFE_MONITOR
 
 
 def get_cached_sensors():
@@ -155,7 +162,7 @@ get_lhm_sensors_sync = get_sensors_sync
 
 
 def stop_sensors():
-    global _sensor_thread_running, _sensor_thread, HAS_LHM, _reader
+    global _sensor_thread_running, _sensor_thread, HAS_SAFE_MONITOR, HAS_LHM, _reader
 
     print("[Sensors] Stopping sensor monitoring...")
 
@@ -164,15 +171,23 @@ def stop_sensors():
         _sensor_thread.join(timeout=3.0)
 
     _sensor_thread = None
+    if _reader and hasattr(_reader, "close"):
+        _reader.close()
     _reader = None
+    HAS_SAFE_MONITOR = False
     HAS_LHM = False
 
     print("[Sensors] Sensor monitoring stopped")
 
 
 def get_sensor_source():
-    return "librehardwaremonitor" if HAS_LHM else None
+    return "safe-hardware-monitor" if HAS_SAFE_MONITOR else None
 
 
 def get_sensor_source_display():
-    return "LibreHardwareMonitor" if HAS_LHM else "Not connected"
+    return "Safe Hardware Monitor" if HAS_SAFE_MONITOR else "Not connected"
+
+
+# Backwards compatibility for older imports.
+HAS_LHM = HAS_SAFE_MONITOR
+LHM_ERROR = SENSOR_ERROR

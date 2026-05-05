@@ -66,9 +66,10 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 ### Hardware Sensor Support
 
-**Supported hardware** (via HWiNFO):
-- **CPUs**: Intel Core (all generations), AMD Ryzen (all generations)
-- **GPUs**: NVIDIA GeForce, AMD Radeon
+**Supported safe sensors**:
+- **CPU/RAM/Network**: user-mode metrics via `psutil`
+- **GPU**: utilization via Windows Performance Counters when available
+- Temperature, power, and some clocks may show `0` unless Windows or a vendor-safe API exposes them.
 
 ## Installation
 
@@ -78,7 +79,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 2. Download `ThermalEngine-vX.X.X.zip` (portable) or `ThermalEngine-vX.X.X-Setup.exe` (installer)
 3. **Portable**: Extract the ZIP and run `ThermalEngine.exe`
 4. **Installer**: Run the setup and launch from Start Menu
-5. Make sure HWiNFO is running with Shared Memory enabled
+5. Run ThermalEngine. No third-party kernel monitoring driver is required.
 
 ### From Source
 
@@ -224,10 +225,10 @@ Auto Profiles automatically switch the active preset based on context:
 - Restart the editor
 
 ### Sensors showing 0 or not working
-1. **Check HWiNFO is running** - ThermalEngine requires HWiNFO for sensor data
-2. **Enable Shared Memory** in HWiNFO Settings
-3. Go to **Display > Diagnose Sensors** to check connection status
-4. Sensors will auto-connect when HWiNFO becomes available
+1. Go to **Display > Diagnose Sensors** to check connection status
+2. Update Windows and GPU drivers so Performance Counters are available
+3. CPU/GPU temperature and power may stay `0`; ThermalEngine avoids vulnerable kernel monitoring drivers
+4. Prefer vendor-provided signed APIs if exact temperature/power data is required
 
 ### Low FPS / Performance issues
 - Reduce target FPS (10 FPS is usually sufficient)
@@ -268,7 +269,7 @@ Thermal-Engine/
 ├── presets.py           # Preset management
 ├── element.py           # Theme element data model
 ├── sensors.py           # Sensor polling and smoothing
-├── hwinfo_reader.py     # HWiNFO shared memory reader
+├── libre_hw_monitor.py  # Safe user-mode hardware monitor compatibility layer
 ├── video_background.py  # Video background support
 ├── constants.py         # Configuration constants (dynamic dimensions)
 ├── scripts/             # Build and utility scripts

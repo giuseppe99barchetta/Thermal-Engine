@@ -34,8 +34,8 @@ from src.ui.main_window import ThemeEditorWindow
 from src.utils.app_path import get_app_dir
 
 
-class HWiNFOSetupDialog(QDialog):
-    """Dialog to help users set up HWiNFO for sensor monitoring."""
+class SensorSetupDialog(QDialog):
+    """Dialog shown when safe sensor monitoring is unavailable."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -48,7 +48,7 @@ class HWiNFOSetupDialog(QDialog):
         layout.setSpacing(15)
 
         # Title
-        title = QLabel("HWiNFO Required for Sensor Data")
+        title = QLabel("Sensor Data Unavailable")
         title_font = QFont()
         title_font.setPointSize(14)
         title_font.setBold(True)
@@ -57,39 +57,28 @@ class HWiNFOSetupDialog(QDialog):
 
         # Explanation
         explanation = QLabel(
-            "ThermalEngine uses HWiNFO to read CPU and GPU sensor data.\n"
-            "HWiNFO is a free, trusted hardware monitoring tool used by\n"
-            "millions of users worldwide."
+            "ThermalEngine could not read user-mode sensor data.\n"
+            "Low-level driver-based monitoring is disabled to avoid\n"
+            "Windows Defender vulnerable-driver blocks."
         )
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
 
         # Download button
-        download_btn = QPushButton("Download HWiNFO (Free)")
-        download_btn.setMinimumHeight(40)
-        download_btn.clicked.connect(self.open_download_page)
-        layout.addWidget(download_btn)
-
-        # Setup instructions
-        instructions_title = QLabel("After installing HWiNFO:")
+        instructions_title = QLabel("Available safe data:")
         instructions_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
         layout.addWidget(instructions_title)
 
         instructions = QLabel(
-            "1. Run HWiNFO and select 'Sensors-only' mode\n"
-            "2. Click the Settings button (gear icon)\n"
-            "3. Check 'Shared Memory Support'\n"
-            "4. Click OK\n"
-            "5. Keep HWiNFO running in the background"
+            "1. CPU utilization, RAM, and network via psutil\n"
+            "2. GPU utilization via Windows Performance Counters when available\n"
+            "3. Temperature, power, and clocks stay 0 if no safe vendor API exists"
         )
         instructions.setStyleSheet("margin-left: 20px;")
         layout.addWidget(instructions)
 
         # Tip
-        tip = QLabel(
-            "Tip: Configure HWiNFO to start with Windows and minimize to tray\n"
-            "for a seamless experience."
-        )
+        tip = QLabel("Tip: Keep Windows and GPU drivers updated for best counter support.")
         tip.setStyleSheet("color: #888; font-style: italic; margin-top: 10px;")
         tip.setWordWrap(True)
         layout.addWidget(tip)
@@ -108,27 +97,25 @@ class HWiNFOSetupDialog(QDialog):
         layout.addLayout(button_layout)
 
     def open_download_page(self):
-        """Open HWiNFO download page in browser."""
-        webbrowser.open("https://www.hwinfo.com/download/")
+        """Open Windows performance counter help page in browser."""
+        webbrowser.open("https://learn.microsoft.com/windows/win32/perfctrs/performance-counters-portal")
 
     def check_again(self):
-        """Re-check if HWiNFO is now available."""
-        from hwinfo_reader import is_hwinfo_available
+        """Re-check if safe sensors are now available."""
+        from src.core.libre_hw_monitor import is_hwinfo_available
 
         if is_hwinfo_available():
             QMessageBox.information(
                 self,
-                "HWiNFO Detected",
-                "HWiNFO is now connected! Sensor data will be available."
+                "Sensors Detected",
+                "Safe sensor data is now available."
             )
             self.accept()
         else:
             QMessageBox.warning(
                 self,
-                "HWiNFO Not Found",
-                "HWiNFO shared memory not detected.\n\n"
-                "Make sure HWiNFO is running and 'Shared Memory Support'\n"
-                "is enabled in Settings."
+                "Sensors Not Available",
+                "Safe user-mode sensors are not available right now."
             )
 
 
@@ -200,15 +187,15 @@ def main():
     palette.setColor(palette.ColorRole.HighlightedText, QColor(255, 255, 255))
     app.setPalette(palette)
 
-    # Initialize sensors (uses HWiNFO shared memory)
+    # Initialize safe user-mode sensors.
     init_sensors()
 
-    # Show HWiNFO setup dialog if not connected (skip if minimized/auto-start)
+    # Show sensor dialog if not connected (skip if minimized/auto-start)
     from src.core.sensors import HAS_LHM
     if not HAS_LHM and not args.minimized:
-        dialog = HWiNFOSetupDialog()
+        dialog = SensorSetupDialog()
         dialog.exec()
-        # Re-initialize sensors in case user set up HWiNFO
+        # Re-initialize sensors in case counters became available
         init_sensors()
 
     # Create main window

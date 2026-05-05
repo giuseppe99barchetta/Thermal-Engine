@@ -2101,33 +2101,33 @@ class ThemeEditorWindow(QMainWindow):
             'net_download': psutil_data['net_download'],
         }
 
-        # Get HWiNFO sensor data from background thread (non-blocking)
+        # Get sensor data from background thread (non-blocking)
         if sensors.HAS_LHM:
             try:
-                hwinfo_data = get_cached_sensors()
-                if hwinfo_data:
+                sensor_data = get_cached_sensors()
+                if sensor_data:
                     # CPU sensors
-                    if hwinfo_data.get('cpu_temp', 0) > 0:
-                        data['cpu_temp'] = hwinfo_data['cpu_temp']
-                    if hwinfo_data.get('cpu_clock', 0) > 0:
-                        data['cpu_clock'] = hwinfo_data['cpu_clock']
-                    if hwinfo_data.get('cpu_power', 0) > 0:
-                        data['cpu_power'] = hwinfo_data['cpu_power']
+                    if sensor_data.get('cpu_temp', 0) > 0:
+                        data['cpu_temp'] = sensor_data['cpu_temp']
+                    if sensor_data.get('cpu_clock', 0) > 0:
+                        data['cpu_clock'] = sensor_data['cpu_clock']
+                    if sensor_data.get('cpu_power', 0) > 0:
+                        data['cpu_power'] = sensor_data['cpu_power']
                     # GPU sensors
-                    if hwinfo_data.get('gpu_temp', 0) > 0:
-                        data['gpu_temp'] = hwinfo_data['gpu_temp']
-                    if hwinfo_data.get('gpu_percent', 0) > 0:
-                        data['gpu_percent'] = hwinfo_data['gpu_percent']
-                    if hwinfo_data.get('gpu_clock', 0) > 0:
-                        data['gpu_clock'] = hwinfo_data['gpu_clock']
-                    if hwinfo_data.get('gpu_memory_percent', 0) > 0:
-                        data['gpu_memory_percent'] = hwinfo_data['gpu_memory_percent']
-                    if hwinfo_data.get('gpu_memory_clock', 0) > 0:
-                        data['gpu_memory_clock'] = hwinfo_data['gpu_memory_clock']
-                    if hwinfo_data.get('gpu_power', 0) > 0:
-                        data['gpu_power'] = hwinfo_data['gpu_power']
+                    if sensor_data.get('gpu_temp', 0) > 0:
+                        data['gpu_temp'] = sensor_data['gpu_temp']
+                    if sensor_data.get('gpu_percent', 0) > 0:
+                        data['gpu_percent'] = sensor_data['gpu_percent']
+                    if sensor_data.get('gpu_clock', 0) > 0:
+                        data['gpu_clock'] = sensor_data['gpu_clock']
+                    if sensor_data.get('gpu_memory_percent', 0) > 0:
+                        data['gpu_memory_percent'] = sensor_data['gpu_memory_percent']
+                    if sensor_data.get('gpu_memory_clock', 0) > 0:
+                        data['gpu_memory_clock'] = sensor_data['gpu_memory_clock']
+                    if sensor_data.get('gpu_power', 0) > 0:
+                        data['gpu_power'] = sensor_data['gpu_power']
             except Exception as e:
-                print(f"HWiNFO sensor read error: {e}")
+                print(f"Sensor read error: {e}")
 
         return data
 
@@ -2141,13 +2141,13 @@ class ThemeEditorWindow(QMainWindow):
         info.append(f"Sensor source: {source}")
         info.append("")
 
-        # HWiNFO status
+        # Sensor status
         HAS_LHM = getattr(sensors, 'HAS_LHM', False)
-        info.append(f"HWiNFO connected: {HAS_LHM}")
+        info.append(f"Safe monitor connected: {HAS_LHM}")
         info.append("")
 
         if HAS_LHM:
-            info.append("Sensor readings from HWiNFO:")
+            info.append("Sensor readings:")
             info.append("-" * 40)
             try:
                 sensor_data = get_sensors_sync()
@@ -2159,18 +2159,9 @@ class ThemeEditorWindow(QMainWindow):
             except Exception as e:
                 info.append(f"  Error: {e}")
         else:
-            info.append("HWiNFO not connected!")
-            info.append("")
-            info.append("To enable sensor monitoring:")
-            info.append("  1. Download HWiNFO from: https://www.hwinfo.com/")
-            info.append("  2. Install and run HWiNFO")
-            info.append("  3. Go to Settings (gear icon)")
-            info.append("  4. Enable 'Shared Memory Support'")
-            info.append("  5. Click OK and run sensors")
-            info.append("  6. Restart ThermalEngine")
-            info.append("")
-            info.append("HWiNFO provides reliable sensor data without")
-            info.append("driver blocklist issues from Windows Defender.")
+            info.append("Safe monitor not connected.")
+            info.append("CPU temperature, CPU power, GPU temperature, clocks,")
+            info.append("and GPU power may show 0 without a vendor-safe API.")
 
         info.append("\n" + "-" * 40)
         info.append("Current sensor values:")
