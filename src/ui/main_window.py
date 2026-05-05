@@ -8,6 +8,7 @@ import json
 import time
 import io
 import threading
+import functools
 import psutil
 import logging
 
@@ -126,6 +127,23 @@ _pil_font_cache_lock = threading.Lock()
 # Gradient image cache for performance
 _gradient_cache = {}
 _gradient_cache_max_size = 20  # Reduced from 50 to save memory
+
+@functools.lru_cache(maxsize=64)
+def _get_cached_image_element(image_path, width, height, scale_proportionally, color_opacity):
+    """Cache loaded, resized, and opacity-adjusted images to prevent disk I/O and resampling overhead."""
+    img_overlay = Image.open(image_path).convert('RGBA')
+    if scale_proportionally:
+        img_overlay.thumbnail((width, height), Image.Resampling.LANCZOS)
+    else:
+        img_overlay = img_overlay.resize((width, height), Image.Resampling.LANCZOS)
+
+    # Apply opacity to image
+    if color_opacity < 100:
+        alpha = img_overlay.split()[3]
+        alpha = alpha.point(lambda x: int(x * color_opacity / 100))
+        img_overlay.putalpha(alpha)
+
+    return img_overlay
 
 
 # Background psutil data collection
@@ -3049,16 +3067,14 @@ class ThemeEditorWindow(QMainWindow):
                         print(f"Unsafe image path blocked: {element.image_path} - {err}")
                     return
                 try:
-                    img_overlay = Image.open(element.image_path).convert('RGBA')
-                    if element.scale_proportionally:
-                        img_overlay.thumbnail((element.width, element.height), Image.Resampling.LANCZOS)
-                    else:
-                        img_overlay = img_overlay.resize((element.width, element.height), Image.Resampling.LANCZOS)
-                    # Apply opacity to image
-                    if color_opacity < 100:
-                        alpha = img_overlay.split()[3]
-                        alpha = alpha.point(lambda x: int(x * color_opacity / 100))
-                        img_overlay.putalpha(alpha)
+                    # Use cached image element to prevent disk I/O and expensive LANCZOS resampling on every frame
+                    img_overlay = _get_cached_image_element(
+                        element.image_path,
+                        element.width,
+                        element.height,
+                        element.scale_proportionally,
+                        color_opacity
+                    )
                     overlay.paste(img_overlay, (element.x, element.y), img_overlay)
                 except Exception as e:
                     print(f"Image load error: {e}")
