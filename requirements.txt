@@ -22,3 +22,6 @@ numpy>=1.24.0
 # Version comparison for update checks
 packaging>=23.0
 
+# .NET interop for LibreHardwareMonitor sensor readings
+pythonnet>=3.0.0
+

@@ -1,12 +1,13 @@
 """
-Safe hardware monitor reader.
+Hardware monitor reader.
 
-This module intentionally avoids bundled kernel monitoring drivers.
-It uses user-mode Windows APIs and psutil only, so Windows Defender does not
-see a vulnerable driver extracted at runtime.
+Primary path uses bundled LibreHardwareMonitorLib.dll through pythonnet for
+CPU/GPU temperature, clocks, power, and load. If that cannot initialize, it
+falls back to safe user-mode Windows counters and psutil usage metrics.
 """
 
 import ctypes
+import os
 import sys
 
 import psutil
@@ -23,6 +24,32 @@ DEFAULT_SENSOR_DATA = {
     "gpu_memory_percent": 0.0,
     "gpu_power": 0.0,
 }
+
+_LHM_TYPES = None
+
+
+def _get_base_path():
+    if getattr(sys, "frozen", False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _load_lhm_types():
+    global _LHM_TYPES
+    if _LHM_TYPES is not None:
+        return _LHM_TYPES
+
+    dll_path = os.path.join(_get_base_path(), "libs", "LibreHardwareMonitorLib.dll")
+    if not os.path.exists(dll_path):
+        raise FileNotFoundError(f"LibreHardwareMonitorLib.dll not found at {dll_path}")
+
+    import clr
+
+    clr.AddReference(os.path.abspath(dll_path))
+    from LibreHardwareMonitor.Hardware import Computer, SensorType
+
+    _LHM_TYPES = (Computer, SensorType)
+    return _LHM_TYPES
 
 
 class _PdhGpuReader:
@@ -169,9 +196,7 @@ class _PdhGpuReader:
             self._query = ctypes.c_void_p()
 
 
-class LibreHardwareMonitorReader:
-    """Compatibility wrapper with old class name, but no bundled driver."""
-
+class _UsageOnlyReader:
     def __init__(self):
         self._gpu_reader = None
         if sys.platform == "win32":
@@ -202,6 +227,190 @@ class LibreHardwareMonitorReader:
         if self._gpu_reader:
             self._gpu_reader.close()
             self._gpu_reader = None
+
+
+class _LibreHardwareMonitorReader:
+    def __init__(self):
+        Computer, _ = _load_lhm_types()
+        self.computer = Computer()
+        self.computer.IsCpuEnabled = True
+        self.computer.IsGpuEnabled = True
+        self.computer.IsMemoryEnabled = True
+        self.computer.IsMotherboardEnabled = True
+        self.computer.IsStorageEnabled = False
+        self.computer.Open()
+        self._cached_sensors = []
+        self._cache_initialized = False
+        self._sensor_mapping_cache = {}
+        self._gpu_usage_sensors = None
+        self._gpu_usage_fallback = None
+
+    def _get_sensors(self):
+        if self._cache_initialized:
+            for hw in self.computer.Hardware:
+                hw.Update()
+                for sub in hw.SubHardware:
+                    sub.Update()
+            return self._cached_sensors
+
+        sensors = []
+        for hw in self.computer.Hardware:
+            hw.Update()
+            for sensor in hw.Sensors:
+                sensors.append((sensor, f"{hw.Name} {sensor.Name}".lower()))
+            for sub in hw.SubHardware:
+                sub.Update()
+                for sensor in sub.Sensors:
+                    sensors.append((sensor, f"{hw.Name} {sub.Name} {sensor.Name}".lower()))
+
+        self._cached_sensors = sensors
+        self._cache_initialized = True
+        return sensors
+
+    def _find_sensor(self, names, sensor_type, sensors=None):
+        if sensors is None:
+            sensors = self._get_sensors()
+
+        cache_key = (tuple(names), sensor_type)
+        if cache_key in self._sensor_mapping_cache:
+            sensor = self._sensor_mapping_cache[cache_key]
+            if sensor is not None and sensor.Value is not None:
+                return float(sensor.Value)
+            return 0.0
+
+        names_lower = [name.lower() for name in names]
+        for sensor, label in sensors:
+            if sensor.SensorType != sensor_type:
+                continue
+
+            for name in names_lower:
+                if name in label:
+                    self._sensor_mapping_cache[cache_key] = sensor
+                    if sensor.Value is not None:
+                        return float(sensor.Value)
+                    return 0.0
+
+        self._sensor_mapping_cache[cache_key] = None
+        return 0.0
+
+    def get_cpu_temp(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(
+            ["cpu package", "tctl", "tdie", "cpu die"],
+            SensorType.Temperature,
+            sensors,
+        )
+
+    def get_cpu_clock(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(["core 0 clock", "cpu core"], SensorType.Clock, sensors)
+
+    def get_cpu_power(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(
+            ["cpu package power", "ppt", "cpu power"],
+            SensorType.Power,
+            sensors,
+        )
+
+    def get_gpu_temp(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(
+            ["gpu core", "gpu temperature"],
+            SensorType.Temperature,
+            sensors,
+        )
+
+    def get_gpu_clock(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(["gpu core clock", "gpu clock"], SensorType.Clock, sensors)
+
+    def get_gpu_memory_clock(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(["memory clock"], SensorType.Clock, sensors)
+
+    def get_gpu_usage(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        if sensors is None:
+            sensors = self._get_sensors()
+
+        if self._gpu_usage_sensors is None:
+            candidates = ["gpu core", "gpu total", "d3d", "3d", "compute"]
+            self._gpu_usage_sensors = []
+            self._gpu_usage_fallback = None
+
+            for sensor, label in sensors:
+                if sensor.SensorType != SensorType.Load:
+                    continue
+
+                if "gpu" in label:
+                    for candidate in candidates:
+                        if candidate in label:
+                            self._gpu_usage_sensors.append(sensor)
+                            break
+
+                if self._gpu_usage_fallback is None and "3d" in label:
+                    self._gpu_usage_fallback = sensor
+
+        best = 0.0
+        for sensor in self._gpu_usage_sensors:
+            if sensor.Value is not None:
+                best = max(best, float(sensor.Value))
+
+        if best > 0.0:
+            return best
+
+        if self._gpu_usage_fallback and self._gpu_usage_fallback.Value is not None:
+            return float(self._gpu_usage_fallback.Value)
+
+        return 0.0
+
+    def get_gpu_memory_usage(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(["memory load", "memory usage"], SensorType.Load, sensors)
+
+    def get_gpu_power(self, sensors=None):
+        _, SensorType = _load_lhm_types()
+        return self._find_sensor(["gpu power", "board power"], SensorType.Power, sensors)
+
+    def get_thermal_sensors(self):
+        sensors = self._get_sensors()
+        data = {
+            "cpu_temp": self.get_cpu_temp(sensors),
+            "cpu_clock": int(self.get_cpu_clock(sensors)),
+            "cpu_power": self.get_cpu_power(sensors),
+            "gpu_temp": self.get_gpu_temp(sensors),
+            "gpu_percent": self.get_gpu_usage(sensors),
+            "gpu_clock": int(self.get_gpu_clock(sensors)),
+            "gpu_memory_clock": int(self.get_gpu_memory_clock(sensors)),
+            "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
+            "gpu_power": self.get_gpu_power(sensors),
+        }
+        data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
+        return data
+
+    def close(self):
+        if self.computer:
+            self.computer.Close()
+            self.computer = None
+
+
+class LibreHardwareMonitorReader:
+    def __init__(self):
+        try:
+            self._reader = _LibreHardwareMonitorReader()
+            self.source = "LibreHardwareMonitor"
+        except Exception as exc:
+            print(f"[Sensors] LibreHardwareMonitor unavailable: {exc}")
+            self._reader = _UsageOnlyReader()
+            self.source = "usage-only"
+
+    def get_thermal_sensors(self):
+        return self._reader.get_thermal_sensors()
+
+    def close(self):
+        if hasattr(self._reader, "close"):
+            self._reader.close()
 
 
 SafeHardwareMonitorReader = LibreHardwareMonitorReader

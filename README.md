@@ -68,8 +68,8 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 **Supported safe sensors**:
 - **CPU/RAM/Network**: user-mode metrics via `psutil`
-- **GPU**: utilization via Windows Performance Counters when available
-- Temperature, power, and some clocks may show `0` unless Windows or a vendor-safe API exposes them.
+- **CPU/GPU temperature, clocks, power, and load**: bundled LibreHardwareMonitor library
+- **Fallback GPU utilization**: Windows Performance Counters when LibreHardwareMonitor is unavailable
 
 ## Installation
 
@@ -226,9 +226,9 @@ Auto Profiles automatically switch the active preset based on context:
 
 ### Sensors showing 0 or not working
 1. Go to **Display > Diagnose Sensors** to check connection status
-2. Update Windows and GPU drivers so Performance Counters are available
-3. CPU/GPU temperature and power may stay `0`; ThermalEngine avoids vulnerable kernel monitoring drivers
-4. Prefer vendor-provided signed APIs if exact temperature/power data is required
+2. Run ThermalEngine as administrator if motherboard, CPU, or GPU sensors are hidden
+3. Update Windows and GPU drivers so fallback Performance Counters are available
+4. Verify `libs/LibreHardwareMonitorLib.dll` is present in source builds or bundled release builds
 
 ### Low FPS / Performance issues
 - Reduce target FPS (10 FPS is usually sufficient)
