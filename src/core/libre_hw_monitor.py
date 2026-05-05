@@ -293,13 +293,78 @@ class _LibreHardwareMonitorReader:
         self._sensor_mapping_cache[cache_key] = None
         return 0.0
 
+    def _find_best_cpu_temperature(self, sensors=None):
+        if sensors is None:
+            sensors = self._get_sensors()
+
+        _, SensorType = _load_lhm_types()
+        include_terms = (
+            "cpu",
+            "processor",
+            "package",
+            "tctl",
+            "tdie",
+            "ccd",
+            "core #",
+            "core max",
+            "core average",
+            "intel core",
+            "amd ryzen",
+        )
+        exclude_terms = (
+            "gpu",
+            "graphics",
+            "memory junction",
+            "vram",
+            "hot spot",
+            "hotspot",
+            "motherboard",
+            "mainboard",
+            "chipset",
+            "vrm",
+            "pch",
+            "ssd",
+            "hdd",
+            "nvme",
+            "drive",
+        )
+
+        best = 0.0
+        for sensor, label in sensors:
+            if sensor.SensorType != SensorType.Temperature:
+                continue
+            if any(term in label for term in exclude_terms):
+                continue
+            if not any(term in label for term in include_terms):
+                continue
+            if sensor.Value is None:
+                continue
+
+            value = float(sensor.Value)
+            if 5.0 <= value <= 125.0:
+                best = max(best, value)
+
+        return best
+
     def get_cpu_temp(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return self._find_sensor(
-            ["cpu package", "tctl", "tdie", "cpu die"],
+        cpu_temp = self._find_sensor(
+            [
+                "cpu package",
+                "cpu core",
+                "core max",
+                "core average",
+                "tctl",
+                "tdie",
+                "cpu die",
+                "cpu ccd",
+            ],
             SensorType.Temperature,
             sensors,
         )
+        if cpu_temp > 0:
+            return cpu_temp
+        return self._find_best_cpu_temperature(sensors)
 
     def get_cpu_clock(self, sensors=None):
         _, SensorType = _load_lhm_types()
