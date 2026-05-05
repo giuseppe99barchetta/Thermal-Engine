@@ -58,7 +58,6 @@ pyinstaller --name="ThermalEngine" `
     --add-data="elements;elements" `
     --add-data="assets;assets" `
     --add-data="presets;presets" `
-    --add-data="libs;libs" `
     --add-binary="libusb-1.0.dll;." `
     --hidden-import=PySide6.QtCore `
     --hidden-import=PySide6.QtGui `
