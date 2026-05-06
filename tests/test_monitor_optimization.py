@@ -45,5 +45,58 @@ class TestSafeHardwareMonitor(unittest.TestCase):
         self.assertEqual(sensors["gpu_percent"], 33.0)
 
 
+class TestFindBestCpuTemperatureCaching(unittest.TestCase):
+    @patch('src.core.libre_hw_monitor._load_lhm_types')
+    def test_find_best_cpu_temperature_caching(self, mock_load):
+        import src.core.libre_hw_monitor as lhm
+        # Mock _load_lhm_types to return a mock SensorType
+        class MockSensorType:
+            Temperature = "Temperature"
+        mock_load.return_value = (MagicMock(), MockSensorType)
+
+        reader = lhm._LibreHardwareMonitorReader()
+
+        # Mock sensors
+        mock_sensor1 = MagicMock()
+        mock_sensor1.SensorType = "Temperature"
+        mock_sensor1.Value = 45.0
+
+        mock_sensor2 = MagicMock()
+        mock_sensor2.SensorType = "Temperature"
+        mock_sensor2.Value = 55.0
+
+        # gpu sensor (should be excluded)
+        mock_sensor3 = MagicMock()
+        mock_sensor3.SensorType = "Temperature"
+        mock_sensor3.Value = 60.0
+
+        # invalid temp sensor (should be included, but value is None initially)
+        mock_sensor4 = MagicMock()
+        mock_sensor4.SensorType = "Temperature"
+        mock_sensor4.Value = None
+
+        mock_sensors = [
+            (mock_sensor1, "cpu core #1"),
+            (mock_sensor2, "cpu package"),
+            (mock_sensor3, "gpu core"),
+            (mock_sensor4, "cpu core max")
+        ]
+
+        reader._get_sensors = MagicMock(return_value=mock_sensors)
+
+        # Call 1: Should populate the cache and return best temp
+        best_temp = reader._find_best_cpu_temperature()
+        self.assertEqual(best_temp, 55.0)
+        self.assertEqual(len(reader._cpu_temp_sensors), 3) # Should include sensor 1, 2, and 4
+        self.assertEqual(reader._get_sensors.call_count, 1)
+
+        # Modify a sensor value and call again
+        mock_sensor4.Value = 70.0
+
+        # Call 2: Should use the cache and NOT call _get_sensors again
+        best_temp2 = reader._find_best_cpu_temperature()
+        self.assertEqual(best_temp2, 70.0)
+        self.assertEqual(reader._get_sensors.call_count, 1) # Still 1
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,9 +5,12 @@
 **Learning:** In `LibreHardwareMonitorReader`, `_find_sensor` and `get_gpu_usage` were executing O(N*M) string matching (`n in label.lower()`) on every polling cycle (often every second). This was surprisingly slow and created a polling overhead bottleneck. However, LibreHardwareMonitor sensor objects and labels are stable after `Open()`.
 **Action:** Cache the reference to the resolved `sensor` object during the first match instead of re-scanning strings every poll. Look out for static architectures where we can memoize the lookup result rather than just caching the raw string lists.
 
-## $(date +%Y-%m-%d) - Non-Blocking Waits in Synchronous Core Logic
+## 2026-05-06 - Non-Blocking Waits in Synchronous Core Logic
  **Learning:** Using `time.sleep()` inside synchronous library or backend logic (`src/core/device_backends.py`) that gets called directly from a PySide6 GUI thread severely blocks the UI thread, causing visual freezing during initialization. Hardcoding `time.sleep` makes this unavoidable.
  **Action:** To maintain UI responsiveness without refactoring legacy synchronous methods into async codebases, dynamically detect if a `QCoreApplication` is running. If so, execute a non-blocking wait using `QEventLoop` and `QTimer`. Keep `time.sleep()` strictly as a fallback for headless test scenarios where Qt doesn't exist. Always wrap Qt imports in `try/except ImportError` in `src/core/` to prevent introducing hard framework dependencies into lower-level modules.
-## $(date +%Y-%m-%d) - Memoization for Image File I/O
+## 2026-05-06 - Memoization for Image File I/O
  **Learning:** In `ThemeEditorWindow`, dragging or updating UI elements changes their state hash, which invalidates the local overlay cache. To prevent heavy CPU/disk spikes from repetitive `Image.open` and LANCZOS resizing operations during interaction, memoize these base image operations using `@functools.lru_cache` keyed by primitive properties (path, dimensions, opacity) completely independent of the element's local state.
  **Action:** When optimizing Pillow (PIL) image operations with `@functools.lru_cache`, do not pass `PILImage` objects as arguments because they are unhashable. Instead, pass hashable primitive identifiers like `(file_path, width, height, scale, opacity)` and retrieve the image inside the cached function.
+## 2026-05-06 - O(N*M) String Matching in CPU Temp Fallback
+**Learning:** In `_LibreHardwareMonitorReader`, `_find_best_cpu_temperature` was executing O(N*M) string matching to filter out CPU temp sensors on every fallback polling cycle. Since the sensor objects and labels are stable, this created unnecessary CPU overhead.
+**Action:** Cache the reference to the matching `sensor` objects in a list (`_cpu_temp_sensors`) during the first match instead of re-scanning strings and looping over the full sensor list every poll.

@@ -244,6 +244,7 @@ class _LibreHardwareMonitorReader:
         self._sensor_mapping_cache = {}
         self._gpu_usage_sensors = None
         self._gpu_usage_fallback = None
+        self._cpu_temp_sensors = None
 
     def _get_sensors(self):
         if self._cache_initialized:
@@ -294,52 +295,57 @@ class _LibreHardwareMonitorReader:
         return 0.0
 
     def _find_best_cpu_temperature(self, sensors=None):
-        if sensors is None:
-            sensors = self._get_sensors()
-
         _, SensorType = _load_lhm_types()
-        include_terms = (
-            "cpu",
-            "processor",
-            "package",
-            "tctl",
-            "tdie",
-            "ccd",
-            "core #",
-            "core max",
-            "core average",
-            "intel core",
-            "amd ryzen",
-        )
-        exclude_terms = (
-            "gpu",
-            "graphics",
-            "memory junction",
-            "vram",
-            "hot spot",
-            "hotspot",
-            "motherboard",
-            "mainboard",
-            "chipset",
-            "vrm",
-            "pch",
-            "ssd",
-            "hdd",
-            "nvme",
-            "drive",
-        )
+
+        if self._cpu_temp_sensors is None:
+            if sensors is None:
+                sensors = self._get_sensors()
+
+            include_terms = (
+                "cpu",
+                "processor",
+                "package",
+                "tctl",
+                "tdie",
+                "ccd",
+                "core #",
+                "core max",
+                "core average",
+                "intel core",
+                "amd ryzen",
+            )
+            exclude_terms = (
+                "gpu",
+                "graphics",
+                "memory junction",
+                "vram",
+                "hot spot",
+                "hotspot",
+                "motherboard",
+                "mainboard",
+                "chipset",
+                "vrm",
+                "pch",
+                "ssd",
+                "hdd",
+                "nvme",
+                "drive",
+            )
+
+            self._cpu_temp_sensors = []
+            for sensor, label in sensors:
+                if sensor.SensorType != SensorType.Temperature:
+                    continue
+                if any(term in label for term in exclude_terms):
+                    continue
+                if not any(term in label for term in include_terms):
+                    continue
+                self._cpu_temp_sensors.append(sensor)
 
         best = 0.0
-        for sensor, label in sensors:
-            if sensor.SensorType != SensorType.Temperature:
-                continue
-            if any(term in label for term in exclude_terms):
-                continue
-            if not any(term in label for term in include_terms):
-                continue
+        for sensor in self._cpu_temp_sensors:
             if sensor.Value is None:
                 continue
-
             value = float(sensor.Value)
             if 5.0 <= value <= 125.0:
                 best = max(best, value)
