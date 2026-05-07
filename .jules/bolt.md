@@ -11,3 +11,7 @@
 ## $(date +%Y-%m-%d) - Memoization for Image File I/O
  **Learning:** In `ThemeEditorWindow`, dragging or updating UI elements changes their state hash, which invalidates the local overlay cache. To prevent heavy CPU/disk spikes from repetitive `Image.open` and LANCZOS resizing operations during interaction, memoize these base image operations using `@functools.lru_cache` keyed by primitive properties (path, dimensions, opacity) completely independent of the element's local state.
  **Action:** When optimizing Pillow (PIL) image operations with `@functools.lru_cache`, do not pass `PILImage` objects as arguments because they are unhashable. Instead, pass hashable primitive identifiers like `(file_path, width, height, scale, opacity)` and retrieve the image inside the cached function.
+
+## 2026-05-07 - Cached CPU Temperature Sensor Lookup
+**Learning:** Just like the GPU usage sensor logic, `_find_best_cpu_temperature` was iterating over all sensor labels doing O(N*M) string matching with `include_terms` and `exclude_terms` every single polling cycle. Because hardware sensors are stable after initialization, this constant string matching is an unnecessary overhead.
+**Action:** Memoize matching sensor objects on the first lookup. Caching the objects directly prevents all string comparison on subsequent polls and dramatically speeds up the continuous CPU temperature queries.
