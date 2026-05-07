@@ -10,3 +10,6 @@
 ## 2024-10-25 - PyQt/PySide6 accessibility for icon-only buttons
 **Learning:** PySide6 `QPushButton` instances used solely to display icons, colors, or visual formatting elements without text strings (like `B` or `I` for formatting, or `...` for file browsing) are completely unreadable to screen readers and difficult to understand visually without labels.
 **Action:** When adding or auditing icon-only buttons in PySide6/PyQt applications, always use both `setToolTip()` for visual mouse users and `setAccessibleName()` for screen reader accessibility to ensure full usability.
+## 2024-05-07 - PySide6 Checkbox Accessible Descriptions
+**Learning:** In PySide6, using `setAccessibleName` on a widget with a visible text label (like a `QCheckBox` or `QPushButton` with text) can override the primary label for screen readers. Extended context (like tooltip text) should be set using `setAccessibleDescription` instead.
+**Action:** Use `setAccessibleDescription` instead of `setAccessibleName` to add extended context to widgets that already have visible text labels.
