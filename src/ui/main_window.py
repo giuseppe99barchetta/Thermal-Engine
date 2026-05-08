@@ -611,6 +611,8 @@ class ThemeEditorWindow(QMainWindow):
 
         self.clear_video_btn = QPushButton("Clear")
         self.clear_video_btn.setFixedWidth(50)
+        self.clear_video_btn.setToolTip("Clear video background")
+        self.clear_video_btn.setAccessibleName("Clear video background")
         self.clear_video_btn.clicked.connect(self.clear_video_background)
         self.clear_video_btn.setEnabled(False)
         name_layout.addWidget(self.clear_video_btn)
@@ -663,12 +665,14 @@ class ThemeEditorWindow(QMainWindow):
         self.add_page_btn = QPushButton("+ Add Page")
         self.add_page_btn.setFixedWidth(90)
         self.add_page_btn.setToolTip("Add a new page")
+        self.add_page_btn.setAccessibleName("Add a new page")
         self.add_page_btn.clicked.connect(self.add_page)
         page_controls_layout.addWidget(self.add_page_btn)
 
         self.delete_page_btn = QPushButton("Delete Page")
         self.delete_page_btn.setFixedWidth(90)
         self.delete_page_btn.setToolTip("Delete current page")
+        self.delete_page_btn.setAccessibleName("Delete current page")
         self.delete_page_btn.clicked.connect(self.delete_page)
         page_controls_layout.addWidget(self.delete_page_btn)
 

@@ -201,6 +201,8 @@ class GradientPreviewWidget(QPushButton):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setText("Click to edit gradient")
+        self.setToolTip("Edit gradient")
+        self.setAccessibleName("Edit gradient")
         self._update_style()
 
     def set_gradient(self, stops):
@@ -326,6 +328,8 @@ class GradientEditorDialog(QDialog):
             color_btn = QPushButton()
             color_btn.setFixedSize(60, 24)
             color_btn.setStyleSheet(f"background-color: {color}; border: 1px solid #555; border-radius: 3px;")
+            color_btn.setToolTip("Pick stop color")
+            color_btn.setAccessibleName("Pick stop color")
             color_btn.clicked.connect(lambda checked, idx=i: self._edit_stop_color(idx))
             stop_layout.addWidget(color_btn)
 
