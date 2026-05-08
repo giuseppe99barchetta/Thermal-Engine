@@ -2137,14 +2137,23 @@ class ThemeEditorWindow(QMainWindow):
         info = []
         info.append("=== Sensor Diagnostic ===\n")
 
-        # Show active sensor source
         source = sensors.get_sensor_source_display() if hasattr(sensors, 'get_sensor_source_display') else "Unknown"
+        sensor_diag = sensors.get_sensor_diagnostics() if hasattr(sensors, 'get_sensor_diagnostics') else {}
+
         info.append(f"Sensor source: {source}")
+        info.append(f"Platform: {sensor_diag.get('platform', 'unknown')}")
+        info.append(f"Reader source: {sensor_diag.get('source', 'unknown')}")
+        info.append(f"Backend: {sensor_diag.get('backend', 'unknown')}")
         info.append("")
 
-        # Sensor status
         HAS_LHM = getattr(sensors, 'HAS_LHM', False)
         info.append(f"Safe monitor connected: {HAS_LHM}")
+        info.append(f"CPU temp source: {sensor_diag.get('cpu_temp_source') or 'not found'}")
+        info.append(f"GPU source: {sensor_diag.get('gpu_source') or 'not found'}")
+        if sensor_diag.get('gpu_card'):
+            info.append(f"GPU card: {sensor_diag['gpu_card']}")
+        if sensor_diag.get('sensor_error'):
+            info.append(f"Last error: {sensor_diag['sensor_error']}")
         info.append("")
 
         if HAS_LHM:
@@ -2161,8 +2170,15 @@ class ThemeEditorWindow(QMainWindow):
                 info.append(f"  Error: {e}")
         else:
             info.append("Safe monitor not connected.")
-            info.append("CPU temperature, CPU power, GPU temperature, clocks,")
-            info.append("and GPU power may show 0 without a vendor-safe API.")
+            info.append("Some values may stay 0 when OS/driver does not expose them.")
+
+        notes = sensor_diag.get('notes') or []
+        if notes:
+            info.append("")
+            info.append("Backend notes:")
+            info.append("-" * 40)
+            for note in notes:
+                info.append(f"  - {note}")
 
         info.append("\n" + "-" * 40)
         info.append("Current sensor values:")
