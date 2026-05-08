@@ -1187,6 +1187,10 @@ class ThemeEditorWindow(QMainWindow):
             getattr(element, 'background_color', '#000000'),
             getattr(element, 'color_opacity', 100),
             getattr(element, 'background_color_opacity', 100),
+            getattr(element, 'border_radius', 0),
+            getattr(element, 'glass_effect', False),
+            getattr(element, 'glass_blur', 10),
+            getattr(element, 'glass_opacity', 50),
             element.value,  # Key: value changes = cache miss
             getattr(element, 'text', element.text if hasattr(element, 'text') else ''),
             getattr(element, 'radius', 0),
@@ -3040,7 +3044,7 @@ class ThemeEditorWindow(QMainWindow):
         elif element.type == "text":
             self.render_text_rgba(overlay, element, font, color_opacity)
         elif element.type == "rectangle":
-            self.render_rectangle_rgba(overlay, element, color_opacity)
+            self.render_rectangle_rgba(overlay, element, color_opacity, blur_source=img)
         elif element.type == "clock":
             # Build time format string based on element settings
             time_format = getattr(element, 'time_format', '24h')
@@ -3114,7 +3118,7 @@ class ThemeEditorWindow(QMainWindow):
             self._element_render_cache[elem_id] = (overlay, current_state_hash, (0, 0))
             self._fast_alpha_composite(img, overlay)
 
-    def render_rectangle_rgba(self, img, element, opacity):
+    def render_rectangle_rgba(self, img, element, opacity, blur_source=None):
         """Render a rectangle with opacity, optional border radius, and glass effect."""
         from PIL import ImageFilter
 
@@ -3130,28 +3134,22 @@ class ThemeEditorWindow(QMainWindow):
             x, y, w, h = element.x, element.y, element.width, element.height
 
             # Extract region to blur
-            region = img.crop((x, y, x + w, y + h))
+            source_img = blur_source if blur_source is not None else img
+            region = source_img.crop((x, y, x + w, y + h))
 
             # Apply gaussian blur
             blurred = region.filter(ImageFilter.GaussianBlur(radius=glass_blur))
 
-            # If border radius, we need to mask the blurred region
+            # Draw blurred background onto overlay so cache can preserve effect.
+            mask = None
             if border_radius > 0:
-                # Create a mask for rounded corners
                 mask = Image.new('L', (w, h), 0)
                 mask_draw = ImageDraw.Draw(mask)
                 mask_draw.rounded_rectangle([0, 0, w, h], radius=border_radius, fill=255)
-
-                # Create a temp image and paste blurred with mask
-                temp = img.crop((x, y, x + w, y + h))
-                temp.paste(blurred, mask=mask)
-                img.paste(temp, (x, y))
-            else:
-                img.paste(blurred, (x, y))
+            img.paste(blurred, (x, y), mask)
 
             # Draw tinted overlay
-            overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
-            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw = ImageDraw.Draw(img)
             tint_rgba = hex_to_rgba(element.color, glass_opacity)
 
             if border_radius > 0:
@@ -3165,8 +3163,6 @@ class ThemeEditorWindow(QMainWindow):
                 overlay_draw.rounded_rectangle(coords, radius=border_radius, outline=border_rgba, width=1)
             else:
                 overlay_draw.rectangle(coords, outline=border_rgba, width=1)
-
-            self._fast_alpha_composite(img, overlay)
 
         elif opacity >= 100:
             draw = ImageDraw.Draw(img)
