@@ -365,20 +365,20 @@ jobs:
         chmod +x scripts/build-linux.sh
         ./scripts/build-linux.sh
 
-    - name: Rename Linux archive
-      id: linux_archive
+    - name: Rename Linux AppImage
+      id: linux_appimage
       run: |
         version="${{ needs.build-and-release.outputs.new_version }}"
-        final_name="ThermalEngine-${version}-linux-x64.tar.gz"
-        mv ThermalEngine-linux-x64.tar.gz "$final_name"
-        echo "archive_name=$final_name" >> "$GITHUB_OUTPUT"
-        echo "Created Linux archive: $final_name"
+        final_name="ThermalEngine-${version}-linux-x64.AppImage"
+        mv ThermalEngine-x86_64.AppImage "$final_name"
+        echo "appimage_name=$final_name" >> "$GITHUB_OUTPUT"
+        echo "Created Linux AppImage: $final_name"
 
     - name: Attach Linux asset to release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ needs.build-and-release.outputs.new_version }}
-        files: ${{ steps.linux_archive.outputs.archive_name }}
+        files: ${{ steps.linux_appimage.outputs.appimage_name }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -386,4 +386,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ThermalEngine-${{ needs.build-and-release.outputs.new_version }}-Linux
-        path: ${{ steps.linux_archive.outputs.archive_name }}
+        path: ${{ steps.linux_appimage.outputs.appimage_name }}

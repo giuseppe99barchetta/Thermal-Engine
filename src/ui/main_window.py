@@ -292,7 +292,12 @@ from src.core import sensors
 from src.core.sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
 from src.utils import settings
 from src.utils.app_path import get_resource_path, get_bundled_resource_path
-from src.utils.updater import UpdateChecker, UpdateDownloader, can_auto_install_asset
+from src.utils.updater import (
+    UpdateChecker,
+    UpdateDownloader,
+    can_auto_install_asset,
+    install_downloaded_update,
+)
 
 
 def hex_to_rgba(hex_color, opacity=100):
@@ -4654,12 +4659,19 @@ class ThemeEditorWindow(QMainWindow):
             progress.close()
 
             if can_auto_install_asset(asset_name) and os.path.exists(installer_path):
+                is_linux_appimage = sys.platform.startswith("linux") and asset_name.lower().endswith(".appimage")
+                install_prompt = (
+                    "Do you want to install it now?\n\n"
+                    "The application will close and restart from the new AppImage."
+                    if is_linux_appimage else
+                    "Do you want to install it now?\n\n"
+                    "The application will close and the installer will start."
+                )
                 reply = QMessageBox.question(
                     self,
                     "Download Complete",
                     "Update downloaded successfully!\n\n"
-                    "Do you want to install it now?\n\n"
-                    "The application will close and the installer will start.",
+                    f"{install_prompt}",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                 )
 
@@ -4673,7 +4685,8 @@ class ThemeEditorWindow(QMainWindow):
                     return
 
                 try:
-                    subprocess.Popen([installer_path])
+                    install_info = install_downloaded_update(installer_path, asset_name)
+                    subprocess.Popen([install_info["path"]])
                     QApplication.instance().quit()
                 except Exception as e:
                     QMessageBox.warning(

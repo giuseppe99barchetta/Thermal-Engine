@@ -8,17 +8,38 @@ import webbrowser
 import urllib.request
 import urllib.error
 import os
+import shutil
 import sys
 import tempfile
 from urllib.parse import urlparse, unquote
 from packaging import version as version_parser
-from PySide6.QtWidgets import QMessageBox
-from PySide6.QtCore import QThread, Signal
+try:
+    from PySide6.QtWidgets import QMessageBox
+    from PySide6.QtCore import QThread, Signal
+except ImportError:  # pragma: no cover - test fallback
+    QMessageBox = None
+
+    class Signal:
+        def __init__(self, *args, **kwargs):
+            self._subscribers = []
+
+        def connect(self, callback):
+            self._subscribers.append(callback)
+
+        def emit(self, *args, **kwargs):
+            for callback in self._subscribers:
+                callback(*args, **kwargs)
+
+    class QThread:
+        def start(self):
+            self.run()
 
 try:
     from src.utils.app_version import __version__
 except ImportError:
     __version__ = "0.0.0"
+
+from src.utils import settings
 
 GITHUB_REPO = "giuseppe99barchetta/Thermal-Engine"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -74,7 +95,47 @@ def get_download_filename(download_url, fallback_name):
 
 def can_auto_install_asset(asset_name, platform=None):
     platform = platform or sys.platform
-    return platform == "win32" and asset_name.lower().endswith(".exe")
+    asset_name = (asset_name or "").lower()
+    if platform == "win32":
+        return asset_name.endswith(".exe")
+    if platform.startswith("linux"):
+        return asset_name.endswith(".appimage")
+    return False
+
+
+def get_linux_appimage_target_path(asset_name=""):
+    current_appimage = os.environ.get("APPIMAGE")
+    if current_appimage:
+        return current_appimage
+
+    if getattr(sys, "frozen", False) and sys.executable.lower().endswith(".appimage"):
+        return sys.executable
+
+    filename = asset_name or "ThermalEngine.AppImage"
+    return os.path.expanduser(os.path.join("~", ".local", "bin", filename))
+
+
+def install_downloaded_update(installer_path, asset_name, platform=None):
+    platform = platform or sys.platform
+    lowered = (asset_name or "").lower()
+
+    if platform == "win32" and lowered.endswith(".exe"):
+        return {"action": "launch-installer", "path": installer_path}
+
+    if platform.startswith("linux") and lowered.endswith(".appimage"):
+        target_path = get_linux_appimage_target_path(asset_name)
+        target_dir = os.path.dirname(target_path)
+        os.makedirs(target_dir, exist_ok=True)
+
+        shutil.move(installer_path, target_path)
+        os.chmod(target_path, 0o755)
+
+        if settings.is_autostart_enabled():
+            settings.set_autostart(True)
+
+        return {"action": "replace-appimage", "path": target_path}
+
+    raise ValueError(f"Unsupported auto-install asset: {asset_name}")
 
 
 class UpdateChecker(QThread):

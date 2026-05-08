@@ -105,6 +105,10 @@ def get_executable_path():
     """Get the path to use for autostart."""
     if getattr(sys, 'frozen', False):
         # Running as compiled executable
+        if IS_LINUX:
+            appimage_path = os.environ.get("APPIMAGE")
+            if appimage_path:
+                return appimage_path
         if IS_WINDOWS:
             return escape_registry_path(sys.executable)
         return sys.executable
