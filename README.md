@@ -61,7 +61,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 ## Requirements
 
-- Windows 10/11
+- Windows 10/11 or Linux
 - Python 3.10+ (only if running from source)
 
 ### Hardware Sensor Support
@@ -71,14 +71,21 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **CPU/GPU temperature, clocks, power, and load**: bundled LibreHardwareMonitor library
 - **Fallback GPU utilization**: Windows Performance Counters when LibreHardwareMonitor is unavailable
 
+**Linux note**:
+- CPU/RAM/Network metrics work out of box
+- LibreHardwareMonitor and Windows Performance Counters are Windows-specific
+- USB/HID display access on Linux may require `udev` permissions
+
 ## Installation
 
 ### Download (Recommended)
 
 1. Go to [Releases](https://github.com/giuseppe99barchetta/ThermalEngine/releases)
-2. Download `ThermalEngine-vX.X.X.zip` (portable) or `ThermalEngine-vX.X.X-Setup.exe` (installer)
-3. **Portable**: Extract the ZIP and run `ThermalEngine.exe`
-4. **Installer**: Run the setup and launch from Start Menu
+2. Download release asset for your platform:
+   - Windows: `ThermalEngine-vX.X.X-Setup.exe`
+   - Linux: `ThermalEngine-vX.X.X-linux-x64.tar.gz`
+3. Windows: run installer or extracted executable
+4. Linux: extract archive and run `ThermalEngine`
 5. Run ThermalEngine. No third-party kernel monitoring driver is required.
 
 ### From Source
@@ -99,9 +106,19 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
    python main.py
    ```
 
+### Arch Linux Notes
+
+Install common runtime packages first:
+
+```bash
+sudo pacman -S python python-pip base-devel libusb hidapi
+```
+
+If your display is detected but cannot be opened, create suitable `udev` rules for its VID/PID.
+
 ### Local Test Build
 
-Build a standalone executable locally:
+Build local standalone package for your platform:
 
 ```powershell
 # Basic build (ZIP only)
@@ -122,6 +139,15 @@ Build a standalone executable locally:
 ```powershell
 .\scripts\clean-local.ps1
 ```
+
+```bash
+# Linux build
+chmod +x scripts/build-linux.sh
+./scripts/build-linux.sh
+```
+
+**Linux output:**
+- `ThermalEngine-linux-x64.tar.gz`
 
 ## Usage
 
@@ -305,8 +331,9 @@ major: description   # Major bump (1.0.0 -> 2.0.0)
 2. Push to `main` branch
 3. GitHub Actions automatically:
    - Creates version tag
-   - Builds Windows exe
-   - Creates GitHub Release with exe attached
+   - Builds Windows release
+   - Builds Linux release
+   - Creates GitHub Release with both assets attached
 
 **Manual build:**
 ```bash
