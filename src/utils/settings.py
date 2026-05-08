@@ -1,18 +1,25 @@
 """
 Settings management for Thermal Engine.
-Handles persistent settings and Windows autostart.
+Handles persistent settings and platform autostart.
 """
 
 import os
 import sys
 import json
+import shlex
 
 # Windows-only imports
 IS_WINDOWS = sys.platform == "win32"
+IS_LINUX = sys.platform.startswith("linux")
 if IS_WINDOWS:
     import winreg
 
-from src.utils.app_path import get_app_dir, get_resource_path, get_user_data_path
+from src.utils.app_path import (
+    get_app_dir,
+    get_bundled_resource_path,
+    get_resource_path,
+    get_user_data_path,
+)
 from src.core.security import escape_registry_path
 
 APP_NAME = "ThermalEngine"
@@ -98,7 +105,9 @@ def get_executable_path():
     """Get the path to use for autostart."""
     if getattr(sys, 'frozen', False):
         # Running as compiled executable
-        return escape_registry_path(sys.executable)
+        if IS_WINDOWS:
+            return escape_registry_path(sys.executable)
+        return sys.executable
     else:
         # Running as script - use pythonw on Windows to avoid console window
         if IS_WINDOWS:
@@ -106,13 +115,83 @@ def get_executable_path():
         else:
             python_exe = sys.executable
         script_path = get_resource_path('main.py')
-        return f'{escape_registry_path(python_exe)} {escape_registry_path(script_path)}'
+        if IS_WINDOWS:
+            return f'{escape_registry_path(python_exe)} {escape_registry_path(script_path)}'
+        return f"{shlex.quote(python_exe)} {shlex.quote(script_path)}"
+
+
+def _get_linux_autostart_dir():
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    if config_home:
+        autostart_dir = os.path.join(config_home, "autostart")
+    else:
+        autostart_dir = os.path.expanduser("~/.config/autostart")
+    os.makedirs(autostart_dir, exist_ok=True)
+    return autostart_dir
+
+
+def _get_linux_desktop_entry_path():
+    return os.path.join(_get_linux_autostart_dir(), f"{APP_NAME}.desktop")
+
+
+def _get_linux_icon_path():
+    candidates = [
+        os.path.join(get_app_dir(), "assets", "icon.png"),
+        os.path.join(get_app_dir(), "icon.png"),
+        os.path.join(get_app_dir(), "icon.ico"),
+        get_bundled_resource_path("assets/icon.png"),
+        get_bundled_resource_path("icon.png"),
+        get_bundled_resource_path("icon.ico"),
+    ]
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return ""
+
+
+def _build_linux_desktop_entry():
+    exec_path = get_executable_path()
+    if get_setting("launch_minimized", True):
+        exec_path += " --minimized"
+
+    lines = [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Version=1.0",
+        f"Name={APP_NAME}",
+        "Comment=Thermal Engine",
+        f"Exec={exec_path}",
+        "Terminal=false",
+        "StartupNotify=false",
+        "Categories=Utility;",
+    ]
+
+    icon_path = _get_linux_icon_path()
+    if icon_path:
+        lines.append(f"Icon={icon_path}")
+
+    return "\n".join(lines) + "\n"
 
 
 def set_autostart(enabled):
-    """Enable or disable autostart. Windows-only via registry."""
+    """Enable or disable autostart for supported platforms."""
+    if IS_LINUX:
+        desktop_entry_path = _get_linux_desktop_entry_path()
+        try:
+            if enabled:
+                with open(desktop_entry_path, "w", encoding="utf-8") as f:
+                    f.write(_build_linux_desktop_entry())
+                os.chmod(desktop_entry_path, 0o644)
+            else:
+                if os.path.exists(desktop_entry_path):
+                    os.remove(desktop_entry_path)
+            return True
+        except Exception as e:
+            print(f"[Settings] Error setting Linux autostart: {e}")
+            return False
+
     if not IS_WINDOWS:
-        print("[Settings] Autostart is only supported on Windows")
+        print("[Settings] Autostart is not supported on this platform")
         return False
 
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -140,7 +219,10 @@ def set_autostart(enabled):
 
 
 def is_autostart_enabled():
-    """Check if autostart is currently enabled. Windows-only via registry."""
+    """Check if autostart is currently enabled."""
+    if IS_LINUX:
+        return os.path.exists(_get_linux_desktop_entry_path())
+
     if not IS_WINDOWS:
         return False
 
@@ -180,15 +262,16 @@ def _remove_startup_folder_shortcut():
 
 
 def apply_autostart_setting():
-    """Apply the current autostart setting to the registry. Windows-only."""
-    if not IS_WINDOWS:
+    """Apply current autostart setting for supported platforms."""
+    if not (IS_WINDOWS or IS_LINUX):
         return
     enabled = get_setting("launch_at_login", True)
     set_autostart(enabled)
     # Always clean up Startup folder shortcut - the registry entry is the
     # single source of truth for autostart. The installer may have created
     # a shortcut in the Startup folder, causing a duplicate launch.
-    _remove_startup_folder_shortcut()
+    if IS_WINDOWS:
+        _remove_startup_folder_shortcut()
 
 
 # Initialize settings on module load

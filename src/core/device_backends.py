@@ -7,6 +7,7 @@ Supports multiple display types with different communication protocols:
 """
 
 import logging
+import sys
 from abc import ABC, abstractmethod
 from typing import Optional, List
 
@@ -188,6 +189,8 @@ class HIDBackend(DisplayBackend):
 
         except Exception as e:
             logger.error(f"Failed to connect to HID device: {e}")
+            if sys.platform.startswith("linux"):
+                logger.error("Linux tip: verify hidraw access and udev rules for device VID:PID")
             self.device = None
             return False
 
@@ -286,6 +289,8 @@ class USBBulkBackend(DisplayBackend):
             if self.device is None:
                 logger.error(f"Device not found: {self.device_def.name}")
                 logger.error("Check USB connection and ensure device is not in use by other software")
+                if sys.platform.startswith("linux"):
+                    logger.error("Linux tip: verify udev permissions for raw USB access")
                 return False
 
             logger.info(f"✓ Found device: {self.device_def.name}")
@@ -328,6 +333,8 @@ class USBBulkBackend(DisplayBackend):
 
         except Exception as e:
             logger.error(f"Failed to connect to USB device: {e}", exc_info=True)
+            if sys.platform.startswith("linux"):
+                logger.error("Linux tip: install udev rules or run with proper USB permissions")
             self.device = None
             return False
 

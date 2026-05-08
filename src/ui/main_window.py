@@ -11,6 +11,7 @@ import threading
 import functools
 import psutil
 import logging
+import webbrowser
 
 # Windows-specific imports for power event handling
 if sys.platform == 'win32':
@@ -291,7 +292,7 @@ from src.core import sensors
 from src.core.sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
 from src.utils import settings
 from src.utils.app_path import get_resource_path, get_bundled_resource_path
-from src.utils.updater import UpdateChecker, UpdateDownloader
+from src.utils.updater import UpdateChecker, UpdateDownloader, can_auto_install_asset
 
 
 def hex_to_rgba(hex_color, opacity=100):
@@ -4480,7 +4481,10 @@ class ThemeEditorWindow(QMainWindow):
         startup_group = QGroupBox("Startup")
         startup_layout = QVBoxLayout(startup_group)
 
-        self.launch_at_login_cb = QCheckBox("Launch at Windows startup")
+        launch_label = "Launch at login"
+        if sys.platform == "win32":
+            launch_label = "Launch at Windows startup"
+        self.launch_at_login_cb = QCheckBox(launch_label)
         self.launch_at_login_cb.setChecked(settings.get_setting("launch_at_login", True))
         startup_layout.addWidget(self.launch_at_login_cb)
 
@@ -4545,7 +4549,7 @@ class ThemeEditorWindow(QMainWindow):
         # Start checking in background
         self.update_checker.start()
 
-    def _on_update_available(self, latest_version, release_url, release_notes, expected_hash=""):
+    def _on_update_available(self, latest_version, release_url, release_notes, expected_hash="", asset_name=""):
         """Handle update available signal."""
         try:
             from src.utils.app_version import __version__
@@ -4581,7 +4585,10 @@ class ThemeEditorWindow(QMainWindow):
 
         # Buttons
         buttons = QDialogButtonBox()
-        download_btn = buttons.addButton("Download && Install", QDialogButtonBox.ButtonRole.AcceptRole)
+        download_label = "Download"
+        if can_auto_install_asset(asset_name):
+            download_label = "Download && Install"
+        download_btn = buttons.addButton(download_label, QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
 
         buttons.accepted.connect(dialog.accept)
@@ -4589,12 +4596,14 @@ class ThemeEditorWindow(QMainWindow):
         layout.addWidget(buttons)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Start automatic download
-            self._download_and_install_update(latest_version, release_url, expected_hash)
+            if asset_name:
+                self._download_and_install_update(latest_version, release_url, expected_hash, asset_name)
+            else:
+                webbrowser.open(release_url)
         else:
             self.status_bar.showMessage("Update dismissed", 2000)
 
-    def _download_and_install_update(self, version, download_url, expected_hash=""):
+    def _download_and_install_update(self, version, download_url, expected_hash="", asset_name=""):
         """Download installer and prompt for installation."""
         from PySide6.QtWidgets import QProgressDialog
         import subprocess
@@ -4614,7 +4623,7 @@ class ThemeEditorWindow(QMainWindow):
         progress.setMinimumDuration(0)
 
         # Start download
-        self.update_downloader = UpdateDownloader(download_url, version, expected_hash)
+        self.update_downloader = UpdateDownloader(download_url, version, expected_hash, asset_name)
 
         def on_progress(downloaded, total):
             if total > 0:
@@ -4628,30 +4637,28 @@ class ThemeEditorWindow(QMainWindow):
         def on_download_finished(installer_path):
             progress.close()
 
-            # Ask if user wants to install now
-            reply = QMessageBox.question(
-                self,
-                "Download Complete",
-                "Update downloaded successfully!\n\n"
-                "Do you want to install it now?\n\n"
-                "The application will close and the installer will start.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
+            if can_auto_install_asset(asset_name) and os.path.exists(installer_path):
+                reply = QMessageBox.question(
+                    self,
+                    "Download Complete",
+                    "Update downloaded successfully!\n\n"
+                    "Do you want to install it now?\n\n"
+                    "The application will close and the installer will start.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
 
-            if reply == QMessageBox.StandardButton.Yes:
-                # Launch installer and close app
+                if reply != QMessageBox.StandardButton.Yes:
+                    QMessageBox.information(
+                        self,
+                        "Install Later",
+                        f"The installer has been saved to:\n{installer_path}\n\n"
+                        "You can run it manually when ready."
+                    )
+                    return
+
                 try:
-                    if os.path.exists(installer_path):
-                        # Launch installer in detached process
-                        subprocess.Popen([installer_path])
-                        # Close the application
-                        QApplication.instance().quit()
-                    else:
-                        QMessageBox.warning(
-                            self,
-                            "Error",
-                            f"Installer not found at:\n{installer_path}"
-                        )
+                    subprocess.Popen([installer_path])
+                    QApplication.instance().quit()
                 except Exception as e:
                     QMessageBox.warning(
                         self,
@@ -4661,9 +4668,9 @@ class ThemeEditorWindow(QMainWindow):
             else:
                 QMessageBox.information(
                     self,
-                    "Install Later",
-                    f"The installer has been saved to:\n{installer_path}\n\n"
-                    "You can run it manually when ready."
+                    "Download Complete",
+                    f"The update file has been saved to:\n{installer_path}\n\n"
+                    "Install or extract it manually when ready."
                 )
 
         def on_download_error(error_msg):
