@@ -10,3 +10,6 @@
 ## 2024-10-25 - PyQt/PySide6 accessibility for icon-only buttons
 **Learning:** PySide6 `QPushButton` instances used solely to display icons, colors, or visual formatting elements without text strings (like `B` or `I` for formatting, or `...` for file browsing) are completely unreadable to screen readers and difficult to understand visually without labels.
 **Action:** When adding or auditing icon-only buttons in PySide6/PyQt applications, always use both `setToolTip()` for visual mouse users and `setAccessibleName()` for screen reader accessibility to ensure full usability.
+## 2024-05-18 - Dynamically Generated Color Controls and Tooltips
+**Learning:** In dynamically generated UI controls, such as gradient color stops (`color_btn` in `properties.py`), it's easy to overlook accessible names and tooltips because the button's purpose is visually indicated by its background color. However, to screen readers, these are empty buttons without any text or context, which is a major accessibility barrier.
+**Action:** Always ensure that dynamically generated UI elements that communicate purely visually (like a colored rectangle for a color picker) are assigned descriptive `.setToolTip()` and `.setAccessibleName()` attributes based on their context (e.g., "Pick color for stop at 50%").

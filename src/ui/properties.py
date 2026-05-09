@@ -273,14 +273,20 @@ class GradientEditorDialog(QDialog):
         presets_layout = QHBoxLayout()
 
         preset_good_bad = QPushButton("Good → Bad")
+        preset_good_bad.setToolTip("Apply Good to Bad gradient preset")
+        preset_good_bad.setAccessibleName("Apply Good to Bad gradient preset")
         preset_good_bad.clicked.connect(lambda: self._apply_preset([(0.0, "#00ff96"), (1.0, "#ff4444")]))
         presets_layout.addWidget(preset_good_bad)
 
         preset_cool_hot = QPushButton("Cool → Hot")
+        preset_cool_hot.setToolTip("Apply Cool to Hot gradient preset")
+        preset_cool_hot.setAccessibleName("Apply Cool to Hot gradient preset")
         preset_cool_hot.clicked.connect(lambda: self._apply_preset([(0.0, "#4444ff"), (0.5, "#ffff00"), (1.0, "#ff4444")]))
         presets_layout.addWidget(preset_cool_hot)
 
         preset_rainbow = QPushButton("Rainbow")
+        preset_rainbow.setToolTip("Apply Rainbow gradient preset")
+        preset_rainbow.setAccessibleName("Apply Rainbow gradient preset")
         preset_rainbow.clicked.connect(lambda: self._apply_preset([
             (0.0, "#ff0000"), (0.2, "#ffaa00"), (0.4, "#ffff00"),
             (0.6, "#00ff00"), (0.8, "#0088ff"), (1.0, "#aa00ff")
@@ -326,6 +332,8 @@ class GradientEditorDialog(QDialog):
             color_btn = QPushButton()
             color_btn.setFixedSize(60, 24)
             color_btn.setStyleSheet(f"background-color: {color}; border: 1px solid #555; border-radius: 3px;")
+            color_btn.setToolTip(f"Pick color for stop at {int(pos * 100)}%")
+            color_btn.setAccessibleName(f"Pick color for gradient stop at {int(pos * 100)} percent")
             color_btn.clicked.connect(lambda checked, idx=i: self._edit_stop_color(idx))
             stop_layout.addWidget(color_btn)
 
