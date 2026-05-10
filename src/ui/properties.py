@@ -326,6 +326,8 @@ class GradientEditorDialog(QDialog):
             color_btn = QPushButton()
             color_btn.setFixedSize(60, 24)
             color_btn.setStyleSheet(f"background-color: {color}; border: 1px solid #555; border-radius: 3px;")
+            color_btn.setToolTip(f"Pick color for stop at {int(pos * 100)}%")
+            color_btn.setAccessibleName(f"Pick color for stop at {int(pos * 100)}%")
             color_btn.clicked.connect(lambda checked, idx=i: self._edit_stop_color(idx))
             stop_layout.addWidget(color_btn)
 
