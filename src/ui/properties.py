@@ -1213,6 +1213,7 @@ class PropertiesPanel(QWidget):
 
         self.scale_proportionally_check = QCheckBox("Scale Proportionally")
         self.scale_proportionally_check.setToolTip("When enabled, resizing maintains aspect ratio")
+        self.scale_proportionally_check.setAccessibleDescription("When enabled, resizing maintains aspect ratio")
         self.scale_proportionally_check.stateChanged.connect(self.on_property_changed)
         self.scale_proportionally_label = QLabel("")
         media_layout.addRow(self.scale_proportionally_label, self.scale_proportionally_check)
@@ -1285,6 +1286,7 @@ class PropertiesPanel(QWidget):
 
         self.smooth_check = QCheckBox("Smooth Line")
         self.smooth_check.setToolTip("Enable smooth curve interpolation instead of jagged lines")
+        self.smooth_check.setAccessibleDescription("Enable smooth curve interpolation instead of jagged lines")
         self.smooth_check.stateChanged.connect(self.on_property_changed)
         self.smooth_label = QLabel("")
         options_layout.addRow(self.smooth_label, self.smooth_check)
@@ -1298,6 +1300,7 @@ class PropertiesPanel(QWidget):
         # Circle gauge - Rounded arc ends option
         self.gauge_rounded_ends_check = QCheckBox("Rounded Arc Ends")
         self.gauge_rounded_ends_check.setToolTip("Draw pill-shaped rounded ends on the gauge arc")
+        self.gauge_rounded_ends_check.setAccessibleDescription("Draw pill-shaped rounded ends on the gauge arc")
         self.gauge_rounded_ends_check.stateChanged.connect(self.on_property_changed)
         self.gauge_rounded_ends_label = QLabel("")
         options_layout.addRow(self.gauge_rounded_ends_label, self.gauge_rounded_ends_check)
@@ -1305,6 +1308,7 @@ class PropertiesPanel(QWidget):
         # Gauge options - Smooth transitions
         self.animate_gauge_check = QCheckBox("Smooth Transitions")
         self.animate_gauge_check.setToolTip("Smoothly animate gauge transitions when values change")
+        self.animate_gauge_check.setAccessibleDescription("Smoothly animate gauge transitions when values change")
         self.animate_gauge_check.stateChanged.connect(self.on_property_changed)
         self.animate_gauge_label = QLabel("")
         options_layout.addRow(self.animate_gauge_label, self.animate_gauge_check)
@@ -1312,6 +1316,7 @@ class PropertiesPanel(QWidget):
         # Gauge options - Auto color change
         self.auto_color_change_check = QCheckBox("Auto Color (warn/critical)")
         self.auto_color_change_check.setToolTip("Automatically change color at warning (70%) and critical (90%) thresholds")
+        self.auto_color_change_check.setAccessibleDescription("Automatically change color at warning (70%) and critical (90%) thresholds")
         self.auto_color_change_check.stateChanged.connect(self.on_property_changed)
         self.auto_color_change_label = QLabel("")
         options_layout.addRow(self.auto_color_change_label, self.auto_color_change_check)
@@ -1319,6 +1324,7 @@ class PropertiesPanel(QWidget):
         # Temperature display option
         self.temp_hide_unit_check = QCheckBox("Hide unit letter (show ° only)")
         self.temp_hide_unit_check.setToolTip("Show 45° instead of 45°C for temperature")
+        self.temp_hide_unit_check.setAccessibleDescription("Show 45° instead of 45°C for temperature")
         self.temp_hide_unit_check.stateChanged.connect(self.on_property_changed)
         self.temp_hide_unit_label = QLabel("")
         options_layout.addRow(self.temp_hide_unit_label, self.temp_hide_unit_check)
