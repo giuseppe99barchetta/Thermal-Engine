@@ -11,6 +11,7 @@ import threading
 import functools
 import psutil
 import logging
+import webbrowser
 
 # Windows-specific imports for power event handling
 if sys.platform == 'win32':
@@ -291,7 +292,12 @@ from src.core import sensors
 from src.core.sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
 from src.utils import settings
 from src.utils.app_path import get_resource_path, get_bundled_resource_path
-from src.utils.updater import UpdateChecker, UpdateDownloader
+from src.utils.updater import (
+    UpdateChecker,
+    UpdateDownloader,
+    can_auto_install_asset,
+    install_downloaded_update,
+)
 
 
 def hex_to_rgba(hex_color, opacity=100):
@@ -1183,6 +1189,10 @@ class ThemeEditorWindow(QMainWindow):
             getattr(element, 'background_color', '#000000'),
             getattr(element, 'color_opacity', 100),
             getattr(element, 'background_color_opacity', 100),
+            getattr(element, 'border_radius', 0),
+            getattr(element, 'glass_effect', False),
+            getattr(element, 'glass_blur', 10),
+            getattr(element, 'glass_opacity', 50),
             element.value,  # Key: value changes = cache miss
             getattr(element, 'text', element.text if hasattr(element, 'text') else ''),
             getattr(element, 'radius', 0),
@@ -2138,14 +2148,23 @@ class ThemeEditorWindow(QMainWindow):
         info = []
         info.append("=== Sensor Diagnostic ===\n")
 
-        # Show active sensor source
         source = sensors.get_sensor_source_display() if hasattr(sensors, 'get_sensor_source_display') else "Unknown"
+        sensor_diag = sensors.get_sensor_diagnostics() if hasattr(sensors, 'get_sensor_diagnostics') else {}
+
         info.append(f"Sensor source: {source}")
+        info.append(f"Platform: {sensor_diag.get('platform', 'unknown')}")
+        info.append(f"Reader source: {sensor_diag.get('source', 'unknown')}")
+        info.append(f"Backend: {sensor_diag.get('backend', 'unknown')}")
         info.append("")
 
-        # Sensor status
         HAS_LHM = getattr(sensors, 'HAS_LHM', False)
         info.append(f"Safe monitor connected: {HAS_LHM}")
+        info.append(f"CPU temp source: {sensor_diag.get('cpu_temp_source') or 'not found'}")
+        info.append(f"GPU source: {sensor_diag.get('gpu_source') or 'not found'}")
+        if sensor_diag.get('gpu_card'):
+            info.append(f"GPU card: {sensor_diag['gpu_card']}")
+        if sensor_diag.get('sensor_error'):
+            info.append(f"Last error: {sensor_diag['sensor_error']}")
         info.append("")
 
         if HAS_LHM:
@@ -2162,8 +2181,15 @@ class ThemeEditorWindow(QMainWindow):
                 info.append(f"  Error: {e}")
         else:
             info.append("Safe monitor not connected.")
-            info.append("CPU temperature, CPU power, GPU temperature, clocks,")
-            info.append("and GPU power may show 0 without a vendor-safe API.")
+            info.append("Some values may stay 0 when OS/driver does not expose them.")
+
+        notes = sensor_diag.get('notes') or []
+        if notes:
+            info.append("")
+            info.append("Backend notes:")
+            info.append("-" * 40)
+            for note in notes:
+                info.append(f"  - {note}")
 
         info.append("\n" + "-" * 40)
         info.append("Current sensor values:")
@@ -3020,7 +3046,7 @@ class ThemeEditorWindow(QMainWindow):
         elif element.type == "text":
             self.render_text_rgba(overlay, element, font, color_opacity)
         elif element.type == "rectangle":
-            self.render_rectangle_rgba(overlay, element, color_opacity)
+            self.render_rectangle_rgba(overlay, element, color_opacity, blur_source=img)
         elif element.type == "clock":
             # Build time format string based on element settings
             time_format = getattr(element, 'time_format', '24h')
@@ -3094,7 +3120,7 @@ class ThemeEditorWindow(QMainWindow):
             self._element_render_cache[elem_id] = (overlay, current_state_hash, (0, 0))
             self._fast_alpha_composite(img, overlay)
 
-    def render_rectangle_rgba(self, img, element, opacity):
+    def render_rectangle_rgba(self, img, element, opacity, blur_source=None):
         """Render a rectangle with opacity, optional border radius, and glass effect."""
         from PIL import ImageFilter
 
@@ -3110,28 +3136,22 @@ class ThemeEditorWindow(QMainWindow):
             x, y, w, h = element.x, element.y, element.width, element.height
 
             # Extract region to blur
-            region = img.crop((x, y, x + w, y + h))
+            source_img = blur_source if blur_source is not None else img
+            region = source_img.crop((x, y, x + w, y + h))
 
             # Apply gaussian blur
             blurred = region.filter(ImageFilter.GaussianBlur(radius=glass_blur))
 
-            # If border radius, we need to mask the blurred region
+            # Draw blurred background onto overlay so cache can preserve effect.
+            mask = None
             if border_radius > 0:
-                # Create a mask for rounded corners
                 mask = Image.new('L', (w, h), 0)
                 mask_draw = ImageDraw.Draw(mask)
                 mask_draw.rounded_rectangle([0, 0, w, h], radius=border_radius, fill=255)
-
-                # Create a temp image and paste blurred with mask
-                temp = img.crop((x, y, x + w, y + h))
-                temp.paste(blurred, mask=mask)
-                img.paste(temp, (x, y))
-            else:
-                img.paste(blurred, (x, y))
+            img.paste(blurred, (x, y), mask)
 
             # Draw tinted overlay
-            overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
-            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw = ImageDraw.Draw(img)
             tint_rgba = hex_to_rgba(element.color, glass_opacity)
 
             if border_radius > 0:
@@ -3145,8 +3165,6 @@ class ThemeEditorWindow(QMainWindow):
                 overlay_draw.rounded_rectangle(coords, radius=border_radius, outline=border_rgba, width=1)
             else:
                 overlay_draw.rectangle(coords, outline=border_rgba, width=1)
-
-            self._fast_alpha_composite(img, overlay)
 
         elif opacity >= 100:
             draw = ImageDraw.Draw(img)
@@ -4482,7 +4500,10 @@ class ThemeEditorWindow(QMainWindow):
         startup_group = QGroupBox("Startup")
         startup_layout = QVBoxLayout(startup_group)
 
-        self.launch_at_login_cb = QCheckBox("Launch at Windows startup")
+        launch_label = "Launch at login"
+        if sys.platform == "win32":
+            launch_label = "Launch at Windows startup"
+        self.launch_at_login_cb = QCheckBox(launch_label)
         self.launch_at_login_cb.setChecked(settings.get_setting("launch_at_login", True))
         startup_layout.addWidget(self.launch_at_login_cb)
 
@@ -4547,7 +4568,7 @@ class ThemeEditorWindow(QMainWindow):
         # Start checking in background
         self.update_checker.start()
 
-    def _on_update_available(self, latest_version, release_url, release_notes, expected_hash=""):
+    def _on_update_available(self, latest_version, release_url, release_notes, expected_hash="", asset_name=""):
         """Handle update available signal."""
         try:
             from src.utils.app_version import __version__
@@ -4583,7 +4604,10 @@ class ThemeEditorWindow(QMainWindow):
 
         # Buttons
         buttons = QDialogButtonBox()
-        download_btn = buttons.addButton("Download && Install", QDialogButtonBox.ButtonRole.AcceptRole)
+        download_label = "Download"
+        if can_auto_install_asset(asset_name):
+            download_label = "Download && Install"
+        download_btn = buttons.addButton(download_label, QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
 
         buttons.accepted.connect(dialog.accept)
@@ -4591,12 +4615,14 @@ class ThemeEditorWindow(QMainWindow):
         layout.addWidget(buttons)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Start automatic download
-            self._download_and_install_update(latest_version, release_url, expected_hash)
+            if asset_name:
+                self._download_and_install_update(latest_version, release_url, expected_hash, asset_name)
+            else:
+                webbrowser.open(release_url)
         else:
             self.status_bar.showMessage("Update dismissed", 2000)
 
-    def _download_and_install_update(self, version, download_url, expected_hash=""):
+    def _download_and_install_update(self, version, download_url, expected_hash="", asset_name=""):
         """Download installer and prompt for installation."""
         from PySide6.QtWidgets import QProgressDialog
         import subprocess
@@ -4616,7 +4642,7 @@ class ThemeEditorWindow(QMainWindow):
         progress.setMinimumDuration(0)
 
         # Start download
-        self.update_downloader = UpdateDownloader(download_url, version, expected_hash)
+        self.update_downloader = UpdateDownloader(download_url, version, expected_hash, asset_name)
 
         def on_progress(downloaded, total):
             if total > 0:
@@ -4630,30 +4656,36 @@ class ThemeEditorWindow(QMainWindow):
         def on_download_finished(installer_path):
             progress.close()
 
-            # Ask if user wants to install now
-            reply = QMessageBox.question(
-                self,
-                "Download Complete",
-                "Update downloaded successfully!\n\n"
-                "Do you want to install it now?\n\n"
-                "The application will close and the installer will start.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
+            if can_auto_install_asset(asset_name) and os.path.exists(installer_path):
+                is_linux_appimage = sys.platform.startswith("linux") and asset_name.lower().endswith(".appimage")
+                install_prompt = (
+                    "Do you want to install it now?\n\n"
+                    "The application will close and restart from the new AppImage."
+                    if is_linux_appimage else
+                    "Do you want to install it now?\n\n"
+                    "The application will close and the installer will start."
+                )
+                reply = QMessageBox.question(
+                    self,
+                    "Download Complete",
+                    "Update downloaded successfully!\n\n"
+                    f"{install_prompt}",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
 
-            if reply == QMessageBox.StandardButton.Yes:
-                # Launch installer and close app
+                if reply != QMessageBox.StandardButton.Yes:
+                    QMessageBox.information(
+                        self,
+                        "Install Later",
+                        f"The installer has been saved to:\n{installer_path}\n\n"
+                        "You can run it manually when ready."
+                    )
+                    return
+
                 try:
-                    if os.path.exists(installer_path):
-                        # Launch installer in detached process
-                        subprocess.Popen([installer_path])
-                        # Close the application
-                        QApplication.instance().quit()
-                    else:
-                        QMessageBox.warning(
-                            self,
-                            "Error",
-                            f"Installer not found at:\n{installer_path}"
-                        )
+                    install_info = install_downloaded_update(installer_path, asset_name)
+                    subprocess.Popen([install_info["path"]])
+                    QApplication.instance().quit()
                 except Exception as e:
                     QMessageBox.warning(
                         self,
@@ -4663,9 +4695,9 @@ class ThemeEditorWindow(QMainWindow):
             else:
                 QMessageBox.information(
                     self,
-                    "Install Later",
-                    f"The installer has been saved to:\n{installer_path}\n\n"
-                    "You can run it manually when ready."
+                    "Download Complete",
+                    f"The update file has been saved to:\n{installer_path}\n\n"
+                    "Install or extract it manually when ready."
                 )
 
         def on_download_error(error_msg):

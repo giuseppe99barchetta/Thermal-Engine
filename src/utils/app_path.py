@@ -48,17 +48,29 @@ def get_bundled_resource_path(relative_path):
 def get_user_data_dir():
     """Get the user data directory (writable location for user files).
 
-    Uses AppData\Local on Windows for installed apps, or app_dir for development.
+    Uses platform app-data directory for installed apps, or app_dir for development.
     """
     if getattr(sys, 'frozen', False):
-        # Running as compiled executable - use AppData\Local
+        # Running as compiled executable - use platform app data directory
         if sys.platform == 'win32':
             appdata = os.environ.get('LOCALAPPDATA')
             if appdata:
                 user_dir = os.path.join(appdata, 'ThermalEngine')
                 os.makedirs(user_dir, exist_ok=True)
                 return user_dir
-        # Fallback to app dir if not Windows
+        if sys.platform.startswith('linux'):
+            xdg_data = os.environ.get('XDG_DATA_HOME')
+            if xdg_data:
+                user_dir = os.path.join(xdg_data, 'ThermalEngine')
+            else:
+                user_dir = os.path.expanduser('~/.local/share/ThermalEngine')
+            os.makedirs(user_dir, exist_ok=True)
+            return user_dir
+        if sys.platform == 'darwin':
+            user_dir = os.path.expanduser('~/Library/Application Support/ThermalEngine')
+            os.makedirs(user_dir, exist_ok=True)
+            return user_dir
+        # Fallback to app dir for unknown platforms
         return get_app_dir()
     else:
         # Running as script - use app dir

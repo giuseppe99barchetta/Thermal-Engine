@@ -115,7 +115,7 @@ def init_sensors(app_dir=None):
     try:
         reader = _get_reader()
         initial = reader.get_thermal_sensors()
-        if initial:
+        if initial and any(v > 0 for v in initial.values()):
             with _sensor_data_lock:
                 _latest_sensor_data.update(initial)
             HAS_SAFE_MONITOR = True
@@ -156,6 +156,20 @@ def get_sensors_sync():
         return None
 
 
+def get_sensor_diagnostics():
+    diagnostics = {
+        "connected": HAS_SAFE_MONITOR,
+        "sensor_error": SENSOR_ERROR,
+    }
+    try:
+        reader = _get_reader()
+        if hasattr(reader, "get_diagnostics"):
+            diagnostics.update(reader.get_diagnostics())
+    except Exception as e:
+        diagnostics["sensor_error"] = str(e)
+    return diagnostics
+
+
 # Backwards compatibility aliases
 get_lhm_sensors = get_cached_sensors
 get_lhm_sensors_sync = get_sensors_sync
@@ -181,11 +195,16 @@ def stop_sensors():
 
 
 def get_sensor_source():
-    return "safe-hardware-monitor" if HAS_SAFE_MONITOR else None
+    diagnostics = get_sensor_diagnostics()
+    return diagnostics.get("source") if HAS_SAFE_MONITOR else None
 
 
 def get_sensor_source_display():
-    return "Safe Hardware Monitor" if HAS_SAFE_MONITOR else "Not connected"
+    diagnostics = get_sensor_diagnostics()
+    if not HAS_SAFE_MONITOR:
+        backend = diagnostics.get("backend")
+        return f"Not connected ({backend})" if backend else "Not connected"
+    return diagnostics.get("backend") or diagnostics.get("source") or "Safe Hardware Monitor"
 
 
 # Backwards compatibility for older imports.

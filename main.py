@@ -31,7 +31,7 @@ from PySide6.QtCore import Qt, QSharedMemory
 
 from src.core.sensors import init_sensors, HAS_LHM
 from src.ui.main_window import ThemeEditorWindow
-from src.utils.app_path import get_app_dir
+from src.utils.app_path import get_bundled_resource_path
 
 
 class SensorSetupDialog(QDialog):
@@ -121,10 +121,11 @@ class SensorSetupDialog(QDialog):
 
 def create_tray_icon():
     """Create tray icon from file or generate one."""
-    # Try to load icon from file
-    icon_path = os.path.join(get_app_dir(), 'icon.ico')
-    if os.path.exists(icon_path):
-        return QIcon(icon_path)
+    # Try packaged icon files first.
+    for candidate in ("icon.ico", "icon.png", "assets/icon.png"):
+        icon_path = get_bundled_resource_path(candidate)
+        if os.path.exists(icon_path):
+            return QIcon(icon_path)
 
     # Fallback: generate icon programmatically
     pixmap = QPixmap(32, 32)

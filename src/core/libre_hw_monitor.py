@@ -8,7 +8,9 @@ falls back to safe user-mode Windows counters and psutil usage metrics.
 
 import ctypes
 import os
+import subprocess
 import sys
+from pathlib import Path
 
 import psutil
 
@@ -228,6 +230,225 @@ class _UsageOnlyReader:
             self._gpu_reader.close()
             self._gpu_reader = None
 
+    def get_diagnostics(self):
+        return {
+            "backend": "usage-only",
+            "platform": sys.platform,
+            "cpu_temp_source": None,
+            "gpu_source": "pdh" if self._gpu_reader else None,
+            "notes": [
+                "CPU usage and RAM come from psutil.",
+                "CPU/GPU temperatures are not available in usage-only mode.",
+                "GPU utilization requires Windows PDH counters.",
+            ],
+        }
+
+
+class _LinuxReader:
+    def __init__(self):
+        self._last_cpu_temp_source = None
+        self._last_gpu_source = None
+        self._last_gpu_card = None
+        self._last_nvidia_smi_error = None
+        self._last_sysfs_error = None
+
+    def _read_first_float(self, *paths, scale=1.0):
+        for path in paths:
+            if not path:
+                continue
+            try:
+                raw = Path(path).read_text(encoding="utf-8").strip()
+                if not raw:
+                    continue
+                return float(raw) / scale
+            except (FileNotFoundError, ValueError, OSError):
+                continue
+        return 0.0
+
+    def _pick_temperature(self, entries):
+        best = 0.0
+        for entry in entries:
+            current = getattr(entry, "current", None)
+            if current is None:
+                continue
+            value = float(current)
+            if 5.0 <= value <= 125.0:
+                best = max(best, value)
+        return best
+
+    def _get_linux_cpu_temp(self):
+        self._last_cpu_temp_source = None
+        try:
+            temps = psutil.sensors_temperatures(fahrenheit=False) or {}
+        except (AttributeError, OSError):
+            temps = {}
+
+        preferred_groups = (
+            "coretemp",
+            "k10temp",
+            "zenpower",
+            "cpu_thermal",
+            "acpitz",
+        )
+        for group in preferred_groups:
+            if group in temps:
+                best = self._pick_temperature(temps[group])
+                if best > 0:
+                    self._last_cpu_temp_source = f"psutil:{group}"
+                    return best
+
+        for entries in temps.values():
+            filtered = []
+            for entry in entries:
+                label = (getattr(entry, "label", "") or "").lower()
+                if any(term in label for term in ("cpu", "package", "tdie", "tctl", "core")):
+                    filtered.append(entry)
+            best = self._pick_temperature(filtered)
+            if best > 0:
+                self._last_cpu_temp_source = "psutil:filtered"
+                return best
+
+        for group, entries in temps.items():
+            best = self._pick_temperature(entries)
+            if best > 0:
+                self._last_cpu_temp_source = f"psutil:{group}"
+                return best
+
+        return 0.0
+
+    def _read_nvidia_smi(self):
+        self._last_nvidia_smi_error = None
+        try:
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=temperature.gpu,utilization.gpu,clocks.current.graphics,power.draw",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (FileNotFoundError, OSError):
+            self._last_nvidia_smi_error = "nvidia-smi not found"
+            return {}
+
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or "nvidia-smi failed"
+            self._last_nvidia_smi_error = stderr
+            return {}
+
+        line = result.stdout.strip().splitlines()
+        if not line:
+            self._last_nvidia_smi_error = "nvidia-smi returned no data"
+            return {}
+
+        parts = [part.strip() for part in line[0].split(",")]
+        if len(parts) < 4:
+            self._last_nvidia_smi_error = "nvidia-smi output format unexpected"
+            return {}
+
+        def _parse(index):
+            try:
+                return float(parts[index])
+            except (IndexError, ValueError):
+                return 0.0
+
+        return {
+            "gpu_temp": _parse(0),
+            "gpu_percent": _parse(1),
+            "gpu_clock": _parse(2),
+            "gpu_power": _parse(3),
+        }
+
+    def _read_sysfs_gpu(self):
+        data = {}
+        self._last_sysfs_error = None
+        for card_path in sorted(Path("/sys/class/drm").glob("card[0-9]*")):
+            device_path = card_path / "device"
+            vendor = (device_path / "vendor").read_text(encoding="utf-8").strip() if (device_path / "vendor").exists() else ""
+            if vendor not in {"0x10de", "0x1002", "0x8086"}:
+                continue
+
+            self._last_gpu_card = card_path.name
+
+            hwmons = sorted(device_path.glob("hwmon/hwmon*"))
+            for hwmon in hwmons:
+                temp = self._read_first_float(hwmon / "temp1_input", scale=1000.0)
+                power = self._read_first_float(hwmon / "power1_average", scale=1000000.0)
+                clock = self._read_first_float(hwmon / "freq1_input", scale=1000000.0)
+                if temp > 0 and data.get("gpu_temp", 0.0) <= 0:
+                    data["gpu_temp"] = temp
+                if power > 0 and data.get("gpu_power", 0.0) <= 0:
+                    data["gpu_power"] = power
+                if clock > 0 and data.get("gpu_clock", 0.0) <= 0:
+                    data["gpu_clock"] = clock
+
+            busy = self._read_first_float(device_path / "gpu_busy_percent")
+            if busy > 0 and data.get("gpu_percent", 0.0) <= 0:
+                data["gpu_percent"] = busy
+
+            intel_clock = self._read_first_float(device_path / "gt_cur_freq_mhz")
+            if intel_clock > 0 and data.get("gpu_clock", 0.0) <= 0:
+                data["gpu_clock"] = intel_clock
+
+            if data:
+                self._last_gpu_source = f"sysfs:{card_path.name}"
+                break
+
+        if not data:
+            self._last_sysfs_error = "No supported GPU sysfs metrics found"
+        return data
+
+    def get_thermal_sensors(self):
+        self._last_gpu_source = None
+        self._last_gpu_card = None
+        data = DEFAULT_SENSOR_DATA.copy()
+        data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
+
+        freq = psutil.cpu_freq()
+        if freq and freq.current:
+            data["cpu_clock"] = float(freq.current)
+
+        vm = psutil.virtual_memory()
+        data["ram_percent"] = float(vm.percent)
+        data["ram_used"] = float(vm.used) / (1024 ** 3)
+        data["ram_available"] = float(vm.available) / (1024 ** 3)
+
+        data["cpu_temp"] = self._get_linux_cpu_temp()
+
+        gpu_data = self._read_nvidia_smi()
+        if not gpu_data:
+            gpu_data = self._read_sysfs_gpu()
+        else:
+            self._last_gpu_source = "nvidia-smi"
+        data.update(gpu_data)
+
+        return data
+
+    def close(self):
+        return None
+
+    def get_diagnostics(self):
+        notes = [
+            "CPU usage and RAM come from psutil.",
+            "CPU temperature comes from psutil.sensors_temperatures() when kernel exports it.",
+            "GPU metrics prefer nvidia-smi, then Linux sysfs under /sys/class/drm.",
+        ]
+        if self._last_nvidia_smi_error:
+            notes.append(f"nvidia-smi: {self._last_nvidia_smi_error}")
+        if self._last_sysfs_error:
+            notes.append(f"sysfs gpu: {self._last_sysfs_error}")
+
+        return {
+            "backend": "linux-fallback",
+            "platform": sys.platform,
+            "cpu_temp_source": self._last_cpu_temp_source,
+            "gpu_source": self._last_gpu_source,
+            "gpu_card": self._last_gpu_card,
+            "notes": notes,
+        }
+
 
 class _LibreHardwareMonitorReader:
     def __init__(self):
@@ -244,6 +465,7 @@ class _LibreHardwareMonitorReader:
         self._sensor_mapping_cache = {}
         self._gpu_usage_sensors = None
         self._gpu_usage_fallback = None
+        self._cpu_temp_sensors = None
 
     def _get_sensors(self):
         if self._cache_initialized:
@@ -294,52 +516,57 @@ class _LibreHardwareMonitorReader:
         return 0.0
 
     def _find_best_cpu_temperature(self, sensors=None):
-        if sensors is None:
-            sensors = self._get_sensors()
-
         _, SensorType = _load_lhm_types()
-        include_terms = (
-            "cpu",
-            "processor",
-            "package",
-            "tctl",
-            "tdie",
-            "ccd",
-            "core #",
-            "core max",
-            "core average",
-            "intel core",
-            "amd ryzen",
-        )
-        exclude_terms = (
-            "gpu",
-            "graphics",
-            "memory junction",
-            "vram",
-            "hot spot",
-            "hotspot",
-            "motherboard",
-            "mainboard",
-            "chipset",
-            "vrm",
-            "pch",
-            "ssd",
-            "hdd",
-            "nvme",
-            "drive",
-        )
+
+        if self._cpu_temp_sensors is None:
+            if sensors is None:
+                sensors = self._get_sensors()
+
+            include_terms = (
+                "cpu",
+                "processor",
+                "package",
+                "tctl",
+                "tdie",
+                "ccd",
+                "core #",
+                "core max",
+                "core average",
+                "intel core",
+                "amd ryzen",
+            )
+            exclude_terms = (
+                "gpu",
+                "graphics",
+                "memory junction",
+                "vram",
+                "hot spot",
+                "hotspot",
+                "motherboard",
+                "mainboard",
+                "chipset",
+                "vrm",
+                "pch",
+                "ssd",
+                "hdd",
+                "nvme",
+                "drive",
+            )
+
+            self._cpu_temp_sensors = []
+            for sensor, label in sensors:
+                if sensor.SensorType != SensorType.Temperature:
+                    continue
+                if any(term in label for term in exclude_terms):
+                    continue
+                if not any(term in label for term in include_terms):
+                    continue
+                self._cpu_temp_sensors.append(sensor)
 
         best = 0.0
-        for sensor, label in sensors:
-            if sensor.SensorType != SensorType.Temperature:
-                continue
-            if any(term in label for term in exclude_terms):
-                continue
-            if not any(term in label for term in include_terms):
-                continue
+        for sensor in self._cpu_temp_sensors:
             if sensor.Value is None:
                 continue
-
             value = float(sensor.Value)
             if 5.0 <= value <= 125.0:
                 best = max(best, value)
@@ -459,6 +686,17 @@ class _LibreHardwareMonitorReader:
             self.computer.Close()
             self.computer = None
 
+    def get_diagnostics(self):
+        return {
+            "backend": "LibreHardwareMonitor",
+            "platform": sys.platform,
+            "cpu_temp_source": "LibreHardwareMonitor",
+            "gpu_source": "LibreHardwareMonitor",
+            "notes": [
+                "CPU/GPU temperatures, clocks, power, and load come from LibreHardwareMonitor.",
+            ],
+        }
+
 
 class LibreHardwareMonitorReader:
     def __init__(self):
@@ -467,8 +705,12 @@ class LibreHardwareMonitorReader:
             self.source = "LibreHardwareMonitor"
         except Exception as exc:
             print(f"[Sensors] LibreHardwareMonitor unavailable: {exc}")
-            self._reader = _UsageOnlyReader()
-            self.source = "usage-only"
+            if sys.platform.startswith("linux"):
+                self._reader = _LinuxReader()
+                self.source = "linux-fallback"
+            else:
+                self._reader = _UsageOnlyReader()
+                self.source = "usage-only"
 
     def get_thermal_sensors(self):
         return self._reader.get_thermal_sensors()
@@ -476,6 +718,14 @@ class LibreHardwareMonitorReader:
     def close(self):
         if hasattr(self._reader, "close"):
             self._reader.close()
+
+    def get_diagnostics(self):
+        details = {
+            "source": self.source,
+        }
+        if hasattr(self._reader, "get_diagnostics"):
+            details.update(self._reader.get_diagnostics())
+        return details
 
 
 SafeHardwareMonitorReader = LibreHardwareMonitorReader
