@@ -5,7 +5,7 @@ ElementListPanel - Element list management widget with group support.
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QTreeWidget, QTreeWidgetItem,
-    QMenu, QInputDialog, QAbstractItemView
+    QMenu, QInputDialog, QAbstractItemView, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QIcon
@@ -485,12 +485,21 @@ class ElementListPanel(QWidget):
     def remove_element(self):
         indices = self.get_selected_element_indices()
         if indices:
-            self.elements_will_change.emit()
-            # Remove in reverse order to maintain indices
-            for idx in sorted(indices, reverse=True):
-                del self.elements[idx]
-            self.refresh_list()
-            self.elements_changed.emit()
+            # Confirm deletion
+            reply = QMessageBox.question(
+                self,
+                "Confirm Deletion",
+                f"Are you sure you want to remove the {len(indices)} selected element(s)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                self.elements_will_change.emit()
+                # Remove in reverse order to maintain indices
+                for idx in sorted(indices, reverse=True):
+                    del self.elements[idx]
+                self.refresh_list()
+                self.elements_changed.emit()
 
     def duplicate_element(self):
         indices = self.get_selected_element_indices()
