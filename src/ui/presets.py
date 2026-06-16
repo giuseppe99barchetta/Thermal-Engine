@@ -238,6 +238,7 @@ class PresetsPanel(QWidget):
         self.show_all_checkbox = QCheckBox("All resolutions")
         self.show_all_checkbox.setChecked(self.show_all_resolutions)
         self.show_all_checkbox.setToolTip("Show presets for all display resolutions")
+        self.show_all_checkbox.setAccessibleDescription("Show presets for all display resolutions")
         self.show_all_checkbox.stateChanged.connect(self.toggle_resolution_filter)
         title_row.addWidget(self.show_all_checkbox)
 
