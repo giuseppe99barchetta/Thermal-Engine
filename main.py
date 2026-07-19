@@ -1,10 +1,3 @@
-"""
-Thermal Engine
-A visual theme editor for LCD displays.
-
-Entry point for the application.
-"""
-
 import sys
 import os
 import io
