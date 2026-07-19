@@ -1,4 +1,4 @@
-# Fix: No USB Devices Found on Windows
+# Fix: No USB Devices Found on Windows Host
 
 ## Problem
 When running `diagnose_usb.py`, you get:
