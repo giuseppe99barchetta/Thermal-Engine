@@ -1,11 +1,14 @@
 """Background hardware sensor monitoring with an honest degraded state."""
 
+import logging
 import threading
 import time
 
 from src.core.libre_hw_monitor import (
     SafeHardwareMonitorReader,
 )
+
+logger = logging.getLogger(__name__)
 
 # Configuration
 _SENSOR_UPDATE_INTERVAL = 0.5
@@ -52,6 +55,10 @@ _reader_lock = threading.RLock()
 _sensor_status = {
     "backend": None,
     "thermal_available": False,
+    "cpu_thermal_available": False,
+    "gpu_thermal_available": False,
+    "cpu_thermal_reason": "backend_error",
+    "gpu_thermal_reason": "backend_error",
     "degraded": True,
     "reason": "backend_error",
     "values": _latest_sensor_data.copy(),
@@ -71,7 +78,9 @@ def _update_status(data, error=None):
         pass
 
     backend = diagnostics.get("backend") or diagnostics.get("source")
-    thermal_available = _has_thermal_data(data)
+    cpu_thermal_available = float((data or {}).get("cpu_temp", 0) or 0) > 0
+    gpu_thermal_available = float((data or {}).get("gpu_temp", 0) or 0) > 0
+    thermal_available = cpu_thermal_available or gpu_thermal_available
     reason = None
     if error:
         reason = diagnostics.get("reason") or "backend_error"
@@ -85,10 +94,15 @@ def _update_status(data, error=None):
     HAS_LHM = thermal_available and backend == "LibreHardwareMonitor"
     SENSOR_ERROR = str(error) if error else diagnostics.get("initialization_error")
     LHM_ERROR = SENSOR_ERROR
+    unavailable_reason = reason or "no_supported_sensor"
     with _sensor_data_lock:
         _sensor_status = {
             "backend": backend,
             "thermal_available": thermal_available,
+            "cpu_thermal_available": cpu_thermal_available,
+            "gpu_thermal_available": gpu_thermal_available,
+            "cpu_thermal_reason": None if cpu_thermal_available else unavailable_reason,
+            "gpu_thermal_reason": None if gpu_thermal_available else unavailable_reason,
             "degraded": not thermal_available,
             "reason": reason,
             "values": (data or {}).copy(),
@@ -143,7 +157,7 @@ def _sensor_polling_thread():
             with _reader_lock:
                 if _reader and hasattr(_reader, "invalidate_cache"):
                     _reader.invalidate_cache()
-            print(f"[Sensors] Poll error: {e}")
+            logger.exception("Sensor poll failed")
 
         time.sleep(_SENSOR_UPDATE_INTERVAL)
 
@@ -163,11 +177,11 @@ def init_sensors(app_dir=None):
             with _sensor_data_lock:
                 _latest_sensor_data.update(initial)
         _update_status(initial)
-        print(f"[Sensors] Backend initialized: {_sensor_status['backend'] or 'unknown'}")
+        logger.info("Sensor backend initialized: %s", _sensor_status['backend'] or 'unknown')
 
     except Exception as e:
         _update_status({}, e)
-        print(f"[Sensors] Safe hardware monitor init failed: {e}")
+        logger.exception("Safe hardware monitor initialization failed")
 
     _sensor_thread_running = True
     _sensor_thread = threading.Thread(
@@ -176,7 +190,7 @@ def init_sensors(app_dir=None):
     )
     _sensor_thread.start()
 
-    print("[Sensors] Background polling started")
+    logger.info("Background sensor polling started")
     return HAS_SAFE_MONITOR
 
 
@@ -230,7 +244,7 @@ get_lhm_sensors_sync = get_sensors_sync
 def stop_sensors():
     global _sensor_thread_running, _sensor_thread, HAS_SAFE_MONITOR, HAS_LHM, _reader
 
-    print("[Sensors] Stopping sensor monitoring...")
+    logger.info("Stopping sensor monitoring")
 
     _sensor_thread_running = False
     if _sensor_thread and _sensor_thread.is_alive():
@@ -245,7 +259,7 @@ def stop_sensors():
     HAS_LHM = False
     _update_status({}, None)
 
-    print("[Sensors] Sensor monitoring stopped")
+    logger.info("Sensor monitoring stopped")
 
 
 def get_sensor_source():

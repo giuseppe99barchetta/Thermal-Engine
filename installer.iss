@@ -68,7 +68,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Type: files; Name: "{userstartup}\{#MyAppName}.lnk"
 
 [Run]
-Filename: "{tmp}\PawnIO_setup.exe"; Parameters: "-install -silent"; Description: "Installing PawnIO hardware access..."; Flags: runhidden waituntilterminated; Tasks: pawnio; Check: not PawnIOInstalled
 ; Option to launch after installation
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
@@ -80,6 +79,34 @@ Filename: "{cmd}"; Parameters: "/c taskkill /f /im {#MyAppExeName} >nul 2>&1"; F
 function PawnIOInstalled: Boolean;
 begin
   Result :=
+    RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\PawnIO') or
     RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\PawnIO') or
     RegKeyExists(HKLM64, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if (CurStep = ssPostInstall) and
+     WizardIsTaskSelected('pawnio') and
+     (not PawnIOInstalled) then
+  begin
+    ResultCode := -1;
+    if (not Exec(
+      ExpandConstant('{tmp}\PawnIO_setup.exe'),
+      '-install -silent',
+      '',
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode
+    )) or (ResultCode <> 0) or (not PawnIOInstalled) then
+      MsgBox(
+        'ThermalEngine was installed, but PawnIO could not be installed. ' +
+        'Temperature sensors may remain unavailable. You can retry PawnIO ' +
+        'later from its official installer.',
+        mbError,
+        MB_OK
+      );
+  end;
 end;

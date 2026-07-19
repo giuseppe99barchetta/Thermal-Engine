@@ -106,12 +106,38 @@ SUPPORTED_DEVICES = [
 ]
 
 
-def find_device_definition(vendor_id: int, product_id: int) -> Optional[DeviceDefinition]:
-    """Find a device definition by VID/PID."""
+def find_device_definition(
+    vendor_id: int,
+    product_id: int,
+    backend_type: Optional[str] = None,
+) -> Optional[DeviceDefinition]:
+    """Find a device definition by VID/PID and, when known, transport."""
     for device in SUPPORTED_DEVICES:
-        if device.vendor_id == vendor_id and device.product_id == product_id:
+        if (
+            device.vendor_id == vendor_id
+            and device.product_id == product_id
+            and (backend_type is None or device.backend_type == backend_type)
+        ):
             return device
     return None
+
+
+def _has_bulk_out_endpoint(device, usb_util) -> bool:
+    """Return whether a USB device exposes the bulk OUT transport we require."""
+    try:
+        for configuration in device:
+            for interface in configuration:
+                for endpoint in interface:
+                    if (
+                        usb_util.endpoint_direction(endpoint.bEndpointAddress)
+                        == usb_util.ENDPOINT_OUT
+                        and usb_util.endpoint_type(endpoint.bmAttributes)
+                        == usb_util.ENDPOINT_TYPE_BULK
+                    ):
+                        return True
+    except Exception:
+        return False
+    return False
 
 
 # ============================================================================
@@ -595,8 +621,8 @@ def enumerate_available_devices() -> List[DeviceDefinition]:
         for hid_dev in hid_devices:
             vid = hid_dev['vendor_id']
             pid = hid_dev['product_id']
-            device_def = find_device_definition(vid, pid)
-            if device_def and device_def.backend_type == 'hid':
+            device_def = find_device_definition(vid, pid, backend_type='hid')
+            if device_def:
                 if device_def not in available:
                     available.append(device_def)
                     logger.info(f"Found HID device: {device_def.name}")
@@ -608,6 +634,7 @@ def enumerate_available_devices() -> List[DeviceDefinition]:
     # Try USB devices
     try:
         import usb.core
+        import usb.util
 
         for device_def in SUPPORTED_DEVICES:
             if device_def.backend_type == 'usb_bulk':
@@ -615,7 +642,7 @@ def enumerate_available_devices() -> List[DeviceDefinition]:
                     idVendor=device_def.vendor_id,
                     idProduct=device_def.product_id
                 )
-                if dev:
+                if dev and _has_bulk_out_endpoint(dev, usb.util):
                     if device_def not in available:
                         available.append(device_def)
                         logger.info(f"Found USB device: {device_def.name}")

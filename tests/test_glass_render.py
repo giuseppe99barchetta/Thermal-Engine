@@ -1,4 +1,5 @@
 import unittest
+import threading
 from types import MethodType, SimpleNamespace
 
 from PIL import Image
@@ -11,6 +12,7 @@ class TestGlassRender(unittest.TestCase):
     def test_glass_rectangle_tracks_changing_background(self):
         window = SimpleNamespace()
         window._element_render_cache = {}
+        window._render_cache_lock = threading.RLock()
         window.get_pil_font = lambda *args, **kwargs: None
         window._compute_element_state_hash = MethodType(ThemeEditorWindow._compute_element_state_hash, window)
         window._fast_alpha_composite = MethodType(ThemeEditorWindow._fast_alpha_composite, window)

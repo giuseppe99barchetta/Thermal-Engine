@@ -11,6 +11,7 @@ import threading
 import functools
 import psutil
 import logging
+import platform
 import webbrowser
 
 # Windows-specific imports for power event handling
@@ -171,7 +172,11 @@ from src.core.element import ThemeElement
 from src.core import sensors
 from src.core.sensors import get_cached_sensors, stop_sensors
 from src.utils import settings
-from src.utils.app_path import get_resource_path, get_bundled_resource_path
+from src.utils.app_path import (
+    get_resource_path,
+    get_bundled_resource_path,
+    get_user_data_path,
+)
 from src.utils.updater import (
     GITHUB_RELEASES_URL,
     UpdateChecker,
@@ -238,6 +243,9 @@ class ThemeEditorWindow(QMainWindow):
         self._render_thread_running = False
         self._frame_request = threading.Event()
         self._frame_error = None
+        self._frame_snapshot = None
+        self._frame_snapshot_lock = threading.Lock()
+        self._render_cache_lock = threading.RLock()
 
         # Render caching for performance (reduces per-frame overhead ~75%)
         self._analog_clock_cache = {}  # {element_id: (overlay_image, last_second, config_hash)}
@@ -794,6 +802,10 @@ class ThemeEditorWindow(QMainWindow):
         diagnose_action.triggered.connect(self.diagnose_sensors)
         display_menu.addAction(diagnose_action)
 
+        copy_diagnostics_action = QAction("Copy Diagnostic Report", self)
+        copy_diagnostics_action.triggered.connect(self.copy_diagnostic_report)
+        display_menu.addAction(copy_diagnostics_action)
+
         # Settings menu
         settings_menu = menubar.addMenu("Settings")
 
@@ -1045,9 +1057,10 @@ class ThemeEditorWindow(QMainWindow):
     def _on_property_changed(self):
         """Invalidate render cache when element properties change."""
         # Clear all caches - properties changed so cached renders are stale
-        self._element_render_cache.clear()
-        self._analog_clock_cache.clear()
-        self._element_dirty.clear()
+        with self._render_cache_lock:
+            self._element_render_cache.clear()
+            self._analog_clock_cache.clear()
+            self._element_dirty.clear()
 
     def _compute_element_state_hash(self, element):
         """Hash every serialized visual property for cache validation."""
@@ -1126,186 +1139,6 @@ class ThemeEditorWindow(QMainWindow):
         """Update enabled state of undo/redo actions."""
         self.undo_action.setEnabled(len(self.undo_stack) > 0)
         self.redo_action.setEnabled(len(self.redo_stack) > 0)
-
-    # ------------------------------------------------------------------ #
-    #  Copy / Paste
-    # ------------------------------------------------------------------ #
-
-    def copy_selected_elements(self):
-        """Copy selected elements to clipboard."""
-        indices = self._get_selected_global_indices()
-        if not indices:
-            return
-        self._clipboard = [self.elements[i].to_dict() for i in indices]
-        self.status_bar.showMessage(
-            f"Copied {len(self._clipboard)} element(s)", 2000
-        )
-
-    def paste_elements(self):
-        """Paste elements from clipboard with a small offset."""
-        if not self._clipboard:
-            return
-        self.save_undo_state()
-        new_elements = []
-        for elem_dict in self._clipboard:
-            new_el = ThemeElement.from_dict(elem_dict)
-            new_el.x += 20
-            new_el.y += 20
-            new_el.name = f"{new_el.name}_copy"
-            new_el.page = self.current_page
-            self.elements.append(new_el)
-            new_elements.append(new_el)
-        self.element_list.set_elements(self.elements)
-        self.refresh_canvas()
-        # Select newly pasted elements
-        new_indices = [self.elements.index(el) for el in new_elements]
-        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
-        canvas_indices = [page_elements.index(el) for el in new_elements if el in page_elements]
-        self.canvas.set_selected_indices(canvas_indices)
-        self.status_bar.showMessage(
-            f"Pasted {len(new_elements)} element(s)", 2000
-        )
-
-    # ------------------------------------------------------------------ #
-    #  Z-Order
-    # ------------------------------------------------------------------ #
-
-    def _get_selected_global_indices(self):
-        """Map canvas.selected_indices → indices into self.elements."""
-        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
-        result = []
-        for ci in self.canvas.selected_indices:
-            if 0 <= ci < len(page_elements):
-                try:
-                    result.append(self.elements.index(page_elements[ci]))
-                except ValueError:
-                    pass
-        return result
-
-    def bring_to_front(self):
-        """Move selected elements to index 0 (front)."""
-        indices = sorted(self._get_selected_global_indices())
-        if not indices:
-            return
-        self.save_undo_state()
-        selected_els = [self.elements[i] for i in indices]
-        for el in selected_els:
-            self.elements.remove(el)
-        for i, el in enumerate(selected_els):
-            self.elements.insert(i, el)
-        self._refresh_after_zorder()
-
-    def bring_forward(self):
-        """Move selected elements one step toward front (lower index)."""
-        indices = sorted(self._get_selected_global_indices())
-        if not indices or indices[0] == 0:
-            return
-        self.save_undo_state()
-        for idx in indices:
-            if idx > 0:
-                self.elements[idx], self.elements[idx - 1] = (
-                    self.elements[idx - 1], self.elements[idx]
-                )
-        self._refresh_after_zorder()
-
-    def send_backward(self):
-        """Move selected elements one step toward back (higher index)."""
-        indices = sorted(self._get_selected_global_indices(), reverse=True)
-        if not indices or indices[0] == len(self.elements) - 1:
-            return
-        self.save_undo_state()
-        for idx in indices:
-            if idx < len(self.elements) - 1:
-                self.elements[idx], self.elements[idx + 1] = (
-                    self.elements[idx + 1], self.elements[idx]
-                )
-        self._refresh_after_zorder()
-
-    def send_to_back(self):
-        """Move selected elements to the end (back)."""
-        indices = sorted(self._get_selected_global_indices(), reverse=True)
-        if not indices:
-            return
-        self.save_undo_state()
-        selected_els = [self.elements[i] for i in sorted(indices)]
-        for el in selected_els:
-            self.elements.remove(el)
-        self.elements.extend(selected_els)
-        self._refresh_after_zorder()
-
-    def _refresh_after_zorder(self):
-        self.element_list.set_elements(self.elements)
-        self.refresh_canvas()
-        self.status_bar.showMessage("Z-order updated", 1500)
-
-    # ------------------------------------------------------------------ #
-    #  Auto Profiles
-    # ------------------------------------------------------------------ #
-
-    def _start_profile_monitors(self):
-        """Start foreground app monitor and system state monitor."""
-        from src.utils.profiles import ForegroundAppMonitor, SystemStateMonitor
-
-        if self._foreground_monitor is None:
-            self._foreground_monitor = ForegroundAppMonitor()
-            self._foreground_monitor.app_changed.connect(self._on_foreground_app_changed)
-            if self._profile_manager.enabled:
-                self._foreground_monitor.start()
-
-        if self._system_state_monitor is None:
-            self._system_state_monitor = SystemStateMonitor()
-            self._system_state_monitor.state_changed.connect(self._on_system_state_changed)
-            if self._profile_manager.system_profile_enabled:
-                self._system_state_monitor.start()
-
-    def _on_foreground_app_changed(self, process_name, window_title):
-        """Handle foreground app change for profile switching."""
-        preset_name = self._profile_manager.match_app(process_name, window_title)
-        if preset_name:
-            preset_data = self.presets_panel.get_preset_data_by_name(preset_name)
-            if preset_data:
-                self.load_preset(preset_data)
-                self.status_bar.showMessage(
-                    f"Auto profile: {preset_name} (app: {process_name})", 3000
-                )
-
-    def _on_system_state_changed(self, state):
-        """Handle system state change (idle/gaming/normal) for profile switching."""
-        if not self._profile_manager.system_profile_enabled:
-            return
-        preset_name = None
-        if state == "idle":
-            preset_name = self._profile_manager.system_idle_preset
-        elif state == "gaming":
-            preset_name = self._profile_manager.system_gaming_preset
-        if preset_name:
-            preset_data = self.presets_panel.get_preset_data_by_name(preset_name)
-            if preset_data:
-                self.load_preset(preset_data)
-                self.status_bar.showMessage(
-                    f"System state → {state}: loaded preset '{preset_name}'", 3000
-                )
-
-    def show_auto_profiles(self):
-        """Show the Auto Profiles configuration dialog."""
-        from src.utils.profiles import ProfileDialog
-        available = self.presets_panel.get_preset_names()
-        dialog = ProfileDialog(self._profile_manager, available, self)
-        if dialog.exec():
-            # Restart monitors based on new settings
-            if self._foreground_monitor:
-                if self._profile_manager.enabled:
-                    if not self._foreground_monitor.isRunning():
-                        self._foreground_monitor.start()
-                else:
-                    self._foreground_monitor.stop()
-
-            if self._system_state_monitor:
-                if self._profile_manager.system_profile_enabled:
-                    if not self._system_state_monitor.isRunning():
-                        self._system_state_monitor.start()
-                else:
-                    self._system_state_monitor.stop()
 
     # ------------------------------------------------------------------ #
     #  Copy / Paste
@@ -1962,20 +1795,63 @@ class ThemeEditorWindow(QMainWindow):
 
     def diagnose_sensors(self):
         """Show diagnostic information about available sensors."""
+        QMessageBox.information(
+            self,
+            "Sensor Diagnostic",
+            self.build_diagnostic_report(),
+        )
+
+    def build_diagnostic_report(self):
+        """Build a support-ready report without secrets or user file contents."""
         info = []
-        info.append("=== Sensor Diagnostic ===\n")
+        info.append("=== ThermalEngine Diagnostic ===")
+
+        try:
+            from src.utils.app_version import __version__
+        except ImportError:
+            __version__ = "unknown"
+
+        device = self.selected_device_def
+        info.append(f"Version: {__version__}")
+        info.append(f"Platform: {platform.platform()}")
+        info.append(f"Python: {platform.python_version()}")
+        info.append(
+            f"Display: {device.name} ({device.backend_type})"
+            if device else "Display: not connected"
+        )
+        info.append(f"Target FPS: {self.target_fps}")
+        info.append(f"Log file: {get_user_data_path('ThermalEngine.log')}")
+        if self._frame_error:
+            info.append(f"Last frame error: {self._frame_error}")
+        info.append("\n=== Sensors ===")
 
         source = sensors.get_sensor_source_display() if hasattr(sensors, 'get_sensor_source_display') else "Unknown"
         sensor_diag = sensors.get_sensor_diagnostics() if hasattr(sensors, 'get_sensor_diagnostics') else {}
 
         info.append(f"Sensor source: {source}")
-        info.append(f"Platform: {sensor_diag.get('platform', 'unknown')}")
+        info.append(f"Sensor platform: {sensor_diag.get('platform', 'unknown')}")
         info.append(f"Reader source: {sensor_diag.get('source', 'unknown')}")
         info.append(f"Backend: {sensor_diag.get('backend', 'unknown')}")
         info.append("")
 
         thermal_available = sensor_diag.get("thermal_available", False)
         info.append(f"Thermal sensors available: {thermal_available}")
+        info.append(
+            "CPU temperature: "
+            + (
+                "available"
+                if sensor_diag.get("cpu_thermal_available")
+                else f"unavailable ({sensor_diag.get('cpu_thermal_reason') or 'unknown'})"
+            )
+        )
+        info.append(
+            "GPU temperature: "
+            + (
+                "available"
+                if sensor_diag.get("gpu_thermal_available")
+                else f"unavailable ({sensor_diag.get('gpu_thermal_reason') or 'unknown'})"
+            )
+        )
         info.append(f"Degraded: {sensor_diag.get('degraded', True)}")
         info.append(f"Reason: {sensor_diag.get('reason') or 'none'}")
         info.append(f"CPU temp source: {sensor_diag.get('cpu_temp_source') or 'not found'}")
@@ -2010,7 +1886,12 @@ class ThemeEditorWindow(QMainWindow):
         for key, value in data.items():
             info.append(f"  {key}: {value}")
 
-        QMessageBox.information(self, "Sensor Diagnostic", "\n".join(info))
+        return "\n".join(info)
+
+    def copy_diagnostic_report(self):
+        """Copy the diagnostic report for support requests."""
+        QApplication.clipboard().setText(self.build_diagnostic_report())
+        self.status_bar.showMessage("Diagnostic report copied", 2500)
 
     def toggle_connection(self):
         """Toggle between connected and disconnected states."""
@@ -2459,17 +2340,31 @@ class ThemeEditorWindow(QMainWindow):
             self._frame_request.clear()
             try:
                 if self.backend and self.backend.is_connected():
-                    sensor_data = self.get_sensor_data()
-                    for element in self.get_current_page_elements():
-                        if element.source != "static" and element.source in sensor_data:
-                            element.value = sensor_data[element.source]
-
-                    img = self.render_theme_image()
+                    with self._frame_snapshot_lock:
+                        snapshot = self._frame_snapshot
+                        self._frame_snapshot = None
+                    if snapshot is None:
+                        continue
+                    img = self.render_theme_image(snapshot=snapshot)
                     jpeg_data = self.image_to_jpeg(img)
                     self.send_jpeg_frame(jpeg_data)
                     self.record_frame_time()
             except Exception as e:
                 self._frame_error = e
+
+    def _capture_render_snapshot(self):
+        """Copy GUI-owned render state before handing it to the worker."""
+        sensor_data = self.get_sensor_data()
+        elements = []
+        for element in self.get_current_page_elements():
+            data = element.to_dict()
+            if element.source != "static" and element.source in sensor_data:
+                data["value"] = sensor_data[element.source]
+            elements.append((id(element), data))
+        return {
+            "background_color": self.background_color,
+            "elements": elements,
+        }
 
     def start_continuous_send(self):
         interval = round(1000 / self.target_fps)
@@ -2519,6 +2414,9 @@ class ThemeEditorWindow(QMainWindow):
 
             if self._frame_request.is_set():
                 self._frames_skipped += 1
+            snapshot = self._capture_render_snapshot()
+            with self._frame_snapshot_lock:
+                self._frame_snapshot = snapshot
             self._frame_request.set()
             self._last_frame_request_time = current_time
 
@@ -2745,40 +2643,50 @@ class ThemeEditorWindow(QMainWindow):
             # If bbox is None, the overlay is completely transparent, so we don't need to composite anything
             pass
 
-    def render_theme_image(self):
+    def render_theme_image(self, snapshot=None):
+        if snapshot is None:
+            background_color = self.background_color
+            page_elements = [(id(element), element) for element in self.get_current_page_elements()]
+        else:
+            background_color = snapshot["background_color"]
+            page_elements = [
+                (cache_key, ThemeElement.from_dict(data))
+                for cache_key, data in snapshot["elements"]
+            ]
+
         # Use video frame as background if enabled, otherwise solid color
         if video_background.enabled:
             video_frame = video_background.get_frame_pil()
             if video_frame:
                 img = video_frame.copy().convert('RGBA')
             else:
-                img = Image.new('RGBA', (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT), color=self.background_color)
+                img = Image.new('RGBA', (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT), color=background_color)
         else:
-            img = Image.new('RGBA', (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT), color=self.background_color)
+            img = Image.new('RGBA', (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT), color=background_color)
 
         # Render in reverse order so elements at top of list appear in front
-        # Filter by current page
-        page_elements = self.get_current_page_elements()
-        for element in reversed(page_elements):
-            self.render_element_with_opacity(img, element)
+        for cache_key, element in reversed(page_elements):
+            self.render_element_with_opacity(img, element, cache_key=cache_key)
 
         # Convert back to RGB for output
         return img.convert('RGB')
 
-    def render_element_with_opacity(self, img, element):
+    def render_element_with_opacity(self, img, element, cache_key=None):
         """Render an element with opacity support using alpha compositing.
         Uses caching to avoid re-rendering elements whose state hasn't changed."""
         
         # Use element id for cache key
-        elem_id = id(element)
+        elem_id = cache_key if cache_key is not None else id(element)
         
         cacheable = element.type in {"circle_gauge", "bar_gauge", "text", "image"}
         cacheable = cacheable or (
             element.type == "rectangle" and not getattr(element, "glass_effect", False)
         )
         current_state_hash = self._compute_element_state_hash(element)
-        if cacheable and elem_id in self._element_render_cache:
-            cached_overlay, cached_hash, bounds = self._element_render_cache[elem_id]
+        with self._render_cache_lock:
+            cached = self._element_render_cache.get(elem_id) if cacheable else None
+        if cached:
+            cached_overlay, cached_hash, bounds = cached
             if cached_hash == current_state_hash:
                 # Cache hit - use cached overlay
                 # Optimization: Alpha composite only the bounding box instead of the full screen
@@ -2833,7 +2741,13 @@ class ThemeEditorWindow(QMainWindow):
             )
             self.render_text_rgba(overlay, temp_element, font, color_opacity)
         elif element.type == "analog_clock":
-            self.render_analog_clock_rgba(overlay, element, color_opacity, bg_opacity)
+            self.render_analog_clock_rgba(
+                overlay,
+                element,
+                color_opacity,
+                bg_opacity,
+                cache_key=elem_id,
+            )
         elif element.type == "image":
             if element.image_path:
                 # Validate image path is safe
@@ -2871,11 +2785,13 @@ class ThemeEditorWindow(QMainWindow):
             cropped = overlay.crop(bbox)
             bounds = (bbox[0], bbox[1])
             if cacheable:
-                self._element_render_cache[elem_id] = (cropped, current_state_hash, bounds)
+                with self._render_cache_lock:
+                    self._element_render_cache[elem_id] = (cropped, current_state_hash, bounds)
             img.alpha_composite(cropped, bounds)
         else:
             if cacheable:
-                self._element_render_cache[elem_id] = (overlay, current_state_hash, (0, 0))
+                with self._render_cache_lock:
+                    self._element_render_cache[elem_id] = (overlay, current_state_hash, (0, 0))
             self._fast_alpha_composite(img, overlay)
 
     def render_rectangle_rgba(self, img, element, opacity, blur_source=None):
@@ -3680,7 +3596,14 @@ class ThemeEditorWindow(QMainWindow):
         # Composite onto main image
         self._fast_alpha_composite(img, overlay)
 
-    def render_analog_clock_rgba(self, img, element, color_opacity, bg_opacity):
+    def render_analog_clock_rgba(
+        self,
+        img,
+        element,
+        color_opacity,
+        bg_opacity,
+        cache_key=None,
+    ):
         """Render analog clock with opacity support and per-second caching.
         Caches static clock face, only updates hands per frame."""
         import math
@@ -3688,7 +3611,7 @@ class ThemeEditorWindow(QMainWindow):
 
         x, y = element.x, element.y
         radius = element.radius
-        elem_id = id(element)
+        elem_id = cache_key if cache_key is not None else id(element)
 
         # Get options
         show_seconds = getattr(element, 'show_seconds_hand', True)
@@ -3713,8 +3636,10 @@ class ThemeEditorWindow(QMainWindow):
 
         # Check cache for static clock face (valid for entire second)
         clock_face_overlay = None
-        if elem_id in self._analog_clock_cache:
-            cached_face, cached_second, cached_hash = self._analog_clock_cache[elem_id]
+        with self._render_cache_lock:
+            cached = self._analog_clock_cache.get(elem_id)
+        if cached:
+            cached_face, cached_second, cached_hash = cached
             if cached_second == current_second and cached_hash == config_hash:
                 clock_face_overlay = cached_face.copy()
         
@@ -3777,7 +3702,12 @@ class ThemeEditorWindow(QMainWindow):
                     draw.line([(x1, y1), (x2, y2)], fill=color_rgba, width=tick_width)
             
             # Cache the static clock face
-            self._analog_clock_cache[elem_id] = (clock_face_overlay.copy(), current_second, config_hash)
+            with self._render_cache_lock:
+                self._analog_clock_cache[elem_id] = (
+                    clock_face_overlay.copy(),
+                    current_second,
+                    config_hash,
+                )
         
         # Now add dynamic hands on top of cached face
         hands_overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))

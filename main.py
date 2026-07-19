@@ -12,8 +12,10 @@ if sys.stderr is None:
 
 import argparse
 import atexit
+import logging
 import signal
 import webbrowser
+from logging.handlers import RotatingFileHandler
 
 from PySide6.QtWidgets import (
     QApplication, QMessageBox, QSystemTrayIcon, QMenu,
@@ -25,7 +27,25 @@ from PySide6.QtCore import Qt, QSharedMemory
 from src.core import sensors
 from src.core.sensors import init_sensors
 from src.ui.main_window import ThemeEditorWindow
-from src.utils.app_path import get_bundled_resource_path
+from src.utils.app_path import get_bundled_resource_path, get_user_data_path
+
+
+def configure_logging():
+    """Keep a small persistent log for hardware diagnostics."""
+    log_path = get_user_data_path("ThermalEngine.log")
+    handler = RotatingFileHandler(
+        log_path,
+        maxBytes=1_000_000,
+        backupCount=2,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    ))
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(handler)
+    return log_path
 
 
 class SensorSetupDialog(QDialog):
@@ -153,6 +173,8 @@ def create_tray_icon():
 
 
 def main():
+    configure_logging()
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Thermal Engine')
     parser.add_argument('--minimized', action='store_true', help='Start minimized to system tray')
