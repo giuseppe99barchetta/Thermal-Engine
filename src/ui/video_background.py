@@ -3,12 +3,13 @@ Video Background Manager
 
 Handles video playback for theme backgrounds using OpenCV.
 Supports fit-to-height and fit-to-width scaling modes.
-Pre-buffers all frames in memory for smooth playback.
+Decodes continuously into a bounded latest-frame buffer.
 """
 
 import os
 import time
 import threading
+from collections import deque
 from PIL import Image
 
 try:
@@ -40,24 +41,19 @@ class VideoBackground:
         self._video_width = 0
         self._video_height = 0
 
-        # Frame buffer - stores pre-scaled numpy arrays (RGB)
-        # Limited to prevent excessive memory usage
-        self._frame_buffer = []
+        self._frame_buffer = deque(maxlen=3)
         self._buffer_ready = False
         self._loading = False
         self._load_progress = 0
         self._load_error = None
-        self._max_buffered_frames = 300  # ~10 seconds at 30fps, ~540MB max
-        self._frames_truncated = False
-
-        # Playback state
-        self._current_frame_idx = 0
-        self._last_frame_time = 0
+        self._frame_serial = 0
 
         # Cached converted frames for current frame
         self._cached_pil = None
         self._cached_pixmap = None
-        self._cached_frame_idx = -1
+        self._cached_pil_serial = -1
+        self._cached_pixmap_serial = -1
+        self._cached_pixmap_scale = None
 
         # Threading
         self._lock = threading.Lock()
@@ -66,7 +62,7 @@ class VideoBackground:
 
     def load_video(self, path, callback=None):
         """
-        Load a video file and buffer all frames.
+        Open a video and start bounded background decoding.
 
         Args:
             path: Path to video file
@@ -92,16 +88,18 @@ class VideoBackground:
 
         # Reset state
         with self._lock:
-            self._frame_buffer = []
+            self._frame_buffer.clear()
             self._buffer_ready = False
             self._loading = True
             self._load_progress = 0
             self._load_error = None
             self._stop_loading = False
-            self._current_frame_idx = 0
+            self._frame_serial = 0
             self._cached_pil = None
             self._cached_pixmap = None
-            self._cached_frame_idx = -1
+            self._cached_pil_serial = -1
+            self._cached_pixmap_serial = -1
+            self._cached_pixmap_scale = None
 
         # Start loading in background thread
         self._load_thread = threading.Thread(
@@ -116,7 +114,7 @@ class VideoBackground:
         return True
 
     def _load_video_thread(self, path, callback):
-        """Background thread to load and buffer video frames."""
+        """Decode frames at source FPS, retaining at most the latest three."""
         try:
             cap = cv2.VideoCapture(path)
             if not cap.isOpened():
@@ -133,20 +131,24 @@ class VideoBackground:
             self._video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             self._video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-            # Calculate target dimensions
             new_width, new_height, x_offset, y_offset = self._calculate_dimensions()
+            frame_duration = 1.0 / max(1.0, self._fps)
+            next_frame_at = time.monotonic()
+            first_frame = True
 
-            frames = []
-            frame_idx = 0
-
-            while True:
+            while not self._stop_loading:
+                delay = next_frame_at - time.monotonic()
+                if delay > 0:
+                    time.sleep(min(delay, 0.05))
+                    continue
                 if self._stop_loading:
-                    cap.release()
-                    return
+                    break
 
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    next_frame_at = time.monotonic()
+                    continue
 
                 # Convert BGR to RGB
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -175,35 +177,26 @@ class VideoBackground:
 
                 output[y_start:y_end, x_start:x_end] = frame_resized[src_y_start:src_y_end, src_x_start:src_x_end]
 
-                frames.append(output)
-                frame_idx += 1
-
-                # Limit frames to prevent excessive memory usage
-                if frame_idx >= self._max_buffered_frames:
-                    self._frames_truncated = True
-                    print(f"[Video] Limiting to {self._max_buffered_frames} frames to save memory")
-                    break
-
-                # Update progress
-                progress = frame_idx / max(1, min(self._frame_count, self._max_buffered_frames))
                 with self._lock:
-                    self._load_progress = progress
+                    self._frame_buffer.append(output)
+                    self._frame_serial += 1
+                    self._buffer_ready = True
+                    self._loading = False
+                    self._load_progress = 1.0
+                    self._cached_pil = None
+                    self._cached_pixmap = None
+                    self._cached_pil_serial = -1
+                    self._cached_pixmap_serial = -1
 
-                if callback:
-                    callback(progress, False, None)
+                if first_frame:
+                    first_frame = False
+                    if callback:
+                        callback(1.0, True, None)
+                next_frame_at += frame_duration
+                if next_frame_at < time.monotonic() - frame_duration:
+                    next_frame_at = time.monotonic()
 
             cap.release()
-
-            # Store buffered frames
-            with self._lock:
-                self._frame_buffer = frames
-                self._frame_count = len(frames)
-                self._buffer_ready = True
-                self._loading = False
-                self._load_progress = 1.0
-
-            if callback:
-                callback(1.0, True, None)
 
         except Exception as e:
             with self._lock:
@@ -243,13 +236,15 @@ class VideoBackground:
             self._load_thread.join(timeout=1.0)
 
         with self._lock:
-            self._frame_buffer = []
+            self._frame_buffer.clear()
             self._buffer_ready = False
             self._loading = False
-            self._current_frame_idx = 0
+            self._frame_serial = 0
             self._cached_pil = None
             self._cached_pixmap = None
-            self._cached_frame_idx = -1
+            self._cached_pil_serial = -1
+            self._cached_pixmap_serial = -1
+            self._cached_pixmap_scale = None
 
         self.video_path = ""
         self.enabled = False
@@ -257,7 +252,6 @@ class VideoBackground:
     def set_fit_mode(self, mode):
         """Set the fit mode and reload if needed."""
         if mode in [self.FIT_HEIGHT, self.FIT_WIDTH] and mode != self.fit_mode:
-            old_mode = self.fit_mode
             self.fit_mode = mode
 
             # Reload video with new fit mode if we have a video loaded
@@ -267,24 +261,11 @@ class VideoBackground:
     def reset_timing(self):
         """Reset playback timing after system wake or other timing disruption."""
         with self._lock:
-            self._last_frame_time = time.time()
-            # Don't reset frame index - continue from where we were
-            # Invalidate caches
             self._cached_pil = None
             self._cached_pixmap = None
-            self._cached_frame_idx = -1
-
-    def _advance_frame(self):
-        """Advance to next frame based on elapsed time."""
-        if not self._buffer_ready or self._frame_count == 0:
-            return
-
-        current_time = time.time()
-        frame_duration = 1.0 / self._fps
-
-        if current_time - self._last_frame_time >= frame_duration:
-            self._current_frame_idx = (self._current_frame_idx + 1) % self._frame_count
-            self._last_frame_time = current_time
+            self._cached_pil_serial = -1
+            self._cached_pixmap_serial = -1
+            self._cached_pixmap_scale = None
 
     def get_frame_pil(self):
         """Get the current frame as a PIL Image."""
@@ -295,19 +276,15 @@ class VideoBackground:
             if not self._buffer_ready or not self._frame_buffer:
                 return None
 
-            self._advance_frame()
-
             # Return cached if same frame
-            if self._cached_frame_idx == self._current_frame_idx and self._cached_pil is not None:
+            if self._cached_pil_serial == self._frame_serial and self._cached_pil is not None:
                 return self._cached_pil
 
-            # Convert numpy array to PIL
-            frame = self._frame_buffer[self._current_frame_idx]
+            frame = self._frame_buffer[-1]
             pil_image = Image.fromarray(frame)
 
             self._cached_pil = pil_image
-            self._cached_frame_idx = self._current_frame_idx
-            self._cached_pixmap = None  # Invalidate pixmap cache
+            self._cached_pil_serial = self._frame_serial
 
             return pil_image
 
@@ -325,15 +302,16 @@ class VideoBackground:
                     return self._create_loading_pixmap(scale)
                 return None
 
-            self._advance_frame()
-
             # Return cached if same frame and same scale
-            if (self._cached_frame_idx == self._current_frame_idx and
-                self._cached_pixmap is not None):
+            if (
+                self._cached_pixmap_serial == self._frame_serial
+                and self._cached_pixmap_scale == scale
+                and self._cached_pixmap is not None
+            ):
                 return self._cached_pixmap
 
             # Get frame data
-            frame = self._frame_buffer[self._current_frame_idx]
+            frame = self._frame_buffer[-1]
 
             # Scale if needed
             if scale != 1.0:
@@ -355,8 +333,8 @@ class VideoBackground:
             pixmap = QPixmap.fromImage(qimage)
 
             self._cached_pixmap = pixmap
-            self._cached_frame_idx = self._current_frame_idx
-            self._cached_pil = None  # Invalidate PIL cache
+            self._cached_pixmap_serial = self._frame_serial
+            self._cached_pixmap_scale = scale
 
             return pixmap
 

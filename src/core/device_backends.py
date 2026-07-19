@@ -213,7 +213,10 @@ class HIDBackend(DisplayBackend):
 
         try:
             # HID write typically requires report ID prefix
-            self.device.write(bytes([0x00]) + frame_data)
+            payload = bytes([0x00]) + frame_data
+            written = self.device.write(payload)
+            if written != len(payload):
+                raise IOError(f"Short HID write: {written}/{len(payload)} bytes")
             return True
         except Exception as e:
             logger.error(f"HID write error: {e}")
@@ -251,7 +254,7 @@ class USBBulkBackend(DisplayBackend):
         self.usb = None
         self.endpoint_out = None
         self.endpoint_in = None
-        self.verbose = True  # Always verbose for experimental devices
+        self.verbose = False
 
         if device_def.experimental:
             logger.warning(f"⚠️  {device_def.name} support is EXPERIMENTAL")
@@ -454,6 +457,8 @@ class USBBulkBackend(DisplayBackend):
 
     def disconnect(self):
         """Disconnect from USB device."""
+        cache_key = (self.device_def.vendor_id, self.device_def.product_id)
+        self._device_cache.pop(cache_key, None)
         if self.device:
             try:
                 # Dispose resources (this releases interfaces automatically)
@@ -521,21 +526,24 @@ class USBBulkBackend(DisplayBackend):
                 logger.debug(f"Header: {header[:20].hex()}...")
 
             # Send complete frame in one bulk transfer
-            bytes_written = self.device.write(self.endpoint_out, full_frame, timeout=5000)
+            bytes_written = self.device.write(self.endpoint_out, full_frame, timeout=1000)
 
             if self.verbose:
                 logger.info(f"✓ Wrote {bytes_written} bytes to display")
 
+            if bytes_written != len(full_frame):
+                raise IOError(f"Short USB write: {bytes_written}/{len(full_frame)} bytes")
             return True
 
         except self.usb.core.USBError as e:
             logger.error(f"USB write error: {e}")
             self.connected = False
+            self._device_cache.pop((self.device_def.vendor_id, self.device_def.product_id), None)
             return False
         except Exception as e:
             logger.error(f"Unexpected error during frame send: {e}")
-            import traceback
-            traceback.print_exc()
+            self.connected = False
+            self._device_cache.pop((self.device_def.vendor_id, self.device_def.product_id), None)
             return False
 
     def is_connected(self) -> bool:

@@ -72,7 +72,7 @@ def add_value(element, value):
     """Add a value to the history with rate limiting."""
     import time
     key = getattr(element, 'name', id(element))
-    current_time = time.time()
+    current_time = time.monotonic()
     last_time = _last_update_time.get(key, 0)
 
     # Only add value if enough time has passed (rate limiting)

@@ -10,6 +10,8 @@ import ctypes
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import psutil
@@ -30,6 +32,68 @@ DEFAULT_SENSOR_DATA = {
 _LHM_TYPES = None
 
 
+def _is_pawnio_installed():
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Services\PawnIO",
+        )
+        winreg.CloseKey(key)
+        return True
+    except OSError:
+        return False
+
+
+def _classify_lhm_error(exc):
+    message = str(exc).lower()
+    if "system.runtime, version=10" in message or ".net 10" in message:
+        return "dll_incompatible"
+    if any(term in message for term in ("access denied", "unauthorized", "permission")):
+        return "permission_denied"
+    if "pawnio" in message:
+        return "pawnio_missing"
+    return "backend_error"
+
+
+class _SystemUsageSampler:
+    """Collect process-independent metrics once per sensor poll."""
+
+    def __init__(self):
+        self._last_net_io = None
+        self._last_net_time = None
+
+    def update(self, data):
+        data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
+        freq = psutil.cpu_freq()
+        if freq and freq.current and data.get("cpu_clock", 0) <= 0:
+            data["cpu_clock"] = float(freq.current)
+
+        vm = psutil.virtual_memory()
+        data["ram_percent"] = float(vm.percent)
+        data["ram_used"] = float(vm.used) / (1024 ** 3)
+        data["ram_available"] = float(vm.available) / (1024 ** 3)
+
+        upload = download = 0.0
+        try:
+            now = time.monotonic()
+            net_io = psutil.net_io_counters()
+            if net_io and self._last_net_io is not None and self._last_net_time is not None:
+                elapsed = now - self._last_net_time
+                if elapsed > 0:
+                    upload = max(0, net_io.bytes_sent - self._last_net_io.bytes_sent) / elapsed / (1024 ** 2)
+                    download = max(0, net_io.bytes_recv - self._last_net_io.bytes_recv) / elapsed / (1024 ** 2)
+            self._last_net_io = net_io
+            self._last_net_time = now
+        except (AttributeError, OSError):
+            pass
+        data["net_upload"] = upload
+        data["net_download"] = download
+        return data
+
+
 def _get_base_path():
     if getattr(sys, "frozen", False):
         return sys._MEIPASS
@@ -47,6 +111,9 @@ def _load_lhm_types():
 
     import clr
 
+    libs_path = os.path.dirname(dll_path)
+    if libs_path not in sys.path:
+        sys.path.insert(0, libs_path)
     clr.AddReference(os.path.abspath(dll_path))
     from LibreHardwareMonitor.Hardware import Computer, SensorType
 
@@ -209,17 +276,6 @@ class _UsageOnlyReader:
 
     def get_thermal_sensors(self):
         data = DEFAULT_SENSOR_DATA.copy()
-        data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
-
-        freq = psutil.cpu_freq()
-        if freq and freq.current:
-            data["cpu_clock"] = float(freq.current)
-
-        vm = psutil.virtual_memory()
-        data["ram_percent"] = float(vm.percent)
-        data["ram_used"] = float(vm.used) / (1024 ** 3)
-        data["ram_available"] = float(vm.available) / (1024 ** 3)
-
         if self._gpu_reader:
             data["gpu_percent"] = self._gpu_reader.get_gpu_usage()
 
@@ -404,17 +460,6 @@ class _LinuxReader:
         self._last_gpu_source = None
         self._last_gpu_card = None
         data = DEFAULT_SENSOR_DATA.copy()
-        data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
-
-        freq = psutil.cpu_freq()
-        if freq and freq.current:
-            data["cpu_clock"] = float(freq.current)
-
-        vm = psutil.virtual_memory()
-        data["ram_percent"] = float(vm.percent)
-        data["ram_used"] = float(vm.used) / (1024 ** 3)
-        data["ram_available"] = float(vm.available) / (1024 ** 3)
-
         data["cpu_temp"] = self._get_linux_cpu_temp()
 
         gpu_data = self._read_nvidia_smi()
@@ -466,6 +511,7 @@ class _LibreHardwareMonitorReader:
         self._gpu_usage_sensors = None
         self._gpu_usage_fallback = None
         self._cpu_temp_sensors = None
+        self._lock = threading.RLock()
 
     def _get_sensors(self):
         if self._cache_initialized:
@@ -666,25 +712,34 @@ class _LibreHardwareMonitorReader:
         return self._find_sensor(["gpu power", "board power"], SensorType.Power, sensors)
 
     def get_thermal_sensors(self):
-        sensors = self._get_sensors()
-        data = {
-            "cpu_temp": self.get_cpu_temp(sensors),
-            "cpu_clock": int(self.get_cpu_clock(sensors)),
-            "cpu_power": self.get_cpu_power(sensors),
-            "gpu_temp": self.get_gpu_temp(sensors),
-            "gpu_percent": self.get_gpu_usage(sensors),
-            "gpu_clock": int(self.get_gpu_clock(sensors)),
-            "gpu_memory_clock": int(self.get_gpu_memory_clock(sensors)),
-            "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
-            "gpu_power": self.get_gpu_power(sensors),
-        }
-        data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
-        return data
+        with self._lock:
+            sensors = self._get_sensors()
+            return {
+                "cpu_temp": self.get_cpu_temp(sensors),
+                "cpu_clock": int(self.get_cpu_clock(sensors)),
+                "cpu_power": self.get_cpu_power(sensors),
+                "gpu_temp": self.get_gpu_temp(sensors),
+                "gpu_percent": self.get_gpu_usage(sensors),
+                "gpu_clock": int(self.get_gpu_clock(sensors)),
+                "gpu_memory_clock": int(self.get_gpu_memory_clock(sensors)),
+                "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
+                "gpu_power": self.get_gpu_power(sensors),
+            }
+
+    def invalidate_cache(self):
+        with self._lock:
+            self._cached_sensors = []
+            self._cache_initialized = False
+            self._sensor_mapping_cache.clear()
+            self._gpu_usage_sensors = None
+            self._gpu_usage_fallback = None
+            self._cpu_temp_sensors = None
 
     def close(self):
-        if self.computer:
-            self.computer.Close()
-            self.computer = None
+        with self._lock:
+            if self.computer:
+                self.computer.Close()
+                self.computer = None
 
     def get_diagnostics(self):
         return {
@@ -700,10 +755,16 @@ class _LibreHardwareMonitorReader:
 
 class LibreHardwareMonitorReader:
     def __init__(self):
+        self._lock = threading.RLock()
+        self._usage = _SystemUsageSampler()
+        self.initialization_error = None
+        self.reason = None
         try:
             self._reader = _LibreHardwareMonitorReader()
             self.source = "LibreHardwareMonitor"
         except Exception as exc:
+            self.initialization_error = str(exc)
+            self.reason = _classify_lhm_error(exc)
             print(f"[Sensors] LibreHardwareMonitor unavailable: {exc}")
             if sys.platform.startswith("linux"):
                 self._reader = _LinuxReader()
@@ -713,15 +774,26 @@ class LibreHardwareMonitorReader:
                 self.source = "usage-only"
 
     def get_thermal_sensors(self):
-        return self._reader.get_thermal_sensors()
+        with self._lock:
+            data = self._reader.get_thermal_sensors()
+            return self._usage.update(data)
 
     def close(self):
-        if hasattr(self._reader, "close"):
-            self._reader.close()
+        with self._lock:
+            if hasattr(self._reader, "close"):
+                self._reader.close()
+
+    def invalidate_cache(self):
+        with self._lock:
+            if hasattr(self._reader, "invalidate_cache"):
+                self._reader.invalidate_cache()
 
     def get_diagnostics(self):
         details = {
             "source": self.source,
+            "initialization_error": self.initialization_error,
+            "reason": self.reason,
+            "pawnio_installed": _is_pawnio_installed(),
         }
         if hasattr(self._reader, "get_diagnostics"):
             details.update(self._reader.get_diagnostics())
@@ -729,28 +801,6 @@ class LibreHardwareMonitorReader:
 
 
 SafeHardwareMonitorReader = LibreHardwareMonitorReader
-
-_reader = None
-
-
-def get_hwinfo_reader():
-    global _reader
-    if _reader is None:
-        _reader = LibreHardwareMonitorReader()
-    return _reader
-
-
-def is_hwinfo_available():
-    try:
-        get_hwinfo_reader()
-        return True
-    except Exception:
-        return False
-
-
-def get_hwinfo_sensors():
-    reader = get_hwinfo_reader()
-    return reader.get_thermal_sensors()
 
 
 if __name__ == "__main__":

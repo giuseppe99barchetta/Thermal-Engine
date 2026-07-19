@@ -29,13 +29,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QBrush, QFont
 from PySide6.QtCore import Qt, QSharedMemory
 
-from src.core.sensors import init_sensors, HAS_LHM
+from src.core import sensors
+from src.core.sensors import init_sensors
 from src.ui.main_window import ThemeEditorWindow
 from src.utils.app_path import get_bundled_resource_path
 
 
 class SensorSetupDialog(QDialog):
-    """Dialog shown when safe sensor monitoring is unavailable."""
+    """Explain degraded monitoring and offer the two Windows remedies."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,28 +58,27 @@ class SensorSetupDialog(QDialog):
 
         # Explanation
         explanation = QLabel(
-            "ThermalEngine could not read user-mode sensor data.\n"
-            "Low-level driver-based monitoring is disabled to avoid\n"
-            "Windows Defender vulnerable-driver blocks."
+            "ThermalEngine can read usage metrics, but CPU/GPU temperatures\n"
+            "are unavailable. On Windows, LibreHardwareMonitor may require\n"
+            "the official PawnIO driver and administrator privileges."
         )
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
 
-        # Download button
-        instructions_title = QLabel("Available safe data:")
+        instructions_title = QLabel("Available data:")
         instructions_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
         layout.addWidget(instructions_title)
 
         instructions = QLabel(
             "1. CPU utilization, RAM, and network via psutil\n"
             "2. GPU utilization via Windows Performance Counters when available\n"
-            "3. Temperature, power, and clocks stay 0 if no safe vendor API exists"
+            "3. Temperatures remain 0 until the hardware backend is available"
         )
         instructions.setStyleSheet("margin-left: 20px;")
         layout.addWidget(instructions)
 
         # Tip
-        tip = QLabel("Tip: Keep Windows and GPU drivers updated for best counter support.")
+        tip = QLabel("PawnIO is optional. Some unsupported hardware may still expose no temperature.")
         tip.setStyleSheet("color: #888; font-style: italic; margin-top: 10px;")
         tip.setWordWrap(True)
         layout.addWidget(tip)
@@ -90,21 +90,37 @@ class SensorSetupDialog(QDialog):
         check_again_btn.clicked.connect(self.check_again)
         button_layout.addWidget(check_again_btn)
 
+        pawnio_btn = QPushButton("Install PawnIO")
+        pawnio_btn.clicked.connect(
+            lambda: webbrowser.open("https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0")
+        )
+        button_layout.addWidget(pawnio_btn)
+
+        if sys.platform == "win32":
+            admin_btn = QPushButton("Restart as Administrator")
+            admin_btn.clicked.connect(self.restart_as_admin)
+            button_layout.addWidget(admin_btn)
+
         continue_btn = QPushButton("Continue Without Sensors")
         continue_btn.clicked.connect(self.accept)
         button_layout.addWidget(continue_btn)
 
         layout.addLayout(button_layout)
 
-    def open_download_page(self):
-        """Open Windows performance counter help page in browser."""
-        webbrowser.open("https://learn.microsoft.com/windows/win32/perfctrs/performance-counters-portal")
+    def restart_as_admin(self):
+        executable = sys.executable
+        parameters = " ".join(f'"{arg}"' for arg in sys.argv[1:])
+        if not getattr(sys, "frozen", False):
+            parameters = f'"{os.path.abspath(__file__)}" {parameters}'.strip()
+        if __import__("ctypes").windll.shell32.ShellExecuteW(
+            None, "runas", executable, parameters, None, 1
+        ) > 32:
+            QApplication.quit()
 
     def check_again(self):
         """Re-check if safe sensors are now available."""
-        from src.core.libre_hw_monitor import is_hwinfo_available
-
-        if is_hwinfo_available():
+        init_sensors()
+        if sensors.get_sensor_status()["thermal_available"]:
             QMessageBox.information(
                 self,
                 "Sensors Detected",
@@ -192,8 +208,7 @@ def main():
     init_sensors()
 
     # Show sensor dialog if not connected (skip if minimized/auto-start)
-    from src.core.sensors import HAS_LHM
-    if not HAS_LHM and not args.minimized:
+    if not sensors.get_sensor_status()["thermal_available"] and not args.minimized:
         dialog = SensorSetupDialog()
         dialog.exec()
         # Re-initialize sensors in case counters became available

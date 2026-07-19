@@ -1,4 +1,5 @@
 import unittest
+from types import MethodType, SimpleNamespace
 
 from PIL import Image
 
@@ -7,14 +8,14 @@ from src.ui.main_window import ThemeEditorWindow
 
 
 class TestGlassRender(unittest.TestCase):
-    def test_glass_rectangle_cache_preserves_display_render(self):
-        window = object.__new__(ThemeEditorWindow)
+    def test_glass_rectangle_tracks_changing_background(self):
+        window = SimpleNamespace()
         window._element_render_cache = {}
         window.get_pil_font = lambda *args, **kwargs: None
-        window._compute_element_state_hash = ThemeEditorWindow._compute_element_state_hash.__get__(window, ThemeEditorWindow)
-        window._fast_alpha_composite = ThemeEditorWindow._fast_alpha_composite.__get__(window, ThemeEditorWindow)
-        window.render_rectangle_rgba = ThemeEditorWindow.render_rectangle_rgba.__get__(window, ThemeEditorWindow)
-        window.render_element_with_opacity = ThemeEditorWindow.render_element_with_opacity.__get__(window, ThemeEditorWindow)
+        window._compute_element_state_hash = MethodType(ThemeEditorWindow._compute_element_state_hash, window)
+        window._fast_alpha_composite = MethodType(ThemeEditorWindow._fast_alpha_composite, window)
+        window.render_rectangle_rgba = MethodType(ThemeEditorWindow.render_rectangle_rgba, window)
+        window.render_element_with_opacity = MethodType(ThemeEditorWindow.render_element_with_opacity, window)
 
         element = ThemeElement(
             element_type="rectangle",
@@ -35,13 +36,12 @@ class TestGlassRender(unittest.TestCase):
 
         first = background.copy()
         window.render_element_with_opacity(first, element)
-        cached_overlay, _, _ = window._element_render_cache[id(element)]
 
-        second = background.copy()
+        second = Image.new("RGBA", (80, 80), "#f0d040")
         window.render_element_with_opacity(second, element)
 
-        self.assertIsNotNone(cached_overlay.getbbox())
-        self.assertEqual(first.tobytes(), second.tobytes())
+        self.assertNotIn(id(element), window._element_render_cache)
+        self.assertNotEqual(first.tobytes(), second.tobytes())
 
 
 if __name__ == "__main__":

@@ -45,11 +45,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "startupicon"; Description: "Launch at Windows startup (minimized to tray)"; GroupDescription: "Additional options:"
+Name: "pawnio"; Description: "Install PawnIO 2.2.0 for hardware temperature access"; GroupDescription: "Hardware monitoring:"
 
 [Files]
 ; Main application files
 Source: "dist\ThermalEngine\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "third_party\PawnIO_setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Tasks: pawnio
 
 ; Presets - from project root (only install if they don't exist to preserve user customizations)
 Source: "presets\*"; DestDir: "{app}\presets"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
@@ -62,10 +63,12 @@ Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 ; Desktop shortcut (if selected)
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
-; Startup shortcut (if selected) - launches minimized
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--minimized"; Tasks: startupicon
+[InstallDelete]
+; Remove the startup shortcut created by older installers. Preferences owns autostart.
+Type: files; Name: "{userstartup}\{#MyAppName}.lnk"
 
 [Run]
+Filename: "{tmp}\PawnIO_setup.exe"; Description: "Install PawnIO hardware access"; Flags: waituntilterminated; Tasks: pawnio
 ; Option to launch after installation
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 

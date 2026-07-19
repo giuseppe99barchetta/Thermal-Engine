@@ -8,6 +8,7 @@ import os
 import time
 import sys
 import logging
+import functools
 from PIL import Image as PILImage
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ _playback_state = {}
 def reset_all_playback():
     """Reset all GIF playback timing after system wake or other disruption."""
     global _playback_state
-    current_time = time.time()
+    current_time = time.monotonic()
     # Reset all start times to now to prevent frame jumps
     for key in _playback_state:
         _playback_state[key]['start_time'] = current_time
@@ -142,7 +143,7 @@ def get_current_frame_index(element, gif_data):
         return 0
 
     key = getattr(element, 'name', id(element))
-    current_time = time.time()
+    current_time = time.monotonic()
 
     if key not in _playback_state:
         _playback_state[key] = {'start_time': current_time}
@@ -197,6 +198,12 @@ def get_scaled_frame(frame, element_width, element_height, scale_mode):
         return result
 
 
+@functools.lru_cache(maxsize=256)
+def get_scaled_gif_frame(path, frame_idx, width, height, scale_mode):
+    data = get_gif_data(path)
+    return get_scaled_frame(data.frames[frame_idx], width, height, scale_mode)
+
+
 def draw_preview(painter, element, x, y, scale):
     """Draw the GIF in the Qt preview canvas."""
     width = int(element.width * scale)
@@ -236,10 +243,9 @@ def draw_preview(painter, element, x, y, scale):
 
     # Get current frame
     frame_idx = get_current_frame_index(element, gif_data)
-    frame = gif_data.frames[frame_idx]
-
-    # Scale frame to element size
-    scaled_frame = get_scaled_frame(frame, element.width, element.height, scale_mode)
+    scaled_frame = get_scaled_gif_frame(
+        gif_path, frame_idx, element.width, element.height, scale_mode
+    )
 
     # Scale for preview
     if scale != 1.0:
@@ -282,13 +288,11 @@ def render_image(draw, img, element):
 
     # Get current frame
     frame_idx = get_current_frame_index(element, gif_data)
-    frame = gif_data.frames[frame_idx]
-
-    # Scale frame to element size
-    scaled_frame = get_scaled_frame(frame, width, height, scale_mode)
+    scaled_frame = get_scaled_gif_frame(gif_path, frame_idx, width, height, scale_mode)
 
     # Apply opacity if needed
     if opacity < 100:
+        scaled_frame = scaled_frame.copy()
         alpha = scaled_frame.split()[3]
         alpha = alpha.point(lambda x: int(x * opacity / 100))
         scaled_frame.putalpha(alpha)
@@ -313,3 +317,4 @@ def clear_cache():
     global _gif_cache, _playback_state
     _gif_cache = {}
     _playback_state = {}
+    get_scaled_gif_frame.cache_clear()

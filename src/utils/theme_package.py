@@ -22,6 +22,8 @@ THUMBNAIL_NAME = "thumbnail.png"
 ASSETS_DIR_NAME = "assets"
 MAX_ARCHIVE_SIZE = 500 * 1024 * 1024  # 500 MB
 MAX_SINGLE_FILE_SIZE = 200 * 1024 * 1024  # 200 MB per file
+MAX_ARCHIVE_FILES = 128
+MAX_UNCOMPRESSED_SIZE = 500 * 1024 * 1024
 ALLOWED_ASSET_EXTENSIONS = {
     '.png', '.jpg', '.jpeg', '.bmp', '.gif',
     '.mp4', '.avi', '.mkv', '.mov', '.webm',
@@ -146,6 +148,9 @@ def validate_thermal_archive(zip_path):
         with zipfile.ZipFile(zip_path, 'r') as zf:
             names = zf.namelist()
 
+            if len(names) > MAX_ARCHIVE_FILES:
+                return False, f"Archive contains too many files ({len(names)})", None
+
             if THEME_JSON_NAME not in names:
                 return False, "Missing theme.json", None
 
@@ -160,9 +165,13 @@ def validate_thermal_archive(zip_path):
                     return False, f"Unexpected directory: {parts[0]}", None
 
             # Check individual file sizes
+            total_size = 0
             for info in zf.infolist():
                 if info.file_size > MAX_SINGLE_FILE_SIZE:
                     return False, f"File too large: {info.filename}", None
+                total_size += info.file_size
+                if total_size > MAX_UNCOMPRESSED_SIZE:
+                    return False, "Archive expands beyond 500 MB", None
 
             # Validate theme.json
             theme_json = zf.read(THEME_JSON_NAME)

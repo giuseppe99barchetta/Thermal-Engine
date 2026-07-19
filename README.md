@@ -19,7 +19,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Expandable canvas**: Full-screen editing area with margins for precise image cropping
 - **Display orientation controls**: Flip/rotate output for any mounting position
 - **Real-time sensor data**: CPU/GPU temperature, utilization, clock speed, power
-- **No admin required** - runs as a standard user application
+- Runs as a standard user; some hardware sensors may require administrator access
 - **Auto-recovery**: Sensors automatically reconnect after sleep/wake
 - **Element types**:
   - Circle gauges with auto-color thresholds
@@ -66,10 +66,15 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 ### Hardware Sensor Support
 
-**Supported safe sensors**:
+**Sensor support**:
 - **CPU/RAM/Network**: user-mode metrics via `psutil`
-- **CPU/GPU temperature, clocks, power, and load**: bundled LibreHardwareMonitor library
+- **CPU/GPU temperature, clocks, power, and load**: bundled LibreHardwareMonitor library on Windows
 - **Fallback GPU utilization**: Windows Performance Counters when LibreHardwareMonitor is unavailable
+
+The Windows installer offers the official PawnIO component for low-level sensor
+access. It is optional and can be deselected. Some hardware additionally requires
+starting ThermalEngine as administrator; unsupported sensors remain at zero while
+usage metrics continue to work.
 
 **Linux note**:
 - CPU/RAM/Network metrics work out of box
@@ -86,7 +91,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
    - Linux: `ThermalEngine-vX.X.X-linux-x64.tar.gz`
 3. Windows: run installer or extracted executable
 4. Linux: extract archive and run `ThermalEngine`
-5. Run ThermalEngine. No third-party kernel monitoring driver is required.
+5. On Windows, keep the PawnIO installer option selected if temperature data is required.
 
 ### From Source
 
@@ -252,9 +257,10 @@ Auto Profiles automatically switch the active preset based on context:
 
 ### Sensors showing 0 or not working
 1. Go to **Display > Diagnose Sensors** to check connection status
-2. Run ThermalEngine as administrator if motherboard, CPU, or GPU sensors are hidden
-3. Update Windows and GPU drivers so fallback Performance Counters are available
-4. Verify `libs/LibreHardwareMonitorLib.dll` is present in source builds or bundled release builds
+2. Install PawnIO 2.2.0 from the installer or the official PawnIO release
+3. Restart ThermalEngine as administrator if diagnostics report a permission problem
+4. Verify the backend/reason fields; `usage-only` intentionally has no temperatures
+5. Source builds must use the net472 `LibreHardwareMonitorLib.dll` and its dependencies
 
 ### Low FPS / Performance issues
 - Reduce target FPS (10 FPS is usually sufficient)

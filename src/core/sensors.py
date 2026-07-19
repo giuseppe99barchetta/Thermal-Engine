@@ -1,8 +1,4 @@
-"""
-Sensor monitoring using safe user-mode APIs.
-
-No kernel driver required.
-"""
+"""Background hardware sensor monitoring with an honest degraded state."""
 
 import threading
 import time
@@ -32,6 +28,12 @@ _latest_sensor_data = {
     "gpu_memory_clock": 0,
     "gpu_memory_percent": 0,
     "gpu_power": 0,
+    "cpu_percent": 0,
+    "ram_percent": 0,
+    "ram_used": 0,
+    "ram_available": 0,
+    "net_upload": 0,
+    "net_download": 0,
 }
 
 # Smoothing configuration
@@ -46,6 +48,51 @@ _SMOOTHED_SENSORS = {
 
 # Global reader instance
 _reader = None
+_reader_lock = threading.RLock()
+_sensor_status = {
+    "backend": None,
+    "thermal_available": False,
+    "degraded": True,
+    "reason": "backend_error",
+    "values": _latest_sensor_data.copy(),
+}
+
+
+def _has_thermal_data(data):
+    return bool(data) and any(float(data.get(key, 0) or 0) > 0 for key in ("cpu_temp", "gpu_temp"))
+
+
+def _update_status(data, error=None):
+    global HAS_SAFE_MONITOR, HAS_LHM, SENSOR_ERROR, LHM_ERROR, _sensor_status
+    diagnostics = {}
+    try:
+        diagnostics = _reader.get_diagnostics() if _reader else {}
+    except Exception:
+        pass
+
+    backend = diagnostics.get("backend") or diagnostics.get("source")
+    thermal_available = _has_thermal_data(data)
+    reason = None
+    if error:
+        reason = diagnostics.get("reason") or "backend_error"
+    elif not thermal_available:
+        if backend == "LibreHardwareMonitor" and diagnostics.get("pawnio_installed") is False:
+            reason = "pawnio_missing"
+        else:
+            reason = diagnostics.get("reason") or "no_supported_sensor"
+
+    HAS_SAFE_MONITOR = thermal_available
+    HAS_LHM = thermal_available and backend == "LibreHardwareMonitor"
+    SENSOR_ERROR = str(error) if error else diagnostics.get("initialization_error")
+    LHM_ERROR = SENSOR_ERROR
+    with _sensor_data_lock:
+        _sensor_status = {
+            "backend": backend,
+            "thermal_available": thermal_available,
+            "degraded": not thermal_available,
+            "reason": reason,
+            "values": (data or {}).copy(),
+        }
 
 
 def _apply_smoothing(raw_data):
@@ -54,6 +101,10 @@ def _apply_smoothing(raw_data):
     for key in _SMOOTHED_SENSORS:
         if key in raw_data:
             raw = raw_data[key]
+            if raw <= 0:
+                smoothed[key] = raw
+                _smoothed_values.pop(key, None)
+                continue
             if key in _smoothed_values and _smoothed_values[key] > 0:
                 smoothed[key] = (
                     _smoothed_values[key] * (1 - _SMOOTHING_FACTOR)
@@ -79,27 +130,19 @@ def _sensor_polling_thread():
 
     while _sensor_thread_running:
         try:
-            reader = _get_reader()
-            data = reader.get_thermal_sensors()
-
-            if data and any(v > 0 for v in data.values()):
-                if not HAS_SAFE_MONITOR:
-                    HAS_SAFE_MONITOR = True
-                    HAS_LHM = True
-                    print("[Sensors] Connected to safe hardware monitor")
-
+            with _reader_lock:
+                reader = _get_reader()
+                data = reader.get_thermal_sensors()
+            if data:
                 smoothed = _apply_smoothing(data)
                 with _sensor_data_lock:
                     _latest_sensor_data = smoothed
-            else:
-                if HAS_SAFE_MONITOR:
-                    HAS_SAFE_MONITOR = False
-                    HAS_LHM = False
-                    print("[Sensors] Safe hardware monitor returned no data")
-
+                _update_status(smoothed)
         except Exception as e:
-            HAS_SAFE_MONITOR = False
-            HAS_LHM = False
+            _update_status(get_cached_sensors(), e)
+            with _reader_lock:
+                if _reader and hasattr(_reader, "invalidate_cache"):
+                    _reader.invalidate_cache()
             print(f"[Sensors] Poll error: {e}")
 
         time.sleep(_SENSOR_UPDATE_INTERVAL)
@@ -113,24 +156,17 @@ def init_sensors(app_dir=None):
         stop_sensors()
 
     try:
-        reader = _get_reader()
-        initial = reader.get_thermal_sensors()
-        if initial and any(v > 0 for v in initial.values()):
+        with _reader_lock:
+            reader = _get_reader()
+            initial = reader.get_thermal_sensors()
+        if initial:
             with _sensor_data_lock:
                 _latest_sensor_data.update(initial)
-            HAS_SAFE_MONITOR = True
-            HAS_LHM = True
-            print("[Sensors] Safe hardware monitor initialized")
-        else:
-            HAS_SAFE_MONITOR = False
-            HAS_LHM = False
-            print("[Sensors] Safe hardware monitor started (no data yet)")
+        _update_status(initial)
+        print(f"[Sensors] Backend initialized: {_sensor_status['backend'] or 'unknown'}")
 
     except Exception as e:
-        HAS_SAFE_MONITOR = False
-        HAS_LHM = False
-        SENSOR_ERROR = str(e)
-        LHM_ERROR = SENSOR_ERROR
+        _update_status({}, e)
         print(f"[Sensors] Safe hardware monitor init failed: {e}")
 
     _sensor_thread_running = True
@@ -151,22 +187,38 @@ def get_cached_sensors():
 
 def get_sensors_sync():
     try:
-        return _get_reader().get_thermal_sensors()
-    except Exception:
+        with _reader_lock:
+            return _get_reader().get_thermal_sensors()
+    except Exception as exc:
+        _update_status(get_cached_sensors(), exc)
         return None
 
 
+def get_sensor_status():
+    with _sensor_data_lock:
+        status = _sensor_status.copy()
+        status["values"] = _latest_sensor_data.copy()
+        return status
+
+
+def invalidate_sensor_cache():
+    """Refresh hardware discovery after resume or device changes."""
+    with _reader_lock:
+        if _reader and hasattr(_reader, "invalidate_cache"):
+            _reader.invalidate_cache()
+
+
 def get_sensor_diagnostics():
-    diagnostics = {
-        "connected": HAS_SAFE_MONITOR,
-        "sensor_error": SENSOR_ERROR,
-    }
+    diagnostics = {}
     try:
         reader = _get_reader()
         if hasattr(reader, "get_diagnostics"):
             diagnostics.update(reader.get_diagnostics())
     except Exception as e:
         diagnostics["sensor_error"] = str(e)
+    diagnostics.update(get_sensor_status())
+    diagnostics["connected"] = HAS_LHM
+    diagnostics["sensor_error"] = SENSOR_ERROR or diagnostics.get("sensor_error")
     return diagnostics
 
 
@@ -185,25 +237,27 @@ def stop_sensors():
         _sensor_thread.join(timeout=3.0)
 
     _sensor_thread = None
-    if _reader and hasattr(_reader, "close"):
-        _reader.close()
+    with _reader_lock:
+        if _reader and hasattr(_reader, "close"):
+            _reader.close()
     _reader = None
     HAS_SAFE_MONITOR = False
     HAS_LHM = False
+    _update_status({}, None)
 
     print("[Sensors] Sensor monitoring stopped")
 
 
 def get_sensor_source():
     diagnostics = get_sensor_diagnostics()
-    return diagnostics.get("source") if HAS_SAFE_MONITOR else None
+    return diagnostics.get("source") or diagnostics.get("backend")
 
 
 def get_sensor_source_display():
     diagnostics = get_sensor_diagnostics()
-    if not HAS_SAFE_MONITOR:
+    if not diagnostics.get("thermal_available"):
         backend = diagnostics.get("backend")
-        return f"Not connected ({backend})" if backend else "Not connected"
+        return f"Degraded ({backend})" if backend else "Not connected"
     return diagnostics.get("backend") or diagnostics.get("source") or "Safe Hardware Monitor"
 
 

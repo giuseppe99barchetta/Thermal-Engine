@@ -147,126 +147,6 @@ def _get_cached_image_element(image_path, width, height, scale_proportionally, c
     return img_overlay
 
 
-# Background psutil data collection
-_psutil_data = {
-    'cpu_percent': 0,
-    'ram_percent': 0,
-    'ram_used': 0,
-    'ram_available': 0,
-    'net_upload': 0,
-    'net_download': 0,
-}
-_psutil_data_lock = threading.Lock()
-_psutil_thread = None
-_psutil_thread_running = False
-_cpu_percent_history = []
-_last_net_io = None
-_last_net_time = 0
-_psutil_last_success = 0
-_psutil_consecutive_errors = 0
-
-
-def _psutil_polling_thread():
-    """Background thread that continuously polls psutil data."""
-    global _psutil_data, _psutil_thread_running, _cpu_percent_history
-    global _last_net_io, _last_net_time, _psutil_last_success, _psutil_consecutive_errors
-
-    # Initialize CPU percent
-    try:
-        psutil.cpu_percent(interval=None)
-    except:
-        pass
-
-    while _psutil_thread_running:
-        try:
-            # CPU (smoothed)
-            raw_cpu = psutil.cpu_percent(interval=None)
-            _cpu_percent_history.append(raw_cpu)
-            if len(_cpu_percent_history) > 5:
-                _cpu_percent_history.pop(0)
-            smoothed_cpu = sum(_cpu_percent_history) / len(_cpu_percent_history)
-
-            # RAM
-            ram = psutil.virtual_memory()
-
-            # Network
-            net_upload = 0
-            net_download = 0
-            try:
-                net_io = psutil.net_io_counters()
-                current_time = time.time()
-                if _last_net_io and _last_net_time:
-                    time_delta = current_time - _last_net_time
-                    if time_delta > 0:
-                        bytes_sent = net_io.bytes_sent - _last_net_io.bytes_sent
-                        bytes_recv = net_io.bytes_recv - _last_net_io.bytes_recv
-                        net_upload = (bytes_sent / time_delta) / (1024 * 1024)
-                        net_download = (bytes_recv / time_delta) / (1024 * 1024)
-                _last_net_io = net_io
-                _last_net_time = current_time
-            except:
-                pass
-
-            # Update shared data
-            with _psutil_data_lock:
-                _psutil_data['cpu_percent'] = round(smoothed_cpu, 1)
-                _psutil_data['ram_percent'] = ram.percent
-                _psutil_data['ram_used'] = round(ram.used / (1024**3), 1)
-                _psutil_data['ram_available'] = round(ram.available / (1024**3), 1)
-                _psutil_data['net_upload'] = round(net_upload, 2)
-                _psutil_data['net_download'] = round(net_download, 2)
-
-            _psutil_last_success = time.time()
-            _psutil_consecutive_errors = 0
-
-        except Exception as e:
-            _psutil_consecutive_errors += 1
-            if _psutil_consecutive_errors <= 3:  # Only log first few errors
-                print(f"[Psutil] Background poll error: {e}")
-            # Reset state on repeated errors (might help after sleep/wake)
-            if _psutil_consecutive_errors > 10:
-                _cpu_percent_history.clear()
-                _psutil_consecutive_errors = 0
-                try:
-                    psutil.cpu_percent(interval=None)  # Re-initialize
-                except:
-                    pass
-
-        # Poll every 500ms - balances responsiveness with CPU usage
-        time.sleep(0.5)
-
-
-def start_psutil_thread():
-    """Start the background psutil polling thread."""
-    global _psutil_thread, _psutil_thread_running
-    if _psutil_thread is None or not _psutil_thread.is_alive():
-        _psutil_thread_running = True
-        _psutil_thread = threading.Thread(target=_psutil_polling_thread, daemon=True)
-        _psutil_thread.start()
-        print("[Psutil] Background polling thread started")
-
-
-def stop_psutil_thread():
-    """Stop the background psutil polling thread."""
-    global _psutil_thread_running, _psutil_thread
-    _psutil_thread_running = False
-    if _psutil_thread and _psutil_thread.is_alive():
-        _psutil_thread.join(timeout=1.0)
-    _psutil_thread = None
-
-
-def get_psutil_data():
-    """Get psutil data from background thread cache (non-blocking)."""
-    # Check if thread is alive, restart if needed
-    global _psutil_thread
-    if _psutil_thread_running and (_psutil_thread is None or not _psutil_thread.is_alive()):
-        print("[Psutil] Thread died, restarting...")
-        _psutil_thread = threading.Thread(target=_psutil_polling_thread, daemon=True)
-        _psutil_thread.start()
-
-    with _psutil_data_lock:
-        return _psutil_data.copy()
-
 try:
     import hid
     HAS_HID = True
@@ -289,10 +169,11 @@ logger = logging.getLogger(__name__)
 
 from src.core.element import ThemeElement
 from src.core import sensors
-from src.core.sensors import init_sensors, get_cached_sensors, get_sensors_sync, stop_sensors
+from src.core.sensors import get_cached_sensors, stop_sensors
 from src.utils import settings
 from src.utils.app_path import get_resource_path, get_bundled_resource_path
 from src.utils.updater import (
+    GITHUB_RELEASES_URL,
     UpdateChecker,
     UpdateDownloader,
     can_auto_install_asset,
@@ -351,12 +232,11 @@ class ThemeEditorWindow(QMainWindow):
         # Frame timing for smooth delivery
         self._frame_deadline = 0  # When next frame should be sent
         self._frames_skipped = 0  # Counter for skipped frames
-        self._overdrive_mode = settings.get_setting("overdrive_mode", False)
         self.display_orientation = settings.get_setting("display_orientation", "normal")  # normal, flip_v, flip_h, rotate_180, rotate_90_cw, rotate_90_ccw
-        self._frame_buffer = None  # Pre-rendered frame buffer
-        self._frame_buffer_lock = threading.Lock()
         self._render_thread = None
         self._render_thread_running = False
+        self._frame_request = threading.Event()
+        self._frame_error = None
 
         # Render caching for performance (reduces per-frame overhead ~75%)
         self._analog_clock_cache = {}  # {element_id: (overlay_image, last_second, config_hash)}
@@ -385,9 +265,6 @@ class ThemeEditorWindow(QMainWindow):
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(3000)
         self._autosave_timer.timeout.connect(self._do_autosave)
-
-        # Start background threads for sensor data
-        start_psutil_thread()
 
         # Auto Profiles
         from src.utils.profiles import ProfileManager, ForegroundAppMonitor, SystemStateMonitor
@@ -474,6 +351,7 @@ class ThemeEditorWindow(QMainWindow):
         # Reset frame timing for FPS calculation
         self.frame_times = []
         self.last_frame_time = 0
+        sensors.invalidate_sensor_cache()
 
         # If we were connected before sleep, try to reconnect
         if self._was_connected_before_sleep:
@@ -887,14 +765,6 @@ class ThemeEditorWindow(QMainWindow):
 
         fps_menu.addSeparator()
 
-        # Overdrive mode - uses threaded rendering and frame skipping for consistent timing
-        self.overdrive_action = QAction("Overdrive Mode", self)
-        self.overdrive_action.setCheckable(True)
-        self.overdrive_action.setChecked(self._overdrive_mode)
-        self.overdrive_action.setToolTip("Threaded rendering with frame skipping for smoother output")
-        self.overdrive_action.triggered.connect(self.toggle_overdrive_mode)
-        fps_menu.addAction(self.overdrive_action)
-
         display_menu.addSeparator()
 
         # Display Orientation submenu
@@ -1024,14 +894,12 @@ class ThemeEditorWindow(QMainWindow):
             mem_str = ""
 
         if self.device:
-            mode_str = " [OD]" if self._overdrive_mode else ""
-            skip_str = f" Skip:{self._frames_skipped}" if self._overdrive_mode and self._frames_skipped > 0 else ""
+            skip_str = f" Skip:{self._frames_skipped}" if self._frames_skipped > 0 else ""
             self.perf_label.setText(
-                f"FPS: {actual_fps:.1f}/{self.target_fps}{mode_str} | CPU: {cpu_percent:.1f}%{mem_str} | {status}{skip_str}"
+                f"FPS: {actual_fps:.1f}/{self.target_fps} | CPU: {cpu_percent:.1f}%{mem_str} | {status}{skip_str}"
             )
             # Reset skip counter periodically
-            if self._overdrive_mode:
-                self._frames_skipped = 0
+            self._frames_skipped = 0
         else:
             self.perf_label.setText(f"FPS: -- | CPU: --%{mem_str}")
 
@@ -1180,26 +1048,8 @@ class ThemeEditorWindow(QMainWindow):
         self._element_dirty.clear()
 
     def _compute_element_state_hash(self, element):
-        """Compute hash of element rendering state for cache validation."""
-        # Hash includes everything affecting visual output
-        state_tuple = (
-            element.type,
-            element.x, element.y, element.width, element.height,
-            element.color,
-            getattr(element, 'background_color', '#000000'),
-            getattr(element, 'color_opacity', 100),
-            getattr(element, 'background_color_opacity', 100),
-            getattr(element, 'border_radius', 0),
-            getattr(element, 'glass_effect', False),
-            getattr(element, 'glass_blur', 10),
-            getattr(element, 'glass_opacity', 50),
-            element.value,  # Key: value changes = cache miss
-            getattr(element, 'text', element.text if hasattr(element, 'text') else ''),
-            getattr(element, 'radius', 0),
-            getattr(element, 'font_family', 'Arial'),
-            getattr(element, 'font_size', 12),
-        )
-        return hash(state_tuple)
+        """Hash every serialized visual property for cache validation."""
+        return hash(json.dumps(element.to_dict(), sort_keys=True, default=str))
 
     def save_undo_state(self):
         """Save current state to undo stack."""
@@ -2086,61 +1936,26 @@ class ThemeEditorWindow(QMainWindow):
             QMessageBox.critical(self, "Export Failed", f"Failed to export theme:\n{result}")
 
     def get_sensor_data(self):
-        """Get sensor data from background threads (non-blocking)."""
-        # Get psutil data from background thread
-        psutil_data = get_psutil_data()
-
+        """Get all metrics from the single background sensor sampler."""
         data = {
             'static': 50,
-            # CPU
-            'cpu_percent': psutil_data['cpu_percent'],
+            'cpu_percent': 0,
             'cpu_temp': 0,
             'cpu_clock': 0,
             'cpu_power': 0,
-            # GPU
             'gpu_percent': 0,
             'gpu_temp': 0,
             'gpu_clock': 0,
             'gpu_memory_percent': 0,
             'gpu_memory_clock': 0,
             'gpu_power': 0,
-            # RAM
-            'ram_percent': psutil_data['ram_percent'],
-            'ram_used': psutil_data['ram_used'],
-            'ram_available': psutil_data['ram_available'],
-            # Network
-            'net_upload': psutil_data['net_upload'],
-            'net_download': psutil_data['net_download'],
+            'ram_percent': 0,
+            'ram_used': 0,
+            'ram_available': 0,
+            'net_upload': 0,
+            'net_download': 0,
         }
-
-        # Get sensor data from background thread (non-blocking)
-        if sensors.HAS_LHM:
-            try:
-                sensor_data = get_cached_sensors()
-                if sensor_data:
-                    # CPU sensors
-                    if sensor_data.get('cpu_temp', 0) > 0:
-                        data['cpu_temp'] = sensor_data['cpu_temp']
-                    if sensor_data.get('cpu_clock', 0) > 0:
-                        data['cpu_clock'] = sensor_data['cpu_clock']
-                    if sensor_data.get('cpu_power', 0) > 0:
-                        data['cpu_power'] = sensor_data['cpu_power']
-                    # GPU sensors
-                    if sensor_data.get('gpu_temp', 0) > 0:
-                        data['gpu_temp'] = sensor_data['gpu_temp']
-                    if sensor_data.get('gpu_percent', 0) > 0:
-                        data['gpu_percent'] = sensor_data['gpu_percent']
-                    if sensor_data.get('gpu_clock', 0) > 0:
-                        data['gpu_clock'] = sensor_data['gpu_clock']
-                    if sensor_data.get('gpu_memory_percent', 0) > 0:
-                        data['gpu_memory_percent'] = sensor_data['gpu_memory_percent']
-                    if sensor_data.get('gpu_memory_clock', 0) > 0:
-                        data['gpu_memory_clock'] = sensor_data['gpu_memory_clock']
-                    if sensor_data.get('gpu_power', 0) > 0:
-                        data['gpu_power'] = sensor_data['gpu_power']
-            except Exception as e:
-                print(f"Sensor read error: {e}")
-
+        data.update(get_cached_sensors())
         return data
 
     def diagnose_sensors(self):
@@ -2157,8 +1972,10 @@ class ThemeEditorWindow(QMainWindow):
         info.append(f"Backend: {sensor_diag.get('backend', 'unknown')}")
         info.append("")
 
-        HAS_LHM = getattr(sensors, 'HAS_LHM', False)
-        info.append(f"Safe monitor connected: {HAS_LHM}")
+        thermal_available = sensor_diag.get("thermal_available", False)
+        info.append(f"Thermal sensors available: {thermal_available}")
+        info.append(f"Degraded: {sensor_diag.get('degraded', True)}")
+        info.append(f"Reason: {sensor_diag.get('reason') or 'none'}")
         info.append(f"CPU temp source: {sensor_diag.get('cpu_temp_source') or 'not found'}")
         info.append(f"GPU source: {sensor_diag.get('gpu_source') or 'not found'}")
         if sensor_diag.get('gpu_card'):
@@ -2167,21 +1984,15 @@ class ThemeEditorWindow(QMainWindow):
             info.append(f"Last error: {sensor_diag['sensor_error']}")
         info.append("")
 
-        if HAS_LHM:
+        if thermal_available:
             info.append("Sensor readings:")
             info.append("-" * 40)
-            try:
-                sensor_data = get_sensors_sync()
-                if sensor_data:
-                    for key, value in sensor_data.items():
-                        info.append(f"  {key}: {value}")
-                else:
-                    info.append("  (no data returned)")
-            except Exception as e:
-                info.append(f"  Error: {e}")
+            for key, value in get_cached_sensors().items():
+                info.append(f"  {key}: {value}")
         else:
-            info.append("Safe monitor not connected.")
-            info.append("Some values may stay 0 when OS/driver does not expose them.")
+            info.append("Usage metrics remain available; CPU/GPU temperatures are unavailable.")
+            if sys.platform == "win32":
+                info.append("Install PawnIO or restart as administrator, then check again.")
 
         notes = sensor_diag.get('notes') or []
         if notes:
@@ -2454,8 +2265,7 @@ class ThemeEditorWindow(QMainWindow):
             "• Reduced battery life on laptops<br>"
             "• Potential frame drops on older hardware<br>"
             "• Less headroom for other applications<br><br>"
-            "<b>Recommended:</b> Use 30 FPS with Overdrive mode for smooth "
-            "performance on most systems."
+            "<b>Recommended:</b> Use 30 FPS for smooth performance on most systems."
         )
         warning_label.setWordWrap(True)
         layout.addWidget(warning_label)
@@ -2482,18 +2292,6 @@ class ThemeEditorWindow(QMainWindow):
                 settings.set_setting("suppress_60fps_warning", True)
             return True
         return False
-
-    def toggle_overdrive_mode(self, checked):
-        """Toggle overdrive mode for smoother frame delivery."""
-        self._overdrive_mode = checked
-        settings.set_setting("overdrive_mode", checked)
-
-        if checked:
-            self._start_render_thread()
-            self.status_bar.showMessage("Overdrive mode enabled - threaded rendering active")
-        else:
-            self._stop_render_thread()
-            self.status_bar.showMessage("Overdrive mode disabled")
 
     def set_display_orientation(self, orientation):
         """Set display orientation (normal, flip_v, flip_h, rotate_180, rotate_90_cw, rotate_90_ccw)."""
@@ -2628,10 +2426,11 @@ class ThemeEditorWindow(QMainWindow):
         self.page_combo.setCurrentIndex(next_index)
 
     def _start_render_thread(self):
-        """Start background render thread for overdrive mode."""
+        """Start the one-slot latest-frame worker."""
         if self._render_thread and self._render_thread.is_alive():
             return
 
+        self._frame_error = None
         self._render_thread_running = True
         self._render_thread = threading.Thread(target=self._render_thread_loop, daemon=True)
         self._render_thread.start()
@@ -2639,58 +2438,49 @@ class ThemeEditorWindow(QMainWindow):
     def _stop_render_thread(self):
         """Stop background render thread."""
         self._render_thread_running = False
+        self._frame_request.set()
         if self._render_thread:
-            self._render_thread.join(timeout=1.0)
+            self._render_thread.join(timeout=2.0)
             self._render_thread = None
+        self._frame_request.clear()
 
     def _render_thread_loop(self):
-        """Background thread that pre-renders frames."""
+        """Render, encode, and send only the latest requested frame."""
         while self._render_thread_running:
+            self._frame_request.wait(timeout=0.5)
+            if not self._render_thread_running:
+                break
+            if not self._frame_request.is_set():
+                continue
+            self._frame_request.clear()
             try:
-                if self.device and self._overdrive_mode:
-                    # Update sensor values for current page only
+                if self.backend and self.backend.is_connected():
                     sensor_data = self.get_sensor_data()
                     for element in self.get_current_page_elements():
                         if element.source != "static" and element.source in sensor_data:
                             element.value = sensor_data[element.source]
 
-                    # Render frame
                     img = self.render_theme_image()
                     jpeg_data = self.image_to_jpeg(img)
-
-                    # Store in buffer
-                    with self._frame_buffer_lock:
-                        self._frame_buffer = jpeg_data
-
-                # Sleep to match roughly 2x target FPS for buffer freshness
-                time.sleep(1.0 / (self.target_fps * 2))
+                    self.send_jpeg_frame(jpeg_data)
+                    self.record_frame_time()
             except Exception as e:
-                print(f"[Render Thread] Error: {e}")
-                time.sleep(0.1)
+                self._frame_error = e
 
     def start_continuous_send(self):
-        # Calculate interval with proper rounding for accurate FPS
         interval = round(1000 / self.target_fps)
-
-        # Initialize frame deadline for smooth timing
         self._frame_deadline = time.perf_counter()
         self._frames_skipped = 0
-
-        # Start render thread if overdrive mode
-        if self._overdrive_mode:
-            self._start_render_thread()
+        self._start_render_thread()
 
         if self.live_preview_timer is None:
             self.live_preview_timer = QTimer(self)
-            self.live_preview_timer.setTimerType(Qt.TimerType.PreciseTimer)  # More accurate timing
+            self.live_preview_timer.setTimerType(Qt.TimerType.PreciseTimer)
             self.live_preview_timer.timeout.connect(self.send_frame_with_sensors)
-            # Use slightly shorter interval in overdrive to catch up faster
-            actual_interval = interval if not self._overdrive_mode else max(1, interval - 2)
-            self.live_preview_timer.start(actual_interval)
+            self.live_preview_timer.start(interval)
         else:
-            self.live_preview_timer.setTimerType(Qt.TimerType.PreciseTimer)  # More accurate timing
-            actual_interval = interval if not self._overdrive_mode else max(1, interval - 2)
-            self.live_preview_timer.setInterval(actual_interval)
+            self.live_preview_timer.setTimerType(Qt.TimerType.PreciseTimer)
+            self.live_preview_timer.setInterval(interval)
             self.live_preview_timer.start()
 
     def stop_continuous_send(self):
@@ -2698,7 +2488,6 @@ class ThemeEditorWindow(QMainWindow):
             self.live_preview_timer.stop()
             self.live_preview_timer = None
 
-        # Stop render thread
         self._stop_render_thread()
 
     def send_to_display(self):
@@ -2709,70 +2498,27 @@ class ThemeEditorWindow(QMainWindow):
             return
 
         try:
+            if self._frame_error is not None:
+                error = self._frame_error
+                self._frame_error = None
+                raise error
+
             current_time = time.perf_counter()
             frame_interval = 1.0 / self.target_fps
-
-            # Rate limiting: skip if called too early (timer imprecision)
-            # Allow small tolerance (90% of interval) to avoid missing frames
             min_frame_interval = frame_interval * 0.9
             if self.last_frame_time > 0 and (current_time - self.last_frame_time) < min_frame_interval:
-                return  # Too early, skip this frame
+                return
 
-            # Time-compensated frame delivery
-            if self._overdrive_mode:
-                # Check if we're behind schedule
-                if current_time < self._frame_deadline:
-                    # We're ahead - wait until deadline (smooth pacing)
-                    pass
-                elif current_time > self._frame_deadline + frame_interval:
-                    # We're more than one frame behind - skip frames to catch up
-                    frames_behind = int((current_time - self._frame_deadline) / frame_interval)
-                    self._frames_skipped += frames_behind
-                    self._frame_deadline = current_time  # Reset deadline
+            if self._frame_request.is_set():
+                self._frames_skipped += 1
+            self._frame_request.set()
+            self.last_frame_time = current_time
 
-                # Use pre-rendered frame from buffer if available
-                jpeg_data = None
-                with self._frame_buffer_lock:
-                    if self._frame_buffer:
-                        jpeg_data = self._frame_buffer
-
-                if jpeg_data:
-                    self.send_jpeg_frame(jpeg_data)
-                else:
-                    # Fallback to direct render if buffer empty
-                    sensor_data = self.get_sensor_data()
-                    # Update sensor values for current page elements only
-                    for element in self.get_current_page_elements():
-                        if element.source != "static" and element.source in sensor_data:
-                            element.value = sensor_data[element.source]
-                    img = self.render_theme_image()
-                    jpeg_data = self.image_to_jpeg(img)
-                    self.send_jpeg_frame(jpeg_data)
-
-                # Advance deadline
-                self._frame_deadline += frame_interval
-            else:
-                # Standard mode - direct render and send
-                sensor_data = self.get_sensor_data()
-
-                # Update sensor values for current page elements only
-                for element in self.get_current_page_elements():
-                    if element.source != "static" and element.source in sensor_data:
-                        element.value = sensor_data[element.source]
-
-                img = self.render_theme_image()
-                jpeg_data = self.image_to_jpeg(img)
-                self.send_jpeg_frame(jpeg_data)
-
-            # Throttle canvas updates to reduce CPU usage
             self._canvas_update_counter += 1
             if self._canvas_update_counter >= self._canvas_update_interval:
                 self._canvas_update_counter = 0
-                # Show current page elements on canvas
                 self.canvas.set_elements(self.get_current_page_elements())
                 self.canvas.update()
-
-            self.record_frame_time()
 
         except Exception as e:
             error_str = str(e).lower()
@@ -3018,9 +2764,12 @@ class ThemeEditorWindow(QMainWindow):
         # Use element id for cache key
         elem_id = id(element)
         
-        # Check cache for static/unchanged elements
+        cacheable = element.type in {"circle_gauge", "bar_gauge", "text", "image"}
+        cacheable = cacheable or (
+            element.type == "rectangle" and not getattr(element, "glass_effect", False)
+        )
         current_state_hash = self._compute_element_state_hash(element)
-        if elem_id in self._element_render_cache:
+        if cacheable and elem_id in self._element_render_cache:
             cached_overlay, cached_hash, bounds = self._element_render_cache[elem_id]
             if cached_hash == current_state_hash:
                 # Cache hit - use cached overlay
@@ -3113,11 +2862,12 @@ class ThemeEditorWindow(QMainWindow):
         if bbox:
             cropped = overlay.crop(bbox)
             bounds = (bbox[0], bbox[1])
-            self._element_render_cache[elem_id] = (cropped, current_state_hash, bounds)
+            if cacheable:
+                self._element_render_cache[elem_id] = (cropped, current_state_hash, bounds)
             img.alpha_composite(cropped, bounds)
         else:
-            # Fallback for empty renders
-            self._element_render_cache[elem_id] = (overlay, current_state_hash, (0, 0))
+            if cacheable:
+                self._element_render_cache[elem_id] = (overlay, current_state_hash, (0, 0))
             self._fast_alpha_composite(img, overlay)
 
     def render_rectangle_rgba(self, img, element, opacity, blur_source=None):
@@ -4463,7 +4213,7 @@ class ThemeEditorWindow(QMainWindow):
 
             try:
                 # Send header
-                if not self.backend.send_frame(bytes([0x00]) + bytes(header)):
+                if not self.backend.send_frame(bytes(header)):
                     raise IOError("Failed to send header")
 
                 # Send remaining chunks
@@ -4472,7 +4222,7 @@ class ThemeEditorWindow(QMainWindow):
                     chunk = jpeg_data[offset:offset + 512]
                     if len(chunk) < 512:
                         chunk = chunk + bytes(512 - len(chunk))
-                    if not self.backend.send_frame(bytes([0x00]) + chunk):
+                    if not self.backend.send_frame(chunk):
                         raise IOError("Failed to send chunk")
                     offset += 512
             except Exception as e:
@@ -4482,11 +4232,9 @@ class ThemeEditorWindow(QMainWindow):
             # USB devices (ChiZhu Tech USBDISPLAY) - send JPEG with protocol header
             try:
                 if not self.backend.send_frame(jpeg_data):
-                    # Log but don't crash
-                    print(f"Frame send returned False")
+                    raise IOError("Frame send returned False")
             except Exception as e:
-                # Log but don't crash
-                print(f"Frame send error: {e}")
+                raise IOError(f"Frame send failed: {e}") from e
 
     def show_settings(self):
         """Show the settings dialog."""
@@ -4605,7 +4353,7 @@ class ThemeEditorWindow(QMainWindow):
         # Buttons
         buttons = QDialogButtonBox()
         download_label = "Download"
-        if can_auto_install_asset(asset_name):
+        if can_auto_install_asset(asset_name, expected_hash=expected_hash):
             download_label = "Download && Install"
         download_btn = buttons.addButton(download_label, QDialogButtonBox.ButtonRole.AcceptRole)
         cancel_btn = buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
@@ -4615,7 +4363,16 @@ class ThemeEditorWindow(QMainWindow):
         layout.addWidget(buttons)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            if asset_name:
+            auto_install = can_auto_install_asset(
+                asset_name, expected_hash=expected_hash
+            )
+            if (
+                sys.platform == "win32"
+                and asset_name.lower().endswith(".exe")
+                and not auto_install
+            ):
+                webbrowser.open(GITHUB_RELEASES_URL)
+            elif asset_name:
                 self._download_and_install_update(latest_version, release_url, expected_hash, asset_name)
             else:
                 webbrowser.open(release_url)
@@ -4656,7 +4413,7 @@ class ThemeEditorWindow(QMainWindow):
         def on_download_finished(installer_path):
             progress.close()
 
-            if can_auto_install_asset(asset_name) and os.path.exists(installer_path):
+            if can_auto_install_asset(asset_name, expected_hash=expected_hash) and os.path.exists(installer_path):
                 is_linux_appimage = sys.platform.startswith("linux") and asset_name.lower().endswith(".appimage")
                 install_prompt = (
                     "Do you want to install it now?\n\n"
@@ -4780,7 +4537,6 @@ class ThemeEditorWindow(QMainWindow):
 
         # Stop background threads
         self._stop_render_thread()
-        stop_psutil_thread()
         stop_sensors()
         video_background.close()
 

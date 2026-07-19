@@ -11,7 +11,7 @@ class TestSafeHardwareMonitor(unittest.TestCase):
     @patch("src.core.libre_hw_monitor.psutil.virtual_memory")
     @patch("src.core.libre_hw_monitor.psutil.cpu_freq")
     @patch("src.core.libre_hw_monitor.psutil.cpu_percent")
-    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures")
+    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures", create=True)
     def test_get_thermal_sensors_without_driver(
         self,
         mock_sensors_temperatures,
@@ -54,7 +54,7 @@ class TestSafeHardwareMonitor(unittest.TestCase):
     @patch("src.core.libre_hw_monitor.psutil.virtual_memory")
     @patch("src.core.libre_hw_monitor.psutil.cpu_freq")
     @patch("src.core.libre_hw_monitor.psutil.cpu_percent")
-    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures")
+    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures", create=True)
     @patch("src.core.libre_hw_monitor._LinuxReader._read_nvidia_smi")
     @patch("src.core.libre_hw_monitor._LinuxReader._read_sysfs_gpu")
     def test_linux_fallback_reads_cpu_temp(
@@ -93,7 +93,7 @@ class TestSafeHardwareMonitor(unittest.TestCase):
     @patch("src.core.libre_hw_monitor.psutil.virtual_memory")
     @patch("src.core.libre_hw_monitor.psutil.cpu_freq")
     @patch("src.core.libre_hw_monitor.psutil.cpu_percent")
-    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures")
+    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures", create=True)
     @patch("src.core.libre_hw_monitor._LinuxReader._read_nvidia_smi")
     def test_linux_fallback_reads_nvidia_gpu_metrics(
         self,
@@ -172,7 +172,7 @@ class TestSafeHardwareMonitor(unittest.TestCase):
     @patch("src.core.libre_hw_monitor.psutil.virtual_memory")
     @patch("src.core.libre_hw_monitor.psutil.cpu_freq")
     @patch("src.core.libre_hw_monitor.psutil.cpu_percent")
-    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures")
+    @patch("src.core.libre_hw_monitor.psutil.sensors_temperatures", create=True)
     @patch("src.core.libre_hw_monitor._LinuxReader._read_nvidia_smi")
     @patch("src.core.libre_hw_monitor._LinuxReader._read_sysfs_gpu")
     def test_linux_diagnostics_report_sources(

@@ -93,11 +93,11 @@ def get_download_filename(download_url, fallback_name):
     return filename or fallback_name
 
 
-def can_auto_install_asset(asset_name, platform=None):
+def can_auto_install_asset(asset_name, platform=None, expected_hash=None):
     platform = platform or sys.platform
     asset_name = (asset_name or "").lower()
     if platform == "win32":
-        return asset_name.endswith(".exe")
+        return asset_name.endswith(".exe") and bool(expected_hash)
     if platform.startswith("linux"):
         return asset_name.endswith(".appimage")
     return False
@@ -248,6 +248,10 @@ class UpdateDownloader(QThread):
                     # Clean up partial download
                     if os.path.exists(installer_path):
                         os.remove(installer_path)
+                    return
+
+                if sys.platform == "win32" and self.asset_name.lower().endswith(".exe") and not self.expected_hash:
+                    self.error.emit("Security error: the release does not provide a SHA-256 digest.")
                     return
 
                 # Verify hash if expected_hash is provided

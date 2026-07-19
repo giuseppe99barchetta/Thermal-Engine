@@ -27,14 +27,13 @@ SETTINGS_FILE = get_user_data_path("settings.json")
 
 # Default settings
 DEFAULT_SETTINGS = {
-    "launch_at_login": True,
+    "launch_at_login": False,
     "launch_minimized": True,
     "minimize_to_tray": True,
     "close_to_tray": True,
     "target_fps": 30,  # 30 FPS is smooth for most PCs
     "default_preset": None,  # Name of preset to load on startup (explicit user choice)
     "last_preset": None,  # Last used preset (auto-saved on every preset load)
-    "overdrive_mode": False,
     "suppress_60fps_warning": False,  # Show warning when selecting 60 FPS
     "show_grid": True,  # Show grid lines on canvas
     "snap_to_grid": True,  # Snap elements to grid when dragging
@@ -269,7 +268,7 @@ def apply_autostart_setting():
     """Apply current autostart setting for supported platforms."""
     if not (IS_WINDOWS or IS_LINUX):
         return
-    enabled = get_setting("launch_at_login", True)
+    enabled = get_setting("launch_at_login", False)
     set_autostart(enabled)
     # Always clean up Startup folder shortcut - the registry entry is the
     # single source of truth for autostart. The installer may have created
@@ -280,6 +279,3 @@ def apply_autostart_setting():
 
 # Initialize settings on module load
 load_settings()
-
-# Apply autostart setting (ensures registry matches setting file)
-apply_autostart_setting()
