@@ -42,6 +42,7 @@ def test_gui_frame_tick_only_sets_latest_frame_request():
         _frame_error=None,
         target_fps=30,
         last_frame_time=0,
+        _last_frame_request_time=0,
         _frame_request=threading.Event(),
         _frames_skipped=0,
         _canvas_update_counter=0,
@@ -59,6 +60,36 @@ def test_gui_frame_tick_only_sets_latest_frame_request():
     assert window._frame_request.is_set()
 
 
+def test_frame_requests_are_limited_to_selected_fps():
+    window = SimpleNamespace(
+        device=object(),
+        _frame_error=None,
+        target_fps=10,
+        _last_frame_request_time=0,
+        _frame_request=threading.Event(),
+        _frames_skipped=0,
+        _canvas_update_counter=0,
+        _canvas_update_interval=99,
+        canvas=MagicMock(),
+        status_bar=MagicMock(),
+    )
+    window.get_current_page_elements = lambda: []
+    window.send_frame_with_sensors = MethodType(
+        ThemeEditorWindow.send_frame_with_sensors, window
+    )
+
+    with patch(
+        "src.ui.main_window.time.perf_counter",
+        side_effect=[1.0, 1.01, 1.10],
+    ):
+        window.send_frame_with_sensors()
+        window._frame_request.clear()
+        window.send_frame_with_sensors()
+        assert not window._frame_request.is_set()
+        window.send_frame_with_sensors()
+        assert window._frame_request.is_set()
+
+
 def test_slow_backend_does_not_block_gui_frame_tick():
     entered = threading.Event()
     release = threading.Event()
@@ -73,6 +104,7 @@ def test_slow_backend_does_not_block_gui_frame_tick():
         _frames_skipped=0,
         target_fps=30,
         last_frame_time=0,
+        _last_frame_request_time=0,
         _canvas_update_counter=0,
         _canvas_update_interval=3,
         canvas=MagicMock(),

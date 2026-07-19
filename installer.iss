@@ -68,10 +68,18 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Type: files; Name: "{userstartup}\{#MyAppName}.lnk"
 
 [Run]
-Filename: "{tmp}\PawnIO_setup.exe"; Description: "Install PawnIO hardware access"; Flags: waituntilterminated; Tasks: pawnio
+Filename: "{tmp}\PawnIO_setup.exe"; Parameters: "-install -silent"; Description: "Installing PawnIO hardware access..."; Flags: runhidden waituntilterminated; Tasks: pawnio; Check: not PawnIOInstalled
 ; Option to launch after installation
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Kill any running instances before uninstall
 Filename: "{cmd}"; Parameters: "/c taskkill /f /im {#MyAppExeName} >nul 2>&1"; Flags: runhidden; RunOnceId: "KillApp"
+
+[Code]
+function PawnIOInstalled: Boolean;
+begin
+  Result :=
+    RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\PawnIO') or
+    RegKeyExists(HKLM64, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO');
+end;

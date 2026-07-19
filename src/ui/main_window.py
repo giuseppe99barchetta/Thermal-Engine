@@ -214,6 +214,7 @@ class ThemeEditorWindow(QMainWindow):
         # Performance monitoring
         self.frame_times = []
         self.last_frame_time = 0
+        self._last_frame_request_time = 0
         self.perf_update_timer = None
         self.process = psutil.Process()
 
@@ -351,6 +352,7 @@ class ThemeEditorWindow(QMainWindow):
         # Reset frame timing for FPS calculation
         self.frame_times = []
         self.last_frame_time = 0
+        self._last_frame_request_time = 0
         sensors.invalidate_sensor_cache()
 
         # If we were connected before sleep, try to reconnect
@@ -2176,6 +2178,7 @@ class ThemeEditorWindow(QMainWindow):
 
             self.frame_times = []
             self.last_frame_time = 0
+            self._last_frame_request_time = 0
 
             self.start_continuous_send()
 
@@ -2215,6 +2218,7 @@ class ThemeEditorWindow(QMainWindow):
 
         self.frame_times = []
         self.last_frame_time = 0
+        self._last_frame_request_time = 0
 
         # Update button text to "Connect"
         try:
@@ -2470,6 +2474,7 @@ class ThemeEditorWindow(QMainWindow):
     def start_continuous_send(self):
         interval = round(1000 / self.target_fps)
         self._frame_deadline = time.perf_counter()
+        self._last_frame_request_time = 0
         self._frames_skipped = 0
         self._start_render_thread()
 
@@ -2506,13 +2511,16 @@ class ThemeEditorWindow(QMainWindow):
             current_time = time.perf_counter()
             frame_interval = 1.0 / self.target_fps
             min_frame_interval = frame_interval * 0.9
-            if self.last_frame_time > 0 and (current_time - self.last_frame_time) < min_frame_interval:
+            if (
+                self._last_frame_request_time > 0
+                and current_time - self._last_frame_request_time < min_frame_interval
+            ):
                 return
 
             if self._frame_request.is_set():
                 self._frames_skipped += 1
             self._frame_request.set()
-            self.last_frame_time = current_time
+            self._last_frame_request_time = current_time
 
             self._canvas_update_counter += 1
             if self._canvas_update_counter >= self._canvas_update_interval:
