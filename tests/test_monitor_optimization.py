@@ -44,8 +44,12 @@ class TestSafeHardwareMonitor(unittest.TestCase):
     def test_gpu_usage_uses_windows_performance_counters(self, mock_pdh_reader):
         mock_pdh_reader.return_value.get_gpu_usage.return_value = 33.0
 
-        reader = LibreHardwareMonitorReader()
-        sensors = reader.get_thermal_sensors()
+        with patch(
+            "src.core.libre_hw_monitor._LibreHardwareMonitorReader",
+            side_effect=RuntimeError("force usage-only fallback"),
+        ):
+            reader = LibreHardwareMonitorReader()
+            sensors = reader.get_thermal_sensors()
 
         self.assertEqual(sensors["gpu_percent"], 33.0)
 
