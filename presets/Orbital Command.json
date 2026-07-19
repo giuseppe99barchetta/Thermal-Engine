@@ -1,0 +1,17 @@
+{
+  "name": "Orbital Command",
+  "background_color": "#010307",
+  "display_width": 1280,
+  "display_height": 480,
+  "elements": [
+    {"type": "text", "name": "system_title", "x": 45, "y": 32, "width": 620, "height": 55, "color": "#76d8ff", "font_size": 34, "font_bold": true, "text": "ORBITAL COMMAND", "source": "static", "text_align": "left"},
+    {"type": "clock", "name": "utc_clock", "x": 45, "y": 90, "width": 620, "height": 75, "color": "#ffffff", "font_size": 56, "font_bold": true, "source": "static", "show_seconds": true, "text_align": "left"},
+    {"type": "bar_gauge", "name": "cpu_load", "x": 48, "y": 215, "width": 590, "height": 38, "color": "#55dfff", "background_color": "#07131d", "text": "CPU LOAD", "source": "cpu_percent", "font_size": 20, "rounded_corners": true},
+    {"type": "bar_gauge", "name": "gpu_load", "x": 48, "y": 292, "width": 590, "height": 38, "color": "#9b8cff", "background_color": "#100d20", "text": "GPU LOAD", "source": "gpu_percent", "font_size": 20, "rounded_corners": true},
+    {"type": "text", "name": "cpu_temp", "x": 48, "y": 375, "width": 250, "height": 50, "color": "#63f5ca", "font_size": 30, "font_bold": true, "text": "CPU", "source": "cpu_temp", "text_align": "left"},
+    {"type": "text", "name": "gpu_temp", "x": 345, "y": 375, "width": 250, "height": 50, "color": "#ffb86b", "font_size": 30, "font_bold": true, "text": "GPU", "source": "gpu_temp", "text_align": "left"},
+    {"type": "image", "name": "earth", "x": 800, "y": 0, "width": 480, "height": 480, "image_path": "assets/earth-square.jpg", "scale_proportionally": false, "source": "static"},
+    {"type": "rectangle", "name": "telemetry_panel", "x": 20, "y": 18, "width": 670, "height": 440, "color": "#020810", "color_opacity": 80, "border_radius": 24, "source": "static"}
+  ],
+  "video_background": {"video_path": "", "fit_mode": "fit_height", "enabled": false}
+}

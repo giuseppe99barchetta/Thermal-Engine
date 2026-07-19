@@ -10,6 +10,7 @@ PREVIEW_SCALE = 0.5
 # Note: Actual display dimensions are determined by the connected device.
 # - Thermalright Trofeo: 1280x480 (ultrawide)
 # - Thermalright FW 360 Ultra: 480x480 (square)
+# - Thermalright Stream Vision 360: 640x480 (handshake-detected)
 
 # HID Device settings
 VENDOR_ID = 0x35CC

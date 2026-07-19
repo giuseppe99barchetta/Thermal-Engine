@@ -52,9 +52,6 @@ Name: "pawnio"; Description: "Install PawnIO 2.2.0 for hardware temperature acce
 Source: "dist\ThermalEngine\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "third_party\PawnIO_setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Tasks: pawnio
 
-; Presets - from project root (only install if they don't exist to preserve user customizations)
-Source: "presets\*"; DestDir: "{app}\presets"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
-
 [Icons]
 ; Start Menu shortcut
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

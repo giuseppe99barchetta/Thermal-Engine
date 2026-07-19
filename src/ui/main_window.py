@@ -9,6 +9,7 @@ import time
 import io
 import threading
 import functools
+import copy
 import psutil
 import logging
 import platform
@@ -156,6 +157,13 @@ except ImportError:
 
 from src.core import constants
 from src.core.constants import SOURCE_UNITS, get_value_with_unit
+from src.core.display_size import (
+    DISPLAY_SIZE_PROFILES,
+    device_size_key,
+    get_device_size_override,
+    resize_theme_elements,
+    validate_display_size,
+)
 
 # Device backend system for multi-device support
 from src.core import device_backends
@@ -213,6 +221,7 @@ class ThemeEditorWindow(QMainWindow):
         self.device = None  # Legacy compatibility
         self.backend = None  # New device backend system
         self.selected_device_def = None  # Selected device definition
+        self._selected_device_default_size = None
         self.live_preview_timer = None
         self.target_fps = settings.get_setting("target_fps", 30)
 
@@ -760,6 +769,12 @@ class ThemeEditorWindow(QMainWindow):
         self.send_action.triggered.connect(self.send_to_display)
         self.send_action.setEnabled(False)
         display_menu.addAction(self.send_action)
+
+        display_menu.addSeparator()
+
+        screen_size_action = QAction("Screen Size...", self)
+        screen_size_action.triggered.connect(self.show_display_size_dialog)
+        display_menu.addAction(screen_size_action)
 
         display_menu.addSeparator()
 
@@ -1819,6 +1834,23 @@ class ThemeEditorWindow(QMainWindow):
             f"Display: {device.name} ({device.backend_type})"
             if device else "Display: not connected"
         )
+        if device:
+            default_size = getattr(
+                self,
+                "_selected_device_default_size",
+                None,
+            ) or (
+                device.width,
+                device.height,
+            )
+            size_mode = (
+                "device default"
+                if (device.width, device.height) == tuple(default_size)
+                else "custom override"
+            )
+            info.append(
+                f"Output size: {device.width}x{device.height} ({size_mode})"
+            )
         info.append(f"Target FPS: {self.target_fps}")
         info.append(f"Log file: {get_user_data_path('ThermalEngine.log')}")
         if self._frame_error:
@@ -1959,6 +1991,205 @@ class ThemeEditorWindow(QMainWindow):
 
         return None
 
+    def _apply_saved_display_size(self):
+        """Apply a per-device size override before creating the backend."""
+        device = self.selected_device_def
+        if device is None:
+            return
+
+        if self._selected_device_default_size is None:
+            self._selected_device_default_size = (device.width, device.height)
+
+        default_width, default_height = self._selected_device_default_size
+        override = get_device_size_override(
+            settings.get_setting("display_size_overrides", {}),
+            device,
+        )
+        device.extra_params["manual_size_override"] = override is not None
+        device.width, device.height = override or (default_width, default_height)
+
+    def _recreate_canvas_for_display(self):
+        """Recreate the preview after its physical aspect ratio changes."""
+        old_canvas = self.canvas
+        selected_indices = list(getattr(old_canvas, "selected_indices", []))
+        show_grid = getattr(old_canvas, "show_grid", True)
+        snap_to_grid = getattr(old_canvas, "snap_to_grid", True)
+
+        self.canvas = CanvasPreview()
+        self.canvas.set_background_color(self.background_color)
+        self.canvas.set_elements(self.get_current_page_elements())
+        self.canvas.set_show_grid(show_grid)
+        self.canvas.set_snap_to_grid(snap_to_grid)
+        self.canvas.set_selected_indices(selected_indices)
+
+        canvas_wrapper = old_canvas.parent()
+        canvas_wrapper.layout().replaceWidget(old_canvas, self.canvas)
+        old_canvas.deleteLater()
+
+        self.canvas.element_selected.connect(self.on_canvas_element_selected)
+        self.canvas.elements_selected.connect(self.on_canvas_elements_selected)
+        self.canvas.element_moved.connect(self.on_element_moved)
+        self.canvas.element_resized.connect(self.on_element_resized)
+        self.canvas.drag_started.connect(self.save_undo_state)
+
+    def _set_display_size(self, width, height, stretch_layout=False):
+        """Apply output dimensions to rendering, preview, presets, and backend."""
+        width, height = validate_display_size(width, height)
+        old_size = (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT)
+        new_size = (width, height)
+        if old_size == new_size:
+            return
+
+        was_streaming = self.live_preview_timer is not None
+        if was_streaming:
+            self.stop_continuous_send()
+
+        if stretch_layout and self.elements:
+            self.save_undo_state()
+            resize_theme_elements(self.elements, old_size, new_size)
+            self.element_list.set_elements(self.elements)
+            self.properties_panel.set_element(None)
+
+        constants.DISPLAY_WIDTH = width
+        constants.DISPLAY_HEIGHT = height
+
+        if self.selected_device_def:
+            self.selected_device_def.width = width
+            self.selected_device_def.height = height
+        if self.backend:
+            self.backend.device_def.width = width
+            self.backend.device_def.height = height
+
+        self.presets_panel.set_display_resolution(width, height)
+        constants.PREVIEW_SCALE = 1.0 if width / height < 1.5 else 0.5
+
+        with self._render_cache_lock:
+            self._element_render_cache.clear()
+            self._analog_clock_cache.clear()
+            self._element_dirty.clear()
+        self._recreate_canvas_for_display()
+
+        if video_background.enabled and video_background.video_path:
+            video_background.load_video(video_background.video_path)
+
+        self._schedule_autosave()
+        self.status_bar.showMessage(
+            f"Display size set to {width}x{height}"
+            + ("; current theme stretched to fit" if stretch_layout else ""),
+            4000,
+        )
+        if was_streaming and self.backend:
+            self.start_continuous_send()
+
+    def show_display_size_dialog(self):
+        """Choose a known or custom physical output size for the active device."""
+        if not self.selected_device_def:
+            QMessageBox.information(
+                self,
+                "Screen Size",
+                "Connect or select a display before choosing its screen size.",
+            )
+            return
+
+        default_size = self._selected_device_default_size or (
+            self.selected_device_def.width,
+            self.selected_device_def.height,
+        )
+        current_size = (
+            constants.DISPLAY_WIDTH,
+            constants.DISPLAY_HEIGHT,
+        )
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Screen Size")
+        dialog.setMinimumWidth(470)
+        layout = QVBoxLayout(dialog)
+
+        description = QLabel(
+            "Thermalright reuses the same USB identifier for panels with "
+            "different resolutions. Choose the panel's native size; use "
+            "640×360 for a 16:9 Stream Vision variant, or enter a custom size."
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        form = QFormLayout()
+        profile_combo = QComboBox()
+        profile_combo.addItem(
+            f"Device default ({default_size[0]} × {default_size[1]})",
+            "default",
+        )
+        for label, width, height in DISPLAY_SIZE_PROFILES:
+            profile_combo.addItem(label, (width, height))
+        profile_combo.addItem("Custom", "custom")
+        form.addRow("Profile:", profile_combo)
+
+        width_spin = QSpinBox()
+        width_spin.setRange(160, 4096)
+        width_spin.setValue(current_size[0])
+        form.addRow("Width:", width_spin)
+
+        height_spin = QSpinBox()
+        height_spin.setRange(160, 4096)
+        height_spin.setValue(current_size[1])
+        form.addRow("Height:", height_spin)
+        layout.addLayout(form)
+
+        stretch_checkbox = QCheckBox(
+            "Stretch the current theme to fill the new screen"
+        )
+        stretch_checkbox.setChecked(True)
+        layout.addWidget(stretch_checkbox)
+
+        def update_profile_fields():
+            value = profile_combo.currentData()
+            if value == "default":
+                value = default_size
+            editable = value == "custom"
+            if not editable:
+                width_spin.setValue(value[0])
+                height_spin.setValue(value[1])
+            width_spin.setEnabled(editable)
+            height_spin.setEnabled(editable)
+
+        initial_index = profile_combo.findData(
+            "default" if current_size == tuple(default_size) else current_size
+        )
+        if initial_index < 0:
+            initial_index = profile_combo.findData("custom")
+        profile_combo.setCurrentIndex(initial_index)
+        profile_combo.currentIndexChanged.connect(update_profile_fields)
+        update_profile_fields()
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        selected_profile = profile_combo.currentData()
+        width, height = validate_display_size(
+            width_spin.value(),
+            height_spin.value(),
+        )
+        overrides = dict(settings.get_setting("display_size_overrides", {}))
+        key = device_size_key(self.selected_device_def)
+        if selected_profile == "default":
+            overrides.pop(key, None)
+        else:
+            overrides[key] = [width, height]
+        settings.set_setting("display_size_overrides", overrides)
+        self._set_display_size(
+            width,
+            height,
+            stretch_layout=stretch_checkbox.isChecked(),
+        )
+
     def connect_display(self, show_error=True):
         """Connect to display using new backend system."""
         # Check if already connected - don't create duplicate backend!
@@ -1968,9 +2199,19 @@ class ThemeEditorWindow(QMainWindow):
 
         # Select device if not already selected
         if not self.selected_device_def:
-            self.selected_device_def = self.select_device()
-            if not self.selected_device_def:
+            selected_device = self.select_device()
+            if not selected_device:
                 return False  # User cancelled
+            self._selected_device_default_size = (
+                selected_device.width,
+                selected_device.height,
+            )
+            self.selected_device_def = copy.copy(selected_device)
+            self.selected_device_def.extra_params = dict(
+                selected_device.extra_params
+            )
+
+        self._apply_saved_display_size()
 
         # Show experimental warning
         if self.selected_device_def.experimental and show_error:
@@ -2011,44 +2252,33 @@ class ThemeEditorWindow(QMainWindow):
                 self.backend = None
                 return False
 
+            if not self.selected_device_def.extra_params.get(
+                "manual_size_override",
+                False,
+            ):
+                self._selected_device_default_size = (
+                    self.selected_device_def.width,
+                    self.selected_device_def.height,
+                )
+
             # Set legacy device reference for compatibility
             self.device = self.backend  # Acts as a flag for connected state
 
-            # Update display dimensions based on connected device
-            constants.DISPLAY_WIDTH = self.selected_device_def.width
-            constants.DISPLAY_HEIGHT = self.selected_device_def.height
-
-            # Update presets panel to filter by current display resolution
-            self.presets_panel.set_display_resolution(constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT)
-
-            # Set adaptive preview scale based on display size
-            # Square displays (480x480) get larger scale for easier editing
-            # Wide displays (1280x480) keep smaller scale to fit on screen
-            aspect_ratio = constants.DISPLAY_WIDTH / constants.DISPLAY_HEIGHT
-            if aspect_ratio < 1.5:  # Square-ish displays
-                constants.PREVIEW_SCALE = 1.0  # 480x480 -> 720x720
-            else:  # Wide displays
-                constants.PREVIEW_SCALE = 0.5  # 1280x480 -> 640x240
-
-            logger.info(f"Display dimensions set to {constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}")
+            self._set_display_size(
+                self.selected_device_def.width,
+                self.selected_device_def.height,
+            )
+            # _set_display_size returns early when the startup defaults already
+            # match, but the preset filter still needs the effective device size.
+            self.presets_panel.set_display_resolution(
+                self.selected_device_def.width,
+                self.selected_device_def.height,
+            )
+            logger.info(
+                "Display dimensions set to "
+                f"{constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}"
+            )
             logger.info(f"Preview scale set to {constants.PREVIEW_SCALE}x")
-
-            # Recreate canvas with correct dimensions
-            old_canvas = self.canvas
-            self.canvas = CanvasPreview()
-            # Copy settings from old canvas
-            self.canvas.set_background_color(self.background_color)
-            self.canvas.set_elements(self.elements)
-            # Replace in UI
-            canvas_wrapper = old_canvas.parent()
-            canvas_wrapper.layout().replaceWidget(old_canvas, self.canvas)
-            old_canvas.deleteLater()
-            # Reconnect signals
-            self.canvas.element_selected.connect(self.on_canvas_element_selected)
-            self.canvas.elements_selected.connect(self.on_canvas_elements_selected)
-            self.canvas.element_moved.connect(self.on_element_moved)
-            self.canvas.element_resized.connect(self.on_element_resized)
-            self.canvas.drag_started.connect(self.save_undo_state)
             logger.info("Canvas recreated with device dimensions")
 
             # Update button text to "Disconnect"

@@ -1,0 +1,15 @@
+{
+  "name": "Event Horizon Live",
+  "background_color": "#000000",
+  "display_width": 480,
+  "display_height": 480,
+  "elements": [
+    {"type": "clock", "name": "horizon_clock", "x": 0, "y": 20, "width": 480, "height": 60, "color": "#fff4dc", "font_size": 42, "font_bold": true, "source": "static", "show_seconds": true},
+    {"type": "text", "name": "cpu_temp", "x": 20, "y": 395, "width": 100, "height": 48, "color": "#ffba73", "font_size": 24, "font_bold": true, "text": "CPU", "source": "cpu_temp"},
+    {"type": "text", "name": "cpu_load", "x": 130, "y": 395, "width": 100, "height": 48, "color": "#ffdd9b", "font_size": 24, "font_bold": true, "text": "CPU%", "source": "cpu_percent"},
+    {"type": "text", "name": "gpu_temp", "x": 250, "y": 395, "width": 100, "height": 48, "color": "#ff8f63", "font_size": 24, "font_bold": true, "text": "GPU", "source": "gpu_temp"},
+    {"type": "text", "name": "gpu_load", "x": 360, "y": 395, "width": 100, "height": 48, "color": "#ffd4a3", "font_size": 24, "font_bold": true, "text": "GPU%", "source": "gpu_percent"},
+    {"type": "gif", "name": "event_horizon", "x": 0, "y": 100, "width": 480, "height": 277, "gif_path": "assets/black-hole-480.gif", "scale_mode": "stretch", "source": "static"}
+  ],
+  "video_background": {"video_path": "", "fit_mode": "fit_height", "enabled": false}
+}

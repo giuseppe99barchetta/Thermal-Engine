@@ -1,0 +1,15 @@
+{
+  "name": "Cosmic Core",
+  "background_color": "#04080e",
+  "display_width": 480,
+  "display_height": 480,
+  "elements": [
+    {"type": "analog_clock", "name": "cosmic_clock", "x": 240, "y": 220, "radius": 145, "color": "#b9f5ff", "background_color": "#06121c", "background_color_opacity": 38, "font_size": 25, "source": "static", "show_clock_border": true, "clock_face_style": "ticks", "smooth_animation": true},
+    {"type": "text", "name": "cpu_temp", "x": 20, "y": 405, "width": 105, "height": 50, "color": "#58f2d0", "font_size": 25, "font_bold": true, "text": "CPU", "source": "cpu_temp"},
+    {"type": "text", "name": "cpu_load", "x": 130, "y": 405, "width": 105, "height": 50, "color": "#70dcff", "font_size": 25, "font_bold": true, "text": "CPU%", "source": "cpu_percent"},
+    {"type": "text", "name": "gpu_temp", "x": 245, "y": 405, "width": 105, "height": 50, "color": "#ffad68", "font_size": 25, "font_bold": true, "text": "GPU", "source": "gpu_temp"},
+    {"type": "text", "name": "gpu_load", "x": 355, "y": 405, "width": 105, "height": 50, "color": "#d092ff", "font_size": 25, "font_bold": true, "text": "GPU%", "source": "gpu_percent"},
+    {"type": "image", "name": "cosmic_background", "x": 0, "y": 0, "width": 480, "height": 480, "image_path": "assets/carina-square.jpg", "scale_proportionally": false, "source": "static"}
+  ],
+  "video_background": {"video_path": "", "fit_mode": "fit_height", "enabled": false}
+}

@@ -11,12 +11,22 @@ from src.core import sensors
 from src.core.device_backends import (
     DeviceDefinition,
     HIDBackend,
+    USBBulkBackend,
     _has_bulk_out_endpoint,
     find_device_definition,
+    get_bulk_display_size,
+)
+from src.core.display_size import (
+    device_size_key,
+    get_device_size_override,
+    resize_theme_elements,
+    validate_display_size,
 )
 from src.core.element import ThemeElement
 from src.core.libre_hw_monitor import _classify_lhm_error
+from src.core.security import validate_preset_schema
 from src.ui.main_window import ThemeEditorWindow
+from src.ui.presets import resolve_preset_asset_paths
 from src.ui.video_background import VideoBackground
 from src.utils import theme_package, updater
 
@@ -198,6 +208,68 @@ def test_bulk_backend_requires_bulk_out_endpoint():
     assert find_device_definition(0x0416, 0x5302, "usb_bulk").backend_type == "usb_bulk"
 
 
+def test_usb_bulk_header_contains_non_square_width_and_height():
+    definition = DeviceDefinition(
+        "Stream Vision",
+        0x87AD,
+        0x70DB,
+        "usb_bulk",
+        width=640,
+        height=360,
+    )
+    backend = USBBulkBackend(definition)
+    backend.device = MagicMock()
+    backend.device.write.side_effect = lambda endpoint, data, timeout: len(data)
+    backend.endpoint_out = 0x01
+    backend.connected = True
+    backend.usb = SimpleNamespace(core=SimpleNamespace(USBError=RuntimeError))
+
+    assert backend.send_frame(b"jpeg")
+    payload = backend.device.write.call_args.args[1]
+    assert int.from_bytes(payload[8:12], "little") == 640
+    assert int.from_bytes(payload[12:16], "little") == 360
+
+
+def test_stream_vision_size_is_detected_from_bulk_handshake():
+    response = bytearray(1024)
+    response[24] = 7
+
+    assert get_bulk_display_size(response) == (640, 480)
+    response[24] = 255
+    assert get_bulk_display_size(response) is None
+
+
+def test_display_size_override_is_per_device_and_validated():
+    definition = DeviceDefinition("Stream Vision", 0x87AD, 0x70DB, "usb_bulk")
+    key = device_size_key(definition)
+
+    assert get_device_size_override({key: [640, 360]}, definition) == (640, 360)
+    assert get_device_size_override({key: [0, 360]}, definition) is None
+    assert validate_display_size("640", "480") == (640, 480)
+
+
+def test_theme_layout_can_stretch_from_square_to_16_by_9():
+    element = ThemeElement(
+        "image",
+        x=24,
+        y=40,
+        width=432,
+        height=400,
+        font_size=20,
+    )
+
+    scale_x, scale_y = resize_theme_elements(
+        [element],
+        (480, 480),
+        (640, 360),
+    )
+
+    assert (scale_x, scale_y) == (640 / 480, 360 / 480)
+    assert (element.x, element.y) == (32, 30)
+    assert (element.width, element.height) == (576, 300)
+    assert element.font_size == 15
+
+
 def test_sensor_status_reports_cpu_and_gpu_separately():
     original_status = sensors._sensor_status
     original_reader = sensors._reader
@@ -262,6 +334,7 @@ def test_diagnostic_report_is_ready_to_copy():
         report = window.build_diagnostic_report()
 
     assert "Test Display (hid)" in report
+    assert "Output size: 1280x480" in report
     assert "CPU temperature: available" in report
     assert "GPU temperature: unavailable (no_supported_sensor)" in report
 
@@ -272,6 +345,35 @@ def test_pawnio_runs_inside_installer_and_is_verified():
     assert "ewWaitUntilTerminated" in script
     assert "(not PawnIOInstalled)" in script
     assert 'Filename: "{tmp}\\PawnIO_setup.exe"' not in script
+
+
+def test_bundled_presets_have_valid_local_assets():
+    preset_dir = Path("presets").resolve()
+    new_presets = {
+        "Aurora Pulse",
+        "Blue Marble Telemetry",
+        "Cosmic Cliffs HUD",
+        "Cosmic Core",
+        "Event Horizon Live",
+        "Orbital Command",
+        "Stream Vision Nebula",
+    }
+    loaded = set()
+    for path in preset_dir.glob("*.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        valid, errors = validate_preset_schema(data)
+        assert valid, f"{path.name}: {errors}"
+        resolve_preset_asset_paths(data, preset_dir)
+        loaded.add(data["name"])
+        for element in data.get("elements", []):
+            for field in ("image_path", "gif_path"):
+                asset = element.get(field)
+                if asset:
+                    assert Path(asset).is_file(), f"{path.name}: missing {asset}"
+
+    assert new_presets <= loaded
+    for name in new_presets:
+        assert (preset_dir / f"{name}.png").is_file()
 
 
 def test_windows_installer_requires_digest_for_auto_install():

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
 
-from src.core.constants import DISPLAY_WIDTH, DISPLAY_HEIGHT
+from src.core import constants
 from src.core.element import ThemeElement
 from src.utils.app_path import get_resource_path, get_user_data_path, get_bundled_resource_path
 from src.core.security import validate_preset_schema, is_safe_filename, sanitize_preset_name
@@ -21,9 +21,28 @@ from src.utils.settings import get_setting, set_setting
 
 # Thumbnail dimensions (maintain aspect ratio of display)
 THUMBNAIL_WIDTH = 150
-THUMBNAIL_HEIGHT = int(THUMBNAIL_WIDTH * DISPLAY_HEIGHT / DISPLAY_WIDTH)  # ~56 for 1280x480
+THUMBNAIL_HEIGHT = int(
+    THUMBNAIL_WIDTH * constants.DISPLAY_HEIGHT / constants.DISPLAY_WIDTH
+)  # Initial fallback; each preset thumbnail uses its own aspect ratio.
 LABEL_HEIGHT = 20
 WIDGET_HEIGHT = THUMBNAIL_HEIGHT + LABEL_HEIGHT  # Total widget height
+
+
+def resolve_preset_asset_paths(data, presets_dir):
+    """Resolve bundled/user preset assets relative to their JSON directory."""
+    root = os.path.abspath(presets_dir)
+    for element in data.get("elements", []):
+        for field in ("image_path", "gif_path"):
+            path = element.get(field)
+            if not path or os.path.isabs(path):
+                continue
+            candidate = os.path.abspath(os.path.join(root, path))
+            try:
+                if os.path.commonpath((root, candidate)) == root and os.path.isfile(candidate):
+                    element[field] = candidate
+            except ValueError:
+                pass
+    return data
 
 
 # Default theme elements - optimized for 480x480 displays
@@ -72,8 +91,8 @@ class PresetThumbnail(QWidget):
         self.thumbnail_pixmap = None
 
         # Calculate thumbnail dimensions dynamically based on preset's display size
-        preset_width = preset_data.get("display_width", DISPLAY_WIDTH)
-        preset_height = preset_data.get("display_height", DISPLAY_HEIGHT)
+        preset_width = preset_data.get("display_width", constants.DISPLAY_WIDTH)
+        preset_height = preset_data.get("display_height", constants.DISPLAY_HEIGHT)
         self.thumbnail_width = THUMBNAIL_WIDTH
         self.thumbnail_height = int(THUMBNAIL_WIDTH * preset_height / preset_width)
         self.widget_height = self.thumbnail_height + LABEL_HEIGHT
@@ -117,8 +136,8 @@ class PresetThumbnail(QWidget):
             painter.drawRect(0, 0, self.thumbnail_width, self.thumbnail_height)
 
             # Scale factor for preview - use preset's actual display dimensions
-            preset_width = self.preset_data.get("display_width", DISPLAY_WIDTH)
-            preset_height = self.preset_data.get("display_height", DISPLAY_HEIGHT)
+            preset_width = self.preset_data.get("display_width", constants.DISPLAY_WIDTH)
+            preset_height = self.preset_data.get("display_height", constants.DISPLAY_HEIGHT)
             scale_x = self.thumbnail_width / preset_width
             scale_y = self.thumbnail_height / preset_height
 
@@ -321,6 +340,7 @@ class PresetsPanel(QWidget):
                     if not is_valid:
                         print(f"Invalid preset {filename}: {errors}")
                         continue
+                    resolve_preset_asset_paths(data, presets_dir)
 
                     preset_name = data.get("name", filename[:-5])
 
@@ -385,8 +405,8 @@ class PresetsPanel(QWidget):
             filtered_presets = []
             for name, preset_info in self.presets.items():
                 preset_data = preset_info["data"]
-                preset_width = preset_data.get("display_width", DISPLAY_WIDTH)
-                preset_height = preset_data.get("display_height", DISPLAY_HEIGHT)
+                preset_width = preset_data.get("display_width", constants.DISPLAY_WIDTH)
+                preset_height = preset_data.get("display_height", constants.DISPLAY_HEIGHT)
 
                 # Show preset if it matches current display resolution
                 if preset_width == self.current_display_width and preset_height == self.current_display_height:
@@ -544,8 +564,8 @@ class PresetsPanel(QWidget):
         new_preset_data = {
             "name": name,
             "background_color": "#000000",
-            "display_width": DISPLAY_WIDTH,
-            "display_height": DISPLAY_HEIGHT,
+            "display_width": constants.DISPLAY_WIDTH,
+            "display_height": constants.DISPLAY_HEIGHT,
             "elements": [],
             "video_background": {
                 "video_path": "",

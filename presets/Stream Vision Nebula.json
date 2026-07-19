@@ -1,0 +1,17 @@
+{
+  "name": "Stream Vision Nebula",
+  "background_color": "#03070d",
+  "display_width": 640,
+  "display_height": 480,
+  "elements": [
+    {"type": "clock", "name": "stream_clock", "x": 22, "y": 18, "width": 300, "height": 64, "color": "#ffffff", "font_size": 46, "font_bold": true, "source": "static", "show_seconds": false},
+    {"type": "text", "name": "stream_label", "x": 330, "y": 32, "width": 285, "height": 42, "color": "#8de7ff", "font_size": 20, "source": "static", "text": "STREAM VISION", "text_align": "right"},
+    {"type": "text", "name": "cpu_temp", "x": 30, "y": 390, "width": 135, "height": 52, "color": "#5ff2ca", "font_size": 27, "font_bold": true, "text": "CPU", "source": "cpu_temp"},
+    {"type": "text", "name": "cpu_load", "x": 178, "y": 390, "width": 135, "height": 52, "color": "#69dfff", "font_size": 27, "font_bold": true, "text": "CPU%", "source": "cpu_percent"},
+    {"type": "text", "name": "gpu_temp", "x": 327, "y": 390, "width": 135, "height": 52, "color": "#ffb36b", "font_size": 27, "font_bold": true, "text": "GPU", "source": "gpu_temp"},
+    {"type": "text", "name": "gpu_load", "x": 475, "y": 390, "width": 135, "height": 52, "color": "#d499ff", "font_size": 27, "font_bold": true, "text": "GPU%", "source": "gpu_percent"},
+    {"type": "rectangle", "name": "telemetry_panel", "x": 16, "y": 366, "width": 608, "height": 94, "color": "#020914", "color_opacity": 78, "border_radius": 20, "source": "static"},
+    {"type": "image", "name": "nebula_background", "x": 0, "y": 0, "width": 640, "height": 480, "image_path": "assets/carina-wide.jpg", "scale_proportionally": false, "source": "static"}
+  ],
+  "video_background": {"video_path": "", "fit_mode": "fit_height", "enabled": false}
+}

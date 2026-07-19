@@ -14,7 +14,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Visual drag-and-drop editor** with live preview
 - **Universal display support**:
   - HID and USB bulk transfer protocols
-  - Auto-detects any display size (480x480, 1280x480, custom resolutions)
+  - Device defaults plus per-device screen-size profiles and custom resolutions
   - Works with WinUSB-compatible displays
 - **Expandable canvas**: Full-screen editing area with margins for precise image cropping
 - **Display orientation controls**: Flip/rotate output for any mounting position
@@ -31,6 +31,8 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
   - Rectangles
 - **Video backgrounds** with fit modes
 - **Preset system** for saving and loading themes
+- **Bundled visual presets** for wide and square displays, including animated
+  Event Horizon, Cosmic Cliffs, Aurora, and Blue Marble themes
 - **Multi-select** with alignment tools (align left/right/top/bottom/center, distribute evenly)
 - **Copy / Paste elements** (`Ctrl+C` / `Ctrl+V`) with automatic offset
 - **Z-order controls**: Bring to Front, Bring Forward, Send Backward, Send to Back via Edit menu or keyboard shortcuts
@@ -50,11 +52,14 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 **USB Bulk Transfer (WinUSB):**
 - **Thermalright FW 360 Ultra** (480x480) ✅ - ChiZhu Tech USBDISPLAY protocol
+- **Thermalright Stream Vision 360** (640x480 handshake profile, plus manual
+  16:9 and custom output overrides)
 - **Any AIO display using WinUSB driver** - Just needs WinUSB driver installation via Zadig
 - Supports custom protocols and dimensions
 
 **Universal Features:**
-- Automatic dimension detection (works with any resolution: 480x480, 1280x480, 1920x480, etc.)
+- Per-device dimensions are remembered even when several Thermalright models
+  share the same USB VID/PID
 - Dynamic canvas scaling for comfortable editing
 - Display orientation controls (flip/rotate) for any mounting position
 - Protocol can be extended for new display types
@@ -161,7 +166,22 @@ chmod +x scripts/build-linux.sh
 1. **Close any manufacturer software** (e.g., TRCC) if running - it locks the display
 2. Launch the editor
 3. The editor will auto-connect, or click "Connect" in the toolbar
-4. Display dimensions are automatically detected and applied
+4. The known device dimensions are applied
+
+### Screen Size and Stream Vision 360
+
+Some Thermalright WinUSB panels share the same USB identifier, so their native
+resolution cannot always be inferred from VID/PID alone.
+
+1. Go to **Display > Screen Size...**
+2. Select **Thermalright Stream Vision 360 (640 × 480)** for the official panel
+3. If you specifically need a 16:9 canvas, select **16:9 compact (640 × 360)**
+4. For another hardware revision, choose **Custom** and enter its native pixels
+5. Leave **Stretch the current theme** enabled to fill the whole panel
+
+The selection is stored for that device/transport and reapplied after reconnect
+or restart. The USB frame header also carries the selected width and height, so
+non-square frames are no longer announced as 480x480.
 
 ### Display Orientation
 
@@ -280,7 +300,9 @@ If your USB-based AIO display isn't detected:
 3. **Restart** ThermalEngine
 4. See `FIX_USB_WINDOWS.md` for detailed USB troubleshooting
 
-**Note:** ThermalEngine will automatically detect your display dimensions and protocol. No manual configuration needed!
+**Note:** ThermalEngine detects the transport. If a Thermalright model shares
+its VID/PID with a different-sized panel, select its native dimensions from
+**Display > Screen Size...**.
 
 ### Display appears upside-down or rotated
 Use **Display > Display Orientation** to adjust for your mounting position:

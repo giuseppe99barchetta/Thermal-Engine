@@ -19,6 +19,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Resolution profiles reported by the PM byte in the 87AD:70DB handshake.
+# Unknown firmware safely retains the configured/manual fallback size.
+BULK_PM_DISPLAY_SIZES = {
+    5: (320, 240),
+    7: (640, 480),    # Thermalright Stream Vision 360
+    9: (854, 480),
+    10: (960, 540),
+    11: (854, 480),
+    12: (800, 480),
+    32: (320, 320),
+    64: (1600, 720),
+    65: (1920, 462),
+}
+
+
+def get_bulk_display_size(handshake_response):
+    """Resolve a known panel size from a ChiZhu USB handshake response."""
+    if handshake_response is None or len(handshake_response) < 37:
+        return None
+    return BULK_PM_DISPLAY_SIZES.get(int(handshake_response[24]))
+
 
 # ============================================================================
 # Device Definitions
@@ -73,14 +94,15 @@ SUPPORTED_DEVICES = [
         init_sequence=[0xDA, 0xDB, 0xDC, 0xDD, 0x00],  # Known init bytes
     ),
 
-    # Thermalright FW 360 Ultra (USB bulk, ChiZhu Tech USBDISPLAY)
+    # Thermalright WinUSB panels share this VID:PID across several models.
+    # The exact panel size can be selected in Display > Screen Size.
     DeviceDefinition(
-        name="Thermalright FW 360 Ultra",
+        name="Thermalright WinUSB Display (FW / Stream Vision)",
         vendor_id=0x87AD,
         product_id=0x70DB,
         backend_type="usb_bulk",
-        width=480,   # Square display (480x480)
-        height=480,  # Square display
+        width=480,
+        height=480,
         experimental=False,  # ✅ FULLY WORKING! Protocol reverse-engineered!
         # Protocol: ChiZhu Tech USBDISPLAY (reverse-engineered from USB capture)
         # Init: Magic (0x12345678) + Command (0x00) + padding + flag (0x01)
@@ -460,6 +482,44 @@ class USBBulkBackend(DisplayBackend):
             bytes_written = self.device.write(self.endpoint_out, bytes(init_cmd), timeout=1000)
             logger.info(f"✓ Initialization command sent ({bytes_written} bytes)")
 
+            # Thermalright ships several panel resolutions behind the same
+            # VID/PID. The handshake PM byte identifies known models such as
+            # Stream Vision, while a user override remains authoritative.
+            if self.endpoint_in:
+                try:
+                    response = self.device.read(
+                        self.endpoint_in,
+                        1024,
+                        timeout=1000,
+                    )
+                    detected_size = get_bulk_display_size(response)
+                    manual_override = self.device_def.extra_params.get(
+                        "manual_size_override",
+                        False,
+                    )
+                    if detected_size and not manual_override:
+                        self.device_def.width, self.device_def.height = detected_size
+                        logger.info(
+                            "Detected panel dimensions from handshake: "
+                            f"{detected_size[0]}x{detected_size[1]} "
+                            f"(PM={int(response[24])})"
+                        )
+                    elif detected_size:
+                        logger.info(
+                            "Keeping manual display-size override instead of "
+                            f"handshake profile {detected_size[0]}x{detected_size[1]}"
+                        )
+                    else:
+                        logger.info(
+                            "Unknown panel handshake profile; keeping configured "
+                            f"size {self.device_def.width}x{self.device_def.height}"
+                        )
+                except Exception as e:
+                    logger.info(
+                        "Panel-size handshake unavailable; keeping configured "
+                        f"size {self.device_def.width}x{self.device_def.height}: {e}"
+                    )
+
             # Small delay for device to process init
             # Use QEventLoop if a Qt app is running to prevent UI freeze
             qt_app_running = False
@@ -517,8 +577,8 @@ class USBBulkBackend(DisplayBackend):
             # Header structure: EXACTLY 64 bytes total
             # 0x00-0x03: Magic = 0x12345678
             # 0x04-0x07: Command = 0x02 (display frame)
-            # 0x08-0x0B: Height = 480 (0x01E0)
-            # 0x0C-0x0F: Height again = 480 (0x01E0) [confirmed from capture]
+            # 0x08-0x0B: Width
+            # 0x0C-0x0F: Height
             # 0x10-0x37: Padding (zeros)
             # 0x38-0x3B: Command again = 0x02
             # 0x3C-0x3F: JPEG size (4 bytes)
@@ -532,9 +592,11 @@ class USBBulkBackend(DisplayBackend):
             # Command (0x02 = display frame)
             header[4:8] = (0x02).to_bytes(4, 'little')
 
-            # Dimensions - Height appears TWICE in the capture
-            header[8:12] = (self.device_def.height).to_bytes(4, 'little')  # Height (480)
-            header[12:16] = (self.device_def.height).to_bytes(4, 'little')  # Height again (480)
+            # Square-panel captures contained 480 in both fields, which hid the
+            # fact that these are width and height. Non-square Stream Vision
+            # panels require the real width in the first field.
+            header[8:12] = self.device_def.width.to_bytes(4, "little")
+            header[12:16] = self.device_def.height.to_bytes(4, "little")
 
             # Padding 0x10-0x37 (already zeros)
 

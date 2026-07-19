@@ -1,0 +1,19 @@
+{
+  "name": "Aurora Pulse",
+  "background_color": "#020709",
+  "display_width": 1280,
+  "display_height": 480,
+  "elements": [
+    {"type": "clock", "name": "aurora_clock", "x": 45, "y": 35, "width": 540, "height": 90, "color": "#efffff", "font_size": 70, "font_bold": true, "source": "static", "show_seconds": false},
+    {"type": "text", "name": "aurora_date", "x": 52, "y": 122, "width": 500, "height": 40, "color": "#78ffd6", "font_size": 22, "source": "date", "text_align": "left"},
+    {"type": "line_chart", "name": "cpu_history", "x": 45, "y": 225, "width": 550, "height": 90, "color": "#54ffd0", "background_color": "#031315", "background_color_opacity": 72, "text": "CPU", "source": "cpu_percent", "font_size": 18, "line_thickness": 3, "show_gradient": true, "smooth": true},
+    {"type": "line_chart", "name": "gpu_history", "x": 45, "y": 340, "width": 550, "height": 90, "color": "#86b7ff", "background_color": "#07101a", "background_color_opacity": 72, "text": "GPU", "source": "gpu_percent", "font_size": 18, "line_thickness": 3, "show_gradient": true, "smooth": true},
+    {"type": "bar_gauge", "name": "cpu_temperature", "x": 705, "y": 95, "width": 500, "height": 42, "color": "#5dffce", "background_color": "#061a18", "text": "CPU TEMP", "source": "cpu_temp", "font_size": 22, "rounded_corners": true, "gradient_fill": true},
+    {"type": "bar_gauge", "name": "gpu_temperature", "x": 705, "y": 185, "width": 500, "height": 42, "color": "#7db8ff", "background_color": "#071526", "text": "GPU TEMP", "source": "gpu_temp", "font_size": 22, "rounded_corners": true, "gradient_fill": true},
+    {"type": "bar_gauge", "name": "memory_load", "x": 705, "y": 275, "width": 500, "height": 42, "color": "#d68cff", "background_color": "#190c22", "text": "MEMORY", "source": "ram_percent", "font_size": 22, "rounded_corners": true},
+    {"type": "text", "name": "network", "x": 705, "y": 370, "width": 500, "height": 45, "color": "#efffff", "font_size": 26, "font_bold": true, "text": "NETWORK", "source": "net_download", "text_align": "center"},
+    {"type": "rectangle", "name": "right_panel", "x": 660, "y": 40, "width": 580, "height": 400, "color": "#020a0d", "color_opacity": 66, "border_radius": 24, "source": "static"},
+    {"type": "image", "name": "aurora_background", "x": 0, "y": 0, "width": 1280, "height": 480, "image_path": "assets/aurora-wide.jpg", "scale_proportionally": false, "source": "static"}
+  ],
+  "video_background": {"video_path": "", "fit_mode": "fit_height", "enabled": false}
+}

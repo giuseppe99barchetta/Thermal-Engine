@@ -56,12 +56,29 @@ nul
 # User settings
 settings.json
 
-# User themes - only track Default and Analog Clock presets
+# User themes - track only explicitly bundled presets
 presets/*
 !presets/Default.json
 !presets/Default.png
 !presets/Analog Clock.json
 !presets/Analog Clock.png
+!presets/Aurora Pulse.json
+!presets/Aurora Pulse.png
+!presets/Blue Marble Telemetry.json
+!presets/Blue Marble Telemetry.png
+!presets/Cosmic Cliffs HUD.json
+!presets/Cosmic Cliffs HUD.png
+!presets/Cosmic Core.json
+!presets/Cosmic Core.png
+!presets/Event Horizon Live.json
+!presets/Event Horizon Live.png
+!presets/Orbital Command.json
+!presets/Orbital Command.png
+!presets/Stream Vision Nebula.json
+!presets/Stream Vision Nebula.png
+!presets/ASSET-CREDITS.md
+!presets/assets/
+!presets/assets/*
 
 # Old/backup files
 *_old.py

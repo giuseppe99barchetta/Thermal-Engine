@@ -1,0 +1,17 @@
+{
+  "name": "Cosmic Cliffs HUD",
+  "background_color": "#03070d",
+  "display_width": 1280,
+  "display_height": 480,
+  "elements": [
+    {"type": "clock", "name": "mission_clock", "x": 35, "y": 22, "width": 420, "height": 70, "color": "#f4f7ff", "font_size": 52, "font_bold": true, "source": "static", "time_format": "24h", "show_seconds": true},
+    {"type": "text", "name": "mission_date", "x": 38, "y": 88, "width": 420, "height": 38, "color": "#8de8ff", "font_size": 20, "source": "date", "text_align": "left"},
+    {"type": "circle_gauge", "name": "cpu_temp", "x": 205, "y": 300, "radius": 92, "color": "#55f6ff", "background_color": "#07141e", "background_color_opacity": 78, "text": "CPU TEMP", "source": "cpu_temp", "font_size": 30, "label_font_size": 16, "gauge_rounded_ends": true, "animate_gauge": true},
+    {"type": "circle_gauge", "name": "cpu_load", "x": 495, "y": 300, "radius": 92, "color": "#73ffbd", "background_color": "#07141e", "background_color_opacity": 78, "text": "CPU LOAD", "source": "cpu_percent", "font_size": 30, "label_font_size": 16, "gauge_rounded_ends": true, "animate_gauge": true},
+    {"type": "circle_gauge", "name": "gpu_temp", "x": 785, "y": 300, "radius": 92, "color": "#ffbd69", "background_color": "#07141e", "background_color_opacity": 78, "text": "GPU TEMP", "source": "gpu_temp", "font_size": 30, "label_font_size": 16, "gauge_rounded_ends": true, "animate_gauge": true},
+    {"type": "circle_gauge", "name": "gpu_load", "x": 1075, "y": 300, "radius": 92, "color": "#d98cff", "background_color": "#07141e", "background_color_opacity": 78, "text": "GPU LOAD", "source": "gpu_percent", "font_size": 30, "label_font_size": 16, "gauge_rounded_ends": true, "animate_gauge": true},
+    {"type": "rectangle", "name": "top_glass", "x": 20, "y": 12, "width": 470, "height": 125, "color": "#03121d", "color_opacity": 68, "border_radius": 18, "source": "static"},
+    {"type": "image", "name": "cosmic_background", "x": 0, "y": 0, "width": 1280, "height": 480, "image_path": "assets/carina-wide.jpg", "scale_proportionally": false, "source": "static"}
+  ],
+  "video_background": {"video_path": "", "fit_mode": "fit_height", "enabled": false}
+}
