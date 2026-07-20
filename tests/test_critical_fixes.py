@@ -41,6 +41,23 @@ def test_sensor_setup_requires_cpu_temperature():
     assert 'if not sensors.get_sensor_status()["cpu_thermal_available"]' in source
 
 
+def test_admin_restart_waits_for_current_process():
+    from main import SensorSetupDialog
+
+    dialog = SimpleNamespace(restart_requested=False, accept=MagicMock())
+    with (
+        patch("main.os.getpid", return_value=1234),
+        patch("main.sys.argv", ["ThermalEngine.exe"]),
+        patch("main.ctypes.windll.shell32.ShellExecuteW", return_value=33) as execute,
+    ):
+        SensorSetupDialog.restart_as_admin(dialog)
+
+    assert "--wait-for-pid" in execute.call_args.args[3]
+    assert "1234" in execute.call_args.args[3]
+    assert dialog.restart_requested
+    dialog.accept.assert_called_once()
+
+
 def test_lhm_runtime_mismatch_has_stable_reason():
     error = RuntimeError("Cannot resolve System.Runtime, Version=10.0.0.0")
     assert _classify_lhm_error(error) == "dll_incompatible"

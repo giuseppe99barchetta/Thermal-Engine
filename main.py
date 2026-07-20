@@ -1,6 +1,7 @@
 import sys
 import os
 import io
+import ctypes
 
 # Fix for PyInstaller --windowed mode where stdout/stderr are None
 # This prevents AttributeError when logging tries to write to None streams
@@ -53,6 +54,7 @@ class SensorSetupDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.restart_requested = False
         self.setWindowTitle("Sensor Setup Required")
         self.setMinimumWidth(500)
         self.setup_ui()
@@ -122,13 +124,15 @@ class SensorSetupDialog(QDialog):
 
     def restart_as_admin(self):
         executable = sys.executable
-        parameters = " ".join(f'"{arg}"' for arg in sys.argv[1:])
+        arguments = sys.argv[1:] + ["--wait-for-pid", str(os.getpid())]
+        parameters = " ".join(f'"{arg}"' for arg in arguments)
         if not getattr(sys, "frozen", False):
             parameters = f'"{os.path.abspath(__file__)}" {parameters}'.strip()
-        if __import__("ctypes").windll.shell32.ShellExecuteW(
+        if ctypes.windll.shell32.ShellExecuteW(
             None, "runas", executable, parameters, None, 1
         ) > 32:
-            QApplication.quit()
+            self.restart_requested = True
+            self.accept()
 
     def check_again(self):
         """Re-check if safe sensors are now available."""
@@ -173,12 +177,20 @@ def create_tray_icon():
 
 
 def main():
-    configure_logging()
-
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Thermal Engine')
     parser.add_argument('--minimized', action='store_true', help='Start minimized to system tray')
+    parser.add_argument('--wait-for-pid', type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.wait_for_pid and sys.platform == "win32":
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x00100000, False, args.wait_for_pid)
+        if handle:
+            kernel32.WaitForSingleObject(handle, 10_000)
+            kernel32.CloseHandle(handle)
+
+    configure_logging()
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # Keep running when minimized to tray
@@ -226,6 +238,9 @@ def main():
     if not sensors.get_sensor_status()["cpu_thermal_available"] and not args.minimized:
         dialog = SensorSetupDialog()
         dialog.exec()
+        if dialog.restart_requested:
+            sensors.stop_sensors()
+            return
         # Re-initialize sensors in case counters became available
         init_sensors()
 
