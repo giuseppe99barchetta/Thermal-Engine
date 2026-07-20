@@ -1,4 +1,5 @@
 import ast
+import io
 import json
 import threading
 import time
@@ -76,6 +77,16 @@ def test_hid_backend_owns_report_id_prefix():
     payload = backend.device.write.call_args.args[0]
     assert len(payload) == 513
     assert payload[0] == 0
+
+
+def test_display_brightness_dims_sent_frame():
+    window = SimpleNamespace(display_brightness=50, display_orientation="normal")
+    window.image_to_jpeg = MethodType(ThemeEditorWindow.image_to_jpeg, window)
+
+    jpeg = window.image_to_jpeg(Image.new("RGB", (8, 8), "white"), quality=100)
+    decoded = Image.open(io.BytesIO(jpeg))
+
+    assert 120 <= decoded.getpixel((0, 0))[0] <= 130
 
 
 def test_gui_frame_tick_only_sets_latest_frame_request():

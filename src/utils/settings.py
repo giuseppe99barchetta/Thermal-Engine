@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "minimize_to_tray": True,
     "close_to_tray": True,
     "target_fps": 30,  # 30 FPS is smooth for most PCs
+    "display_brightness": 100,  # Software brightness applied to display frames
     "default_preset": None,  # Name of preset to load on startup (explicit user choice)
     "last_preset": None,  # Last used preset (auto-saved on every preset load)
     "suppress_60fps_warning": False,  # Show warning when selecting 60 FPS

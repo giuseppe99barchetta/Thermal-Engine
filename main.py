@@ -193,6 +193,7 @@ def main():
     configure_logging()
 
     app = QApplication(sys.argv)
+    app.setWindowIcon(create_tray_icon())
     app.setQuitOnLastWindowClosed(False)  # Keep running when minimized to tray
 
     # Single instance check - prevent multiple instances from running

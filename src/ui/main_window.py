@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QColorDialog, QFileDialog,
     QComboBox, QSplitter, QMessageBox, QStatusBar, QTabWidget,
     QDialog, QCheckBox, QDialogButtonBox, QGroupBox, QFormLayout, QSystemTrayIcon,
-    QTextEdit, QPlainTextEdit, QSpinBox, QApplication, QProgressDialog
+    QTextEdit, QPlainTextEdit, QSpinBox, QApplication, QProgressDialog, QStyle
 )
 from PySide6.QtCore import Qt, QTimer, QByteArray, Signal, QObject
 from PySide6.QtGui import QColor, QAction, QKeySequence, QIcon, QTextCursor, QFont
@@ -118,7 +118,7 @@ PBT_APMRESUMEAUTOMATIC = 0x0012
 PBT_APMRESUMESUSPEND = 0x0007
 PBT_APMSUSPEND = 0x0004
 
-from PIL import Image, ImageDraw, ImageFont, ImageChops
+from PIL import Image, ImageDraw, ImageFont, ImageChops, ImageEnhance
 
 from src.core.security import validate_preset_schema, is_safe_path
 
@@ -224,6 +224,7 @@ class ThemeEditorWindow(QMainWindow):
         self._selected_device_default_size = None
         self.live_preview_timer = None
         self.target_fps = settings.get_setting("target_fps", 30)
+        self.display_brightness = settings.get_setting("display_brightness", 100)
 
         # Performance monitoring
         self.frame_times = []
@@ -448,7 +449,7 @@ class ThemeEditorWindow(QMainWindow):
         self.setMinimumSize(1200, 700)
 
         # Set window icon
-        icon_path = get_bundled_resource_path("icon.ico")
+        icon_path = get_bundled_resource_path("assets/icon.png")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
@@ -642,25 +643,31 @@ class ThemeEditorWindow(QMainWindow):
 
     def setup_menu(self):
         menubar = self.menuBar()
+        icon = self.style().standardIcon
 
         file_menu = menubar.addMenu("File")
+        file_menu.setIcon(icon(QStyle.StandardPixmap.SP_FileIcon))
 
         new_action = QAction("New Theme", self)
+        new_action.setIcon(icon(QStyle.StandardPixmap.SP_FileIcon))
         new_action.setShortcut(QKeySequence.StandardKey.New)
         new_action.triggered.connect(self.new_theme)
         file_menu.addAction(new_action)
 
         open_action = QAction("Open Theme...", self)
+        open_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogOpenButton))
         open_action.setShortcut(QKeySequence.StandardKey.Open)
         open_action.triggered.connect(self.open_theme)
         file_menu.addAction(open_action)
 
         save_action = QAction("Save", self)
+        save_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogSaveButton))
         save_action.setShortcut(QKeySequence.StandardKey.Save)
         save_action.triggered.connect(self.quick_save)
         file_menu.addAction(save_action)
 
         save_as_action = QAction("Save As...", self)
+        save_as_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogSaveButton))
         save_as_action.setShortcut(QKeySequence.StandardKey.SaveAs)
         save_as_action.triggered.connect(self.save_theme_as)
         file_menu.addAction(save_as_action)
@@ -668,40 +675,48 @@ class ThemeEditorWindow(QMainWindow):
         file_menu.addSeparator()
 
         export_action = QAction("Export as Image...", self)
+        export_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogSaveButton))
         export_action.triggered.connect(self.export_image)
         file_menu.addAction(export_action)
 
         file_menu.addSeparator()
 
         export_theme_action = QAction("Export Theme Package...", self)
+        export_theme_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogSaveButton))
         export_theme_action.triggered.connect(self.export_theme_package)
         file_menu.addAction(export_theme_action)
 
         export_zip_action = QAction("Export Theme as ZIP...", self)
+        export_zip_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogSaveButton))
         export_zip_action.triggered.connect(self.export_theme_zip)
         file_menu.addAction(export_zip_action)
 
         import_theme_action = QAction("Import Theme Package...", self)
+        import_theme_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogOpenButton))
         import_theme_action.triggered.connect(self.import_theme_package)
         file_menu.addAction(import_theme_action)
 
         file_menu.addSeparator()
 
         exit_action = QAction("Exit", self)
+        exit_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogCloseButton))
         exit_action.setShortcut(QKeySequence.StandardKey.Quit)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
         # Edit menu
         edit_menu = menubar.addMenu("Edit")
+        edit_menu.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
 
         self.undo_action = QAction("Undo", self)
+        self.undo_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowBack))
         self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
         self.undo_action.triggered.connect(self.undo)
         self.undo_action.setEnabled(False)
         edit_menu.addAction(self.undo_action)
 
         self.redo_action = QAction("Redo", self)
+        self.redo_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowForward))
         self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         self.redo_action.triggered.connect(self.redo)
         self.redo_action.setEnabled(False)
@@ -710,11 +725,13 @@ class ThemeEditorWindow(QMainWindow):
         edit_menu.addSeparator()
 
         copy_action = QAction("Copy", self)
+        copy_action.setIcon(icon(QStyle.StandardPixmap.SP_FileIcon))
         copy_action.setShortcut(QKeySequence.StandardKey.Copy)
         copy_action.triggered.connect(self.copy_selected_elements)
         edit_menu.addAction(copy_action)
 
         paste_action = QAction("Paste", self)
+        paste_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogApplyButton))
         paste_action.setShortcut(QKeySequence.StandardKey.Paste)
         paste_action.triggered.connect(self.paste_elements)
         edit_menu.addAction(paste_action)
@@ -722,49 +739,59 @@ class ThemeEditorWindow(QMainWindow):
         edit_menu.addSeparator()
 
         bring_front_action = QAction("Bring to Front", self)
+        bring_front_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowUp))
         bring_front_action.setShortcut(QKeySequence("Ctrl+Shift+]"))
         bring_front_action.triggered.connect(self.bring_to_front)
         edit_menu.addAction(bring_front_action)
 
         bring_forward_action = QAction("Bring Forward", self)
+        bring_forward_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowUp))
         bring_forward_action.setShortcut(QKeySequence("Ctrl+]"))
         bring_forward_action.triggered.connect(self.bring_forward)
         edit_menu.addAction(bring_forward_action)
 
         send_backward_action = QAction("Send Backward", self)
+        send_backward_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowDown))
         send_backward_action.setShortcut(QKeySequence("Ctrl+["))
         send_backward_action.triggered.connect(self.send_backward)
         edit_menu.addAction(send_backward_action)
 
         send_back_action = QAction("Send to Back", self)
+        send_back_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowDown))
         send_back_action.setShortcut(QKeySequence("Ctrl+Shift+["))
         send_back_action.triggered.connect(self.send_to_back)
         edit_menu.addAction(send_back_action)
 
         # View menu
         view_menu = menubar.addMenu("View")
+        view_menu.setIcon(icon(QStyle.StandardPixmap.SP_DesktopIcon))
 
         self.show_grid_action = QAction("Show Grid", self)
+        self.show_grid_action.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogListView))
         self.show_grid_action.setCheckable(True)
         self.show_grid_action.setChecked(settings.get_setting("show_grid", True))
         self.show_grid_action.triggered.connect(self.toggle_show_grid)
         view_menu.addAction(self.show_grid_action)
 
         self.snap_to_grid_action = QAction("Snap to Grid", self)
+        self.snap_to_grid_action.setIcon(icon(QStyle.StandardPixmap.SP_DialogApplyButton))
         self.snap_to_grid_action.setCheckable(True)
         self.snap_to_grid_action.setChecked(settings.get_setting("snap_to_grid", True))
         self.snap_to_grid_action.triggered.connect(self.toggle_snap_to_grid)
         view_menu.addAction(self.snap_to_grid_action)
 
         display_menu = menubar.addMenu("Display")
+        display_menu.setIcon(icon(QStyle.StandardPixmap.SP_ComputerIcon))
 
         self.connect_action = QAction("Connect", self)
+        self.connect_action.setIcon(icon(QStyle.StandardPixmap.SP_DriveNetIcon))
         self.connect_action.triggered.connect(self.toggle_connection)
         display_menu.addAction(self.connect_action)
 
         display_menu.addSeparator()
 
         self.send_action = QAction("Send to Display", self)
+        self.send_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowRight))
         self.send_action.setShortcut("F5")
         self.send_action.triggered.connect(self.send_to_display)
         self.send_action.setEnabled(False)
@@ -773,12 +800,14 @@ class ThemeEditorWindow(QMainWindow):
         display_menu.addSeparator()
 
         screen_size_action = QAction("Screen Size...", self)
+        screen_size_action.setIcon(icon(QStyle.StandardPixmap.SP_DesktopIcon))
         screen_size_action.triggered.connect(self.show_display_size_dialog)
         display_menu.addAction(screen_size_action)
 
         display_menu.addSeparator()
 
         fps_menu = display_menu.addMenu("Frame Rate")
+        fps_menu.setIcon(icon(QStyle.StandardPixmap.SP_MediaPlay))
         self.fps_actions = []
         for fps in [10, 20, 30, 60]:
             action = QAction(f"{fps} FPS", self)
@@ -792,8 +821,24 @@ class ThemeEditorWindow(QMainWindow):
 
         display_menu.addSeparator()
 
+        brightness_menu = display_menu.addMenu("Software Brightness")
+        brightness_menu.setIcon(icon(QStyle.StandardPixmap.SP_TitleBarShadeButton))
+        self.brightness_actions = []
+        for brightness in (25, 50, 75, 100):
+            action = QAction(f"{brightness}%", self)
+            action.setCheckable(True)
+            action.setChecked(brightness == self.display_brightness)
+            action.triggered.connect(
+                lambda checked, value=brightness: self.set_display_brightness(value)
+            )
+            brightness_menu.addAction(action)
+            self.brightness_actions.append((action, brightness))
+
+        display_menu.addSeparator()
+
         # Display Orientation submenu
         orientation_menu = display_menu.addMenu("Display Orientation")
+        orientation_menu.setIcon(icon(QStyle.StandardPixmap.SP_BrowserReload))
         self.orientation_actions = []
         orientations = [
             ("Normal", "normal"),
@@ -814,36 +859,44 @@ class ThemeEditorWindow(QMainWindow):
         display_menu.addSeparator()
 
         diagnose_action = QAction("Diagnose Sensors...", self)
+        diagnose_action.setIcon(icon(QStyle.StandardPixmap.SP_MessageBoxWarning))
         diagnose_action.triggered.connect(self.diagnose_sensors)
         display_menu.addAction(diagnose_action)
 
         copy_diagnostics_action = QAction("Copy Diagnostic Report", self)
+        copy_diagnostics_action.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
         copy_diagnostics_action.triggered.connect(self.copy_diagnostic_report)
         display_menu.addAction(copy_diagnostics_action)
 
         # Settings menu
         settings_menu = menubar.addMenu("Settings")
+        settings_menu.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogContentsView))
 
         settings_action = QAction("Preferences...", self)
+        settings_action.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogContentsView))
         settings_action.triggered.connect(self.show_settings)
         settings_menu.addAction(settings_action)
 
         settings_menu.addSeparator()
 
         auto_profiles_action = QAction("Auto Profiles...", self)
+        auto_profiles_action.setIcon(icon(QStyle.StandardPixmap.SP_DirHomeIcon))
         auto_profiles_action.triggered.connect(self.show_auto_profiles)
         settings_menu.addAction(auto_profiles_action)
 
         settings_menu.addSeparator()
 
         console_action = QAction("Show Console", self)
+        console_action.setIcon(icon(QStyle.StandardPixmap.SP_ComputerIcon))
         console_action.triggered.connect(self.show_console)
         settings_menu.addAction(console_action)
 
         # Help menu
         help_menu = menubar.addMenu("Help")
+        help_menu.setIcon(icon(QStyle.StandardPixmap.SP_DialogHelpButton))
 
         check_updates_action = QAction("Check for Updates...", self)
+        check_updates_action.setIcon(icon(QStyle.StandardPixmap.SP_BrowserReload))
         check_updates_action.triggered.connect(self.check_for_updates)
         help_menu.addAction(check_updates_action)
 
@@ -2418,6 +2471,13 @@ class ThemeEditorWindow(QMainWindow):
             action.setChecked(value == orientation)
 
         self.status_bar.showMessage(f"Display orientation: {orientation.replace('_', ' ').title()}")
+
+    def set_display_brightness(self, brightness):
+        self.display_brightness = brightness
+        settings.set_setting("display_brightness", brightness)
+        for action, value in self.brightness_actions:
+            action.setChecked(value == brightness)
+        self.status_bar.showMessage(f"Display brightness: {brightness}%")
 
     def toggle_show_grid(self, checked):
         """Toggle grid visibility."""
@@ -4336,6 +4396,9 @@ class ThemeEditorWindow(QMainWindow):
 
     def image_to_jpeg(self, img, quality=80):
         """Convert image to JPEG bytes with optimized settings."""
+        if self.display_brightness < 100:
+            img = ImageEnhance.Brightness(img).enhance(self.display_brightness / 100)
+
         # Apply display orientation transformation
         if self.display_orientation == "flip_v":
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
