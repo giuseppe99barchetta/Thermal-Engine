@@ -3055,8 +3055,9 @@ class ThemeEditorWindow(QMainWindow):
                 mask_draw.rounded_rectangle([0, 0, w, h], radius=border_radius, fill=255)
             img.paste(blurred, (x, y), mask)
 
-            # Draw tinted overlay
-            overlay_draw = ImageDraw.Draw(img)
+            # Composite the tint over the blur instead of replacing it.
+            tint = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(tint)
             tint_rgba = hex_to_rgba(element.color, glass_opacity)
 
             if border_radius > 0:
@@ -3070,6 +3071,7 @@ class ThemeEditorWindow(QMainWindow):
                 overlay_draw.rounded_rectangle(coords, radius=border_radius, outline=border_rgba, width=1)
             else:
                 overlay_draw.rectangle(coords, outline=border_rgba, width=1)
+            img.alpha_composite(tint)
 
         elif opacity >= 100:
             draw = ImageDraw.Draw(img)
@@ -3109,13 +3111,13 @@ class ThemeEditorWindow(QMainWindow):
         text_height = bbox[3] - bbox[1]
 
         if element.text_align == "left":
-            x = element.x
+            x = element.x - bbox[0]
         elif element.text_align == "right":
-            x = element.x + element.width - text_width
+            x = element.x + element.width - text_width - bbox[0]
         else:
-            x = element.x + (element.width - text_width) // 2
+            x = element.x + (element.width - text_width) // 2 - bbox[0]
 
-        y = element.y + (element.height - text_height) // 2
+        y = element.y + (element.height - text_height) // 2 - bbox[1]
 
         if opacity >= 100 and not element.clip:
             temp_draw.text((x, y), text, fill=element.color, font=font)

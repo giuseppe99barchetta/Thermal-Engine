@@ -7,6 +7,8 @@ from pathlib import Path
 from types import MethodType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from PIL import Image, ImageFont
+
 from src.core import sensors
 from src.core.device_backends import (
     DeviceDefinition,
@@ -218,6 +220,28 @@ def test_render_snapshot_is_independent_from_gui_elements():
 def test_gauge_animation_does_not_delay_numeric_value():
     source = Path("src/ui/canvas.py").read_text(encoding="utf-8")
     assert "get_value_with_unit(display_value" not in source
+
+
+def test_display_text_ink_is_centered_in_editor_box():
+    image = Image.new("RGBA", (140, 100), (0, 0, 0, 0))
+    element = SimpleNamespace(
+        source="static",
+        text="Temperature",
+        text_align="center",
+        x=10,
+        y=50,
+        width=100,
+        height=30,
+        color="#ffffff",
+        clip=False,
+    )
+
+    ThemeEditorWindow.render_text_rgba(
+        None, image, element, ImageFont.load_default(), 100
+    )
+
+    ink = image.getbbox()
+    assert abs((ink[1] + ink[3]) / 2 - (element.y + element.height / 2)) <= 1
 
 
 def test_bulk_backend_requires_bulk_out_endpoint():

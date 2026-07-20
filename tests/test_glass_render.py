@@ -28,13 +28,14 @@ class TestGlassRender(unittest.TestCase):
             color="#88ccff",
             glass_effect=True,
             glass_blur=8,
-            glass_opacity=45,
+            glass_opacity=0,
         )
 
         background = Image.new("RGBA", (80, 80), "#101020")
         for x in range(80):
             for y in range(80):
-                background.putpixel((x, y), ((x * 3) % 255, (y * 5) % 255, 120, 255))
+                value = 255 if (x + y) % 2 else 0
+                background.putpixel((x, y), (value, value, value, 255))
 
         first = background.copy()
         window.render_element_with_opacity(first, element)
@@ -43,6 +44,7 @@ class TestGlassRender(unittest.TestCase):
         window.render_element_with_opacity(second, element)
 
         self.assertNotIn(id(element), window._element_render_cache)
+        self.assertNotEqual(first.getpixel((30, 30)), background.getpixel((30, 30)))
         self.assertNotEqual(first.tobytes(), second.tobytes())
 
 
