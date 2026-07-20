@@ -1,4 +1,4 @@
-# ✅ Experimental Device Support - Setup Complete
+# ✅ Experimental Device Support
 
 ## Summary
 
