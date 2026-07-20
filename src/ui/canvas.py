@@ -481,7 +481,7 @@ class CanvasPreview(QWidget):
         font.setItalic(element.font_italic)
         painter.setFont(font)
 
-        text = get_value_with_unit(display_value, element.source, getattr(element, 'temp_hide_unit', False))
+        text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
         text_rect = QRectF(x - radius, y - radius / 2, radius * 2, radius)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
@@ -613,7 +613,7 @@ class CanvasPreview(QWidget):
             label_font.setBold(getattr(element, 'label_font_bold', element.font_bold))
             label_font.setItalic(getattr(element, 'label_font_italic', element.font_italic))
 
-            value_text = get_value_with_unit(display_value, element.source, getattr(element, 'temp_hide_unit', False))
+            value_text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
 
             if bar_text_position == 'inside':
                 if bar_text_mode == 'full':

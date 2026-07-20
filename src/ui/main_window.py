@@ -2590,6 +2590,7 @@ class ThemeEditorWindow(QMainWindow):
             data = element.to_dict()
             if element.source != "static" and element.source in sensor_data:
                 data["value"] = sensor_data[element.source]
+                element.value = data["value"]
             elements.append((id(element), data))
         return {
             "background_color": self.background_color,

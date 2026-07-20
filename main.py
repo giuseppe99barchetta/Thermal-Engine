@@ -62,7 +62,7 @@ class SensorSetupDialog(QDialog):
         layout.setSpacing(15)
 
         # Title
-        title = QLabel("Sensor Data Unavailable")
+        title = QLabel("CPU Temperature Unavailable")
         title_font = QFont()
         title_font.setPointSize(14)
         title_font.setBold(True)
@@ -71,8 +71,8 @@ class SensorSetupDialog(QDialog):
 
         # Explanation
         explanation = QLabel(
-            "ThermalEngine can read usage metrics, but CPU/GPU temperatures\n"
-            "are unavailable. On Windows, LibreHardwareMonitor may require\n"
+            "ThermalEngine can read other metrics, but the CPU temperature\n"
+            "is unavailable. On Windows, LibreHardwareMonitor may require\n"
             "the official PawnIO driver and administrator privileges."
         )
         explanation.setWordWrap(True)
@@ -85,7 +85,7 @@ class SensorSetupDialog(QDialog):
         instructions = QLabel(
             "1. CPU utilization, RAM, and network via psutil\n"
             "2. GPU utilization via Windows Performance Counters when available\n"
-            "3. Temperatures remain 0 until the hardware backend is available"
+            "3. CPU temperature remains 0 until the hardware backend is available"
         )
         instructions.setStyleSheet("margin-left: 20px;")
         layout.addWidget(instructions)
@@ -133,18 +133,18 @@ class SensorSetupDialog(QDialog):
     def check_again(self):
         """Re-check if safe sensors are now available."""
         init_sensors()
-        if sensors.get_sensor_status()["thermal_available"]:
+        if sensors.get_sensor_status()["cpu_thermal_available"]:
             QMessageBox.information(
                 self,
                 "Sensors Detected",
-                "Safe sensor data is now available."
+                "CPU temperature is now available."
             )
             self.accept()
         else:
             QMessageBox.warning(
                 self,
                 "Sensors Not Available",
-                "Safe user-mode sensors are not available right now."
+                "CPU temperature is still unavailable. Try Restart as Administrator."
             )
 
 
@@ -223,7 +223,7 @@ def main():
     init_sensors()
 
     # Show sensor dialog if not connected (skip if minimized/auto-start)
-    if not sensors.get_sensor_status()["thermal_available"] and not args.minimized:
+    if not sensors.get_sensor_status()["cpu_thermal_available"] and not args.minimized:
         dialog = SensorSetupDialog()
         dialog.exec()
         # Re-initialize sensors in case counters became available
