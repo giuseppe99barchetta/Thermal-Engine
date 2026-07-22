@@ -646,7 +646,6 @@ class ThemeEditorWindow(QMainWindow):
         icon = self.style().standardIcon
 
         file_menu = menubar.addMenu("File")
-        file_menu.setIcon(icon(QStyle.StandardPixmap.SP_FileIcon))
 
         new_action = QAction("New Theme", self)
         new_action.setIcon(icon(QStyle.StandardPixmap.SP_FileIcon))
@@ -706,7 +705,6 @@ class ThemeEditorWindow(QMainWindow):
 
         # Edit menu
         edit_menu = menubar.addMenu("Edit")
-        edit_menu.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
 
         self.undo_action = QAction("Undo", self)
         self.undo_action.setIcon(icon(QStyle.StandardPixmap.SP_ArrowBack))
@@ -764,7 +762,6 @@ class ThemeEditorWindow(QMainWindow):
 
         # View menu
         view_menu = menubar.addMenu("View")
-        view_menu.setIcon(icon(QStyle.StandardPixmap.SP_DesktopIcon))
 
         self.show_grid_action = QAction("Show Grid", self)
         self.show_grid_action.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogListView))
@@ -781,7 +778,6 @@ class ThemeEditorWindow(QMainWindow):
         view_menu.addAction(self.snap_to_grid_action)
 
         display_menu = menubar.addMenu("Display")
-        display_menu.setIcon(icon(QStyle.StandardPixmap.SP_ComputerIcon))
 
         self.connect_action = QAction("Connect", self)
         self.connect_action.setIcon(icon(QStyle.StandardPixmap.SP_DriveNetIcon))
@@ -870,7 +866,6 @@ class ThemeEditorWindow(QMainWindow):
 
         # Settings menu
         settings_menu = menubar.addMenu("Settings")
-        settings_menu.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogContentsView))
 
         settings_action = QAction("Preferences...", self)
         settings_action.setIcon(icon(QStyle.StandardPixmap.SP_FileDialogContentsView))
@@ -893,7 +888,6 @@ class ThemeEditorWindow(QMainWindow):
 
         # Help menu
         help_menu = menubar.addMenu("Help")
-        help_menu.setIcon(icon(QStyle.StandardPixmap.SP_DialogHelpButton))
 
         check_updates_action = QAction("Check for Updates...", self)
         check_updates_action.setIcon(icon(QStyle.StandardPixmap.SP_BrowserReload))
@@ -4486,6 +4480,10 @@ class ThemeEditorWindow(QMainWindow):
         if sys.platform == "win32":
             launch_label = "Launch at Windows startup"
         self.launch_at_login_cb = QCheckBox(launch_label)
+        if sys.platform == "win32":
+            self.launch_at_login_cb.setToolTip(
+                "Approve UAC once to create the elevated startup task; future logins are silent."
+            )
         self.launch_at_login_cb.setChecked(settings.get_setting("launch_at_login", True))
         startup_layout.addWidget(self.launch_at_login_cb)
 
@@ -4530,7 +4528,13 @@ class ThemeEditorWindow(QMainWindow):
             settings.set_setting("close_to_tray", self.close_to_tray_cb.isChecked())
 
             # Apply autostart setting
-            settings.apply_autostart_setting()
+            if not settings.apply_autostart_setting():
+                QMessageBox.warning(
+                    self,
+                    "Autostart Not Updated",
+                    "Windows blocked the elevated startup task. Try saving the setting again and accept the UAC prompt.",
+                )
+                return
 
             self.status_bar.showMessage("Settings saved", 2000)
 

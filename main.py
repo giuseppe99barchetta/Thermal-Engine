@@ -29,6 +29,7 @@ from src.core import sensors
 from src.core.sensors import init_sensors
 from src.ui.main_window import ThemeEditorWindow
 from src.utils.app_path import get_bundled_resource_path, get_user_data_path
+from src.utils import settings
 
 
 def configure_logging():
@@ -181,7 +182,16 @@ def main():
     parser = argparse.ArgumentParser(description='Thermal Engine')
     parser.add_argument('--minimized', action='store_true', help='Start minimized to system tray')
     parser.add_argument('--wait-for-pid', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--configure-autostart', choices=('enable', 'disable'), help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.configure_autostart:
+        sys.exit(0 if settings.set_autostart(args.configure_autostart == 'enable') else 1)
+
+    if sys.platform == "win32":
+        # Migrate the previous registry startup entry with one UAC confirmation.
+        # Later logins start through the elevated task without another prompt.
+        settings.apply_autostart_setting()
 
     if args.wait_for_pid and sys.platform == "win32":
         kernel32 = ctypes.windll.kernel32

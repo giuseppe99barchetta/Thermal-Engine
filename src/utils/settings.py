@@ -7,6 +7,8 @@ import os
 import sys
 import json
 import shlex
+import ctypes
+import subprocess
 
 # Windows-only imports
 IS_WINDOWS = sys.platform == "win32"
@@ -23,6 +25,7 @@ from src.utils.app_path import (
 from src.core.security import escape_registry_path
 
 APP_NAME = "ThermalEngine"
+WINDOWS_AUTOSTART_TASK_NAME = "ThermalEngine Elevated Startup"
 SETTINGS_FILE = get_user_data_path("settings.json")
 
 # Default settings
@@ -178,6 +181,67 @@ def _build_linux_desktop_entry():
     return "\n".join(lines) + "\n"
 
 
+def _is_windows_elevated():
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except (AttributeError, OSError):
+        return False
+
+
+def _remove_legacy_windows_autostart():
+    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+        try:
+            winreg.DeleteValue(key, APP_NAME)
+        except FileNotFoundError:
+            pass
+        winreg.CloseKey(key)
+    except OSError:
+        pass
+
+
+def _configure_windows_autostart_task(enabled):
+    command = ["schtasks.exe", "/delete", "/tn", WINDOWS_AUTOSTART_TASK_NAME, "/f"]
+    if enabled:
+        task_command = get_executable_path()
+        if get_setting("launch_minimized", True):
+            task_command += " --minimized"
+        command = [
+            "schtasks.exe", "/create", "/tn", WINDOWS_AUTOSTART_TASK_NAME,
+            "/tr", task_command, "/sc", "onlogon", "/rl", "highest", "/it", "/f",
+        ]
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as e:
+        print(f"[Settings] Error configuring elevated autostart: {e}")
+        return False
+
+    if result.returncode != 0:
+        print(f"[Settings] Error configuring elevated autostart: {result.stderr.strip()}")
+        return False
+
+    _remove_legacy_windows_autostart()
+    return True
+
+
+def _request_elevated_autostart_change(enabled):
+    action = "enable" if enabled else "disable"
+    parameters = f"--configure-autostart {action}"
+    if not getattr(sys, "frozen", False):
+        parameters = f'{escape_registry_path(get_resource_path("main.py"))} {parameters}'
+    return ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", sys.executable, parameters, None, 0
+    ) > 32
+
+
 def set_autostart(enabled):
     """Enable or disable autostart for supported platforms."""
     if IS_LINUX:
@@ -199,28 +263,9 @@ def set_autostart(enabled):
         print("[Settings] Autostart is not supported on this platform")
         return False
 
-    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-
-    try:
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
-
-        if enabled:
-            exe_path = get_executable_path()
-            # Add --minimized flag if launch_minimized is enabled
-            if get_setting("launch_minimized", True):
-                exe_path += " --minimized"
-            winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, exe_path)
-        else:
-            try:
-                winreg.DeleteValue(key, APP_NAME)
-            except FileNotFoundError:
-                pass  # Already doesn't exist
-
-        winreg.CloseKey(key)
-        return True
-    except Exception as e:
-        print(f"[Settings] Error setting autostart: {e}")
-        return False
+    if _is_windows_elevated():
+        return _configure_windows_autostart_task(enabled)
+    return _request_elevated_autostart_change(enabled)
 
 
 def is_autostart_enabled():
@@ -231,18 +276,16 @@ def is_autostart_enabled():
     if not IS_WINDOWS:
         return False
 
-    key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-
     try:
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
-        try:
-            winreg.QueryValueEx(key, APP_NAME)
-            winreg.CloseKey(key)
-            return True
-        except FileNotFoundError:
-            winreg.CloseKey(key)
-            return False
-    except Exception:
+        result = subprocess.run(
+            ["schtasks.exe", "/query", "/tn", WINDOWS_AUTOSTART_TASK_NAME],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return result.returncode == 0
+    except OSError:
         return False
 
 
@@ -271,12 +314,16 @@ def apply_autostart_setting():
     if not (IS_WINDOWS or IS_LINUX):
         return
     enabled = get_setting("launch_at_login", False)
-    set_autostart(enabled)
-    # Always clean up Startup folder shortcut - the registry entry is the
-    # single source of truth for autostart. The installer may have created
-    # a shortcut in the Startup folder, causing a duplicate launch.
+    if IS_WINDOWS and enabled == is_autostart_enabled():
+        _remove_legacy_windows_autostart()
+        applied = True
+    else:
+        applied = set_autostart(enabled)
+    # Always clean up Startup folder shortcuts. The scheduled task is the
+    # Windows source of truth and a shortcut would launch a second instance.
     if IS_WINDOWS:
         _remove_startup_folder_shortcut()
+    return applied
 
 
 # Initialize settings on module load

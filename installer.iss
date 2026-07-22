@@ -71,6 +71,8 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 [UninstallRun]
 ; Kill any running instances before uninstall
 Filename: "{cmd}"; Parameters: "/c taskkill /f /im {#MyAppExeName} >nul 2>&1"; Flags: runhidden; RunOnceId: "KillApp"
+; Remove the elevated autostart task created from Preferences.
+Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn ""ThermalEngine Elevated Startup"" /f"; Flags: runhidden; RunOnceId: "RemoveElevatedAutostart"
 
 [Code]
 function PawnIOInstalled: Boolean;
