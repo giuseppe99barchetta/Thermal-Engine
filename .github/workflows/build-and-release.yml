@@ -310,6 +310,7 @@ jobs:
           PySide6 \
           Pillow \
           psutil \
+          'paho-mqtt>=2.1.0,<3' \
           hidapi \
           pyusb \
           opencv-python \

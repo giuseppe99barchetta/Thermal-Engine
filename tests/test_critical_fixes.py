@@ -28,6 +28,7 @@ from src.core.display_size import (
 from src.core.element import ThemeElement
 from src.core.libre_hw_monitor import _classify_lhm_error
 from src.core.security import validate_preset_schema
+from src.core.renderer import ThemeRenderer
 from src.ui.main_window import ThemeEditorWindow
 from src.ui.presets import resolve_preset_asset_paths
 from src.ui.video_background import VideoBackground
@@ -247,7 +248,7 @@ def test_display_text_ink_is_centered_in_editor_box():
         clip=False,
     )
 
-    ThemeEditorWindow.render_text_rgba(
+    ThemeRenderer.render_text_rgba(
         None, image, element, ImageFont.load_default(), 100
     )
 

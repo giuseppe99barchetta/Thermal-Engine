@@ -247,7 +247,37 @@ class CanvasPreview(QWidget):
             self.draw_multi_selection_box(painter)
 
         self.draw_guides(painter)
+        painter.resetTransform()
+        self.draw_rulers(painter)
         painter.end()
+
+    def draw_rulers(self, painter):
+        """Pixel coordinates stay anchored to the display while zooming and panning."""
+        thickness = 18
+        painter.fillRect(0, 0, self.width(), thickness, QColor(35, 35, 45))
+        painter.fillRect(0, 0, thickness, self.height(), QColor(35, 35, 45))
+        painter.setPen(QColor(160, 160, 180))
+        font = painter.font()
+        font.setPixelSize(10)
+        painter.setFont(font)
+        margin_x, margin_y = self.get_canvas_margins()
+        step = 10
+        while step * self.scale < 55:
+            step *= 2
+        for value in range(0, constants.DISPLAY_WIDTH + 1, step):
+            x = int(margin_x + value * self.scale)
+            if thickness <= x < self.width():
+                painter.drawLine(x, 13, x, thickness)
+                painter.drawText(x + 3, 11, str(value))
+        for value in range(0, constants.DISPLAY_HEIGHT + 1, step):
+            y = int(margin_y + value * self.scale)
+            if thickness <= y < self.height():
+                painter.drawLine(13, y, thickness, y)
+                painter.save()
+                painter.translate(11, y - 3)
+                painter.rotate(-90)
+                painter.drawText(0, 0, str(value))
+                painter.restore()
 
     @staticmethod
     def _is_empty_media(element):

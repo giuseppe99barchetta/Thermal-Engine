@@ -5,31 +5,9 @@ A smooth line chart that shows current value on the right
 and history of values scrolling left.
 """
 
-from PySide6.QtGui import QColor
 
-# Import SOURCE_UNITS for proper unit display
-try:
-    from src.core.constants import SOURCE_UNITS
-except ImportError:
-    SOURCE_UNITS = {}
+from src.core.constants import get_value_with_unit, gauge_fraction
 
-
-def get_value_with_unit(value, source, temp_hide_unit=False):
-    """Format a value with its appropriate unit symbol."""
-    unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
-    symbol = unit_info.get("symbol", "%")
-    unit_type = unit_info.get("type", "percent")
-
-    if unit_type == "temp":
-        if temp_hide_unit:
-            return f"{value:.0f}°"
-        return f"{value:.0f}{symbol}"
-    elif unit_type in ["clock", "power"]:
-        return f"{value:.0f}{symbol}"
-    elif unit_type in ["size", "speed"]:
-        return f"{value:.1f}{symbol}"
-    else:  # percent
-        return f"{value:.0f}{symbol}"
 
 ELEMENT_TYPE = "line_chart"
 ELEMENT_NAME = "Line Chart"
@@ -83,17 +61,6 @@ def add_value(element, value):
         _last_update_time[key] = current_time
         return True
     return False
-
-
-def apply_opacity(color, opacity):
-    """Apply opacity (0-100) to a QColor."""
-    if isinstance(color, str):
-        color = QColor(color)
-    else:
-        color = QColor(color)
-    alpha = int(255 * opacity / 100)
-    color.setAlpha(alpha)
-    return color
 
 
 def catmull_rom_spline(points, num_interpolated=10):
@@ -217,8 +184,7 @@ def render_image(draw, img, element):
 
     for i, value in enumerate(history_slice):
         px = x + (i / (num_points - 1)) * width
-        clamped_value = max(0, min(100, value))
-        py = y + height - (clamped_value / 100) * height
+        py = y + height - gauge_fraction(value, element.max_value) * height
         points.append((int(px), int(py)))
 
     if len(points) >= 2:

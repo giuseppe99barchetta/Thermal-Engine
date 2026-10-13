@@ -232,7 +232,7 @@ def test_theme_element_to_dict_content():
         "glass_effect", "glass_blur", "glass_opacity", "color", "color_opacity",
         "background_color", "background_color_opacity", "use_custom_text_color",
         "text_color", "text_color_opacity", "text", "font_size", "font_family",
-        "font_bold", "font_italic", "text_align", "clip", "source", "value",
+        "font_bold", "font_italic", "text_align", "clip", "source", "value", "max_value",
         "image_path", "scale_proportionally", "aspect_ratio", "show_background",
         "show_label", "show_gradient", "line_thickness", "smooth", "rounded_corners",
         "gradient_fill", "gradient_stops", "bar_text_mode", "bar_text_position",

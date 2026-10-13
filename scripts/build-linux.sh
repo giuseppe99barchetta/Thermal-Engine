@@ -25,6 +25,7 @@ python3 -m pip install \
     PySide6 \
     Pillow \
     psutil \
+    'paho-mqtt>=2.1.0,<3' \
     hidapi \
     pyusb \
     opencv-python \
@@ -73,6 +74,7 @@ pyinstaller \
     --hidden-import=src.utils.profiles \
     --hidden-import=src.utils.theme_package \
     --collect-submodules=src \
+    --collect-submodules=paho.mqtt \
     --collect-submodules=src.core.device_backends \
     --hidden-import=usb \
     --hidden-import=usb.core \

@@ -11,7 +11,7 @@ datas = [
     ("THIRD-PARTY-NOTICES.md", "."),
 ]
 binaries = []
-hiddenimports = ["clr"] + collect_submodules("src") + collect_submodules("usb")
+hiddenimports = ["clr"] + collect_submodules("src") + collect_submodules("usb") + collect_submodules("paho.mqtt")
 
 for package in ("pythonnet", "clr_loader"):
     package_datas, package_binaries, package_hiddenimports = collect_all(package)

@@ -7,6 +7,8 @@ import time
 from src.core.libre_hw_monitor import (
     SafeHardwareMonitorReader,
 )
+from src.core.network_sensors import NetworkSensorManager
+from src.core.constants import register_network_sources
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,11 @@ _latest_sensor_data = {
     "ram_available": 0,
     "net_upload": 0,
     "net_download": 0,
+    "pump_rpm": 0,
+    "fan_rpm": 0,
+    "liquid_temp": 0,
+    "disk_temp": 0,
+    "disk_percent": 0,
 }
 
 # Smoothing configuration
@@ -52,6 +59,7 @@ _SMOOTHED_SENSORS = {
 # Global reader instance
 _reader = None
 _reader_lock = threading.RLock()
+_network_manager = None
 _sensor_status = {
     "backend": None,
     "thermal_available": False,
@@ -196,16 +204,41 @@ def init_sensors(app_dir=None):
 
 def get_cached_sensors():
     with _sensor_data_lock:
-        return _latest_sensor_data.copy()
+        data = _latest_sensor_data.copy()
+    manager = _network_manager
+    if manager:
+        data.update(manager.snapshot())
+    return data
+
+
+def configure_network_sensors(sources):
+    """Validate before replacing connections; hardware polling is untouched."""
+    global _network_manager
+    manager = NetworkSensorManager(sources)
+    if _network_manager:
+        _network_manager.stop()
+    register_network_sources(manager.sources)
+    _network_manager = manager
+    manager.start()
+
+
+def get_network_sensor_statuses():
+    manager = _network_manager
+    return manager.statuses() if manager else {}
 
 
 def get_sensors_sync():
     try:
         with _reader_lock:
-            return _get_reader().get_thermal_sensors()
+            data = _get_reader().get_thermal_sensors()
+        manager = _network_manager
+        if manager:
+            return {**(data or {}), **manager.snapshot()}
+        return data
     except Exception as exc:
         _update_status(get_cached_sensors(), exc)
-        return None
+        manager = _network_manager
+        return manager.snapshot() if manager else None
 
 
 def get_sensor_status():
@@ -233,6 +266,7 @@ def get_sensor_diagnostics():
     diagnostics.update(get_sensor_status())
     diagnostics["connected"] = HAS_LHM
     diagnostics["sensor_error"] = SENSOR_ERROR or diagnostics.get("sensor_error")
+    diagnostics["network_sensors"] = get_network_sensor_statuses()
     return diagnostics
 
 
@@ -243,8 +277,12 @@ get_lhm_sensors_sync = get_sensors_sync
 
 def stop_sensors():
     global _sensor_thread_running, _sensor_thread, HAS_SAFE_MONITOR, HAS_LHM, _reader
+    global _network_manager
 
     logger.info("Stopping sensor monitoring")
+    if _network_manager:
+        _network_manager.stop()
+        _network_manager = None
 
     _sensor_thread_running = False
     if _sensor_thread and _sensor_thread.is_alive():

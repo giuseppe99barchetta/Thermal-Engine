@@ -1,5 +1,9 @@
 # Third-party notices
 
+- Eclipse Paho MQTT Python 2.x is distributed under the Eclipse Public License
+  2.0 or Eclipse Distribution License 1.0. See its upstream
+  [license notice](https://github.com/eclipse-paho/paho.mqtt.python/blob/v2.1.0/LICENSE.txt).
+
 - LibreHardwareMonitor 0.9.6 and its bundled dependencies are distributed under
   their respective licenses. See the upstream
   [license](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/master/LICENSE)

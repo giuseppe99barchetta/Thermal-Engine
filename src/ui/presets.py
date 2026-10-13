@@ -89,6 +89,7 @@ class PresetThumbnail(QWidget):
         self.preset_data = preset_data
         self.is_builtin = is_builtin
         self.is_default = is_default
+        self.is_selected = False
         self.thumbnail_path = thumbnail_path
         self.thumbnail_pixmap = None
 
@@ -105,6 +106,8 @@ class PresetThumbnail(QWidget):
 
         self.setFixedSize(self.thumbnail_width, self.widget_height)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName(preset_name)
         tooltip = f"Click to load: {preset_name}"
         if is_default:
             tooltip += " (Default)"
@@ -192,11 +195,22 @@ class PresetThumbnail(QWidget):
             painter.setPen(QPen(QColor(255, 200, 0)))
             painter.drawText(indicator_x, label_y + LABEL_HEIGHT - 5, "★")
 
+        if self.is_selected or self.hasFocus():
+            painter.setPen(QPen(QColor("#00b8ff"), 3))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self.rect().adjusted(2, 2, -2, -2))
         painter.end()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            self.setFocus()
             self.clicked.emit(self.preset_name)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.clicked.emit(self.preset_name)
+        else:
+            super().keyPressEvent(event)
 
     def contextMenuEvent(self, event):
         from PySide6.QtWidgets import QMenu

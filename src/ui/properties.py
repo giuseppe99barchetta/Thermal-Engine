@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate, QStyle, QSlider, QDialog, QDialogButtonBox,
     QSizePolicy, QGroupBox, QToolButton
 )
-from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint
+from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint, QEvent
 from PySide6.QtGui import QColor, QFont, QPixmap, QFontDatabase, QPainter, QLinearGradient, QPen, QBrush, QIcon
 
 
@@ -604,6 +604,42 @@ class PropertiesPanel(QWidget):
         self.section_fields = {}
 
         self.setup_ui()
+        self._numeric_drag = None
+        self._numeric_labels = {
+            self.x_label: self.x_spin, self.y_label: self.y_spin,
+            self.width_label: self.width_spin, self.height_label: self.height_spin,
+        }
+        for form in self.findChildren(QFormLayout):
+            for row in range(form.rowCount()):
+                label_item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+                field_item = form.itemAt(row, QFormLayout.ItemRole.FieldRole)
+                label = label_item.widget() if label_item else None
+                field = field_item.widget() if field_item else None
+                if isinstance(label, QLabel) and isinstance(field, (QSpinBox, QDoubleSpinBox)):
+                    self._numeric_labels[label] = field
+        for label in self._numeric_labels:
+            label.setCursor(Qt.CursorShape.SizeHorCursor)
+            label.setToolTip("Drag horizontally to change the value; Shift moves 10 steps at a time")
+            label.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        spin = self._numeric_labels.get(obj) if hasattr(self, "_numeric_labels") else None
+        if spin and spin.isEnabled():
+            if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._numeric_drag = (obj, event.globalPosition().x(), spin.value())
+                self._undo_state_saved = False
+                return True
+            if self._numeric_drag and self._numeric_drag[0] is obj:
+                if event.type() == QEvent.Type.MouseMove:
+                    factor = 10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+                    delta = round(event.globalPosition().x() - self._numeric_drag[1])
+                    spin.setValue(self._numeric_drag[2] + delta * spin.singleStep() * factor)
+                    return True
+                if event.type() == QEvent.Type.MouseButtonRelease:
+                    self._numeric_drag = None
+                    self._undo_state_saved = False
+                    return True
+        return super().eventFilter(obj, event)
 
     def create_section(self, title):
         """Create a styled section container with title."""
@@ -983,6 +1019,10 @@ class PropertiesPanel(QWidget):
 
         # === STANDALONE TEXT INPUT (for non-circle-gauge elements) ===
         self.text_edit = QLineEdit()
+        self.text_edit.setToolTip(
+            "Text supports sensor templates, e.g. CPU {cpu_temp} · {cpu_percent}. "
+            "Use the source IDs shown in Data Source; unknown tokens stay unchanged."
+        )
         self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.text_edit.setMinimumWidth(50)
         self.text_edit.textChanged.connect(self.on_property_changed)
@@ -1182,14 +1222,22 @@ class PropertiesPanel(QWidget):
         data_layout.addRow(self.source_label, self.source_combo)
 
         self.value_spin = NoScrollDoubleSpinBox()
-        self.value_spin.setRange(0, 100)
+        self.value_spin.setRange(0, 10000)
         self.value_spin.valueChanged.connect(self.on_property_changed)
         self.value_label = self.create_label("Preview Value:")
         data_layout.addRow(self.value_label, self.value_spin)
+        self.max_value_spin = NoScrollDoubleSpinBox()
+        self.max_value_spin.setRange(1, 10000)
+        self.max_value_spin.setValue(100)
+        self.max_value_spin.setToolTip("Full-scale sensor value, e.g. 5000 for pump RPM")
+        self.max_value_spin.valueChanged.connect(self.on_property_changed)
+        self.max_value_label = self.create_label("Scale maximum:")
+        data_layout.addRow(self.max_value_label, self.max_value_spin)
 
         self.section_fields['data'] = [
             (self.source_label, self.source_combo),
-            (self.value_label, self.value_spin)
+            (self.value_label, self.value_spin),
+            (self.max_value_label, self.max_value_spin),
         ]
 
         # === MEDIA SECTION ===
@@ -1605,8 +1653,7 @@ class PropertiesPanel(QWidget):
         self.scroll_area.setVisible(False)
 
     def load_system_fonts(self):
-        font_db = QFontDatabase()
-        families = font_db.families()
+        families = QFontDatabase.families()
 
         common_fonts = ["Arial", "Segoe UI", "Tahoma", "Verdana", "Times New Roman",
                         "Calibri", "Consolas", "Courier New", "Georgia", "Impact"]
@@ -1648,6 +1695,7 @@ class PropertiesPanel(QWidget):
                 idx = self.source_combo.count() - 1
                 # Store the actual source ID in item data
                 self.source_combo.setItemData(idx, source_id, Qt.ItemDataRole.UserRole)
+                self.source_combo.setItemData(idx, "{" + source_id + "}", Qt.ItemDataRole.ToolTipRole)
 
     def get_selected_source(self):
         """Get the currently selected source ID."""
@@ -1662,6 +1710,10 @@ class PropertiesPanel(QWidget):
                 self.source_combo.setCurrentIndex(i)
                 return
         # Fallback to static if not found
+        if source_id.startswith("network_"):
+            self.source_combo.addItem(f"    {source_id} (not configured)", source_id)
+            self.source_combo.setCurrentIndex(self.source_combo.count() - 1)
+            return
         self.set_source_by_id("static")
 
     def on_source_changed(self, index):
@@ -1921,6 +1973,11 @@ class PropertiesPanel(QWidget):
         self.source_combo.setVisible(source_visible)
         self.value_label.setVisible(show_preview_value)
         self.value_spin.setVisible(show_preview_value)
+        scaled = self.current_element is not None and self.current_element.type in (
+            "circle_gauge", "bar_gauge", "line_chart"
+        )
+        self.max_value_label.setVisible(scaled)
+        self.max_value_spin.setVisible(scaled)
 
         section_visible['data'] = source_visible or show_preview_value
 
@@ -1980,7 +2037,7 @@ class PropertiesPanel(QWidget):
         self.bar_border_group.setVisible(bar_border_visible and bar_border_enabled)
 
         # Temperature hide unit option - visible only for temperature sources
-        temp_sources = ["cpu_temp", "gpu_temp"]
+        temp_sources = ["cpu_temp", "gpu_temp", "liquid_temp", "disk_temp"]
         current_source = getattr(self.current_element, 'source', 'static') if self.current_element else 'static'
         temp_hide_unit_visible = current_source in temp_sources
         self.temp_hide_unit_label.setVisible(temp_hide_unit_visible)
@@ -2069,6 +2126,7 @@ class PropertiesPanel(QWidget):
         self.clip_checkbox.blockSignals(True)
         self.source_combo.blockSignals(True)
         self.value_spin.blockSignals(True)
+        self.max_value_spin.blockSignals(True)
         self.image_path_edit.blockSignals(True)
         self.scale_proportionally_check.blockSignals(True)
         self.show_background_check.blockSignals(True)
@@ -2116,6 +2174,7 @@ class PropertiesPanel(QWidget):
         self.label_text_edit.setText(element.text)  # For circle gauge label
         self.font_size_spin.setValue(element.font_size)
         self.value_spin.setValue(element.value)
+        self.max_value_spin.setValue(element.max_value)
         self.image_path_edit.setText(element.image_path)
         self.clip_checkbox.setChecked(element.clip)
         self.scale_proportionally_check.setChecked(element.scale_proportionally)
@@ -2232,6 +2291,7 @@ class PropertiesPanel(QWidget):
         self.clip_checkbox.blockSignals(False)
         self.source_combo.blockSignals(False)
         self.value_spin.blockSignals(False)
+        self.max_value_spin.blockSignals(False)
         self.image_path_edit.blockSignals(False)
         self.scale_proportionally_check.blockSignals(False)
         self.show_background_check.blockSignals(False)
@@ -2311,6 +2371,7 @@ class PropertiesPanel(QWidget):
         # Source and value
         self.source_combo.setEnabled(enabled)
         self.value_spin.setEnabled(enabled)
+        self.max_value_spin.setEnabled(enabled)
 
         # Image properties
         self.image_path_edit.setEnabled(enabled)
@@ -2398,6 +2459,7 @@ class PropertiesPanel(QWidget):
         # Source is handled by on_source_changed, but sync here for safety
         self.current_element.source = self.get_selected_source()
         self.current_element.value = self.value_spin.value()
+        self.current_element.max_value = self.max_value_spin.value()
         self.current_element.image_path = self.image_path_edit.text()
         self.current_element.scale_proportionally = self.scale_proportionally_check.isChecked()
 

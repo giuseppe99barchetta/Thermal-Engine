@@ -172,7 +172,7 @@ def validate_element_schema(element, index):
         errors.append(f"{prefix}: 'type' must be a string")
 
     # Validate numeric fields
-    numeric_fields = ['x', 'y', 'width', 'height', 'radius', 'font_size', 'value']
+    numeric_fields = ['x', 'y', 'width', 'height', 'radius', 'font_size', 'value', 'max_value']
     for field in numeric_fields:
         if field in element:
             val = element[field]
@@ -182,6 +182,10 @@ def validate_element_schema(element, index):
                 errors.append(f"{prefix}: '{field}' out of range")
 
     # Validate color fields
+    maximum = element.get('max_value', 100)
+    if isinstance(maximum, (int, float)) and not 1 <= maximum <= 10000:
+        errors.append(f"{prefix}: 'max_value' must be between 1 and 10000")
+
     color_fields = ['color', 'background_color']
     for field in color_fields:
         if field in element and element[field]:

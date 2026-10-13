@@ -12,6 +12,11 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 ## Features
 
 - **Visual drag-and-drop editor** with live preview
+- **MQTT, HTTP, TCP and UDP sensors** for external numeric data; [setup guide](docs/NETWORK-SENSORS.md)
+- **Shared PIL renderer** for the editor and display, with zoom (`Ctrl+wheel`),
+  pan (middle mouse), rulers, smart alignment guides and page thumbnails
+- **First-run setup**: choose a device, native resolution and starting preset;
+  reopen from **Help → Setup Wizard** or use the editor offline
 - **Universal display support**:
   - HID and USB bulk transfer protocols
   - Device defaults plus per-device screen-size profiles and custom resolutions
@@ -19,12 +24,16 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Expandable canvas**: Full-screen editing area with margins for precise image cropping
 - **Display orientation controls**: Flip/rotate output for any mounting position
 - **Real-time sensor data**: CPU/GPU temperature, utilization, clock speed, power
+- **Cooling and storage sensors**: pump/fan RPM, liquid temperature, disk
+  temperature and used space on hardware supported by LibreHardwareMonitor
 - Runs as a standard user; some hardware sensors may require administrator access
 - **Auto-recovery**: Sensors automatically reconnect after sleep/wake
 - **Element types**:
   - Circle gauges with auto-color thresholds
   - Bar gauges with rounded corners and gradient fill
   - Text elements (static or sensor-linked)
+    - Sensor templates: `CPU {cpu_temp} · {cpu_percent}`, `Pump {pump_rpm}`
+    - Source IDs are shown in the Data Source menu tooltips
   - Digital and analog clocks
   - Images and GIFs
   - Line charts for historical data
@@ -40,6 +49,9 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Theme packages**: export and import themes as `.thermal` or `.zip` archives with embedded images
 - **Element grouping** for organizing complex themes
 - **Undo/Redo** support
+- **Property controls**: collapsible sections and numeric labels you can drag
+  horizontally (hold `Shift` for steps of ten)
+- **Connection status**: click the device/FPS indicator to connect or disconnect
 - **System tray** support with minimize-to-tray
 
 ## Supported Displays
@@ -80,6 +92,13 @@ The Windows installer offers the official PawnIO component for low-level sensor
 access. It is optional and can be deselected. Some hardware additionally requires
 starting ThermalEngine as administrator; unsupported sensors remain at zero while
 usage metrics continue to work.
+
+Cooling and disk readings use the highest valid matching sensor. Unnamed fan
+headers are shown as fans; a pump must be identified as such by the hardware.
+For RPM gauges and charts, set **Data → Scale maximum** to the full-scale RPM
+(for example, 5000). Existing themes retain their default scale of 100.
+Text templates include units automatically and retain unknown placeholders as
+literal text.
 
 **Linux note**:
 - CPU/RAM/Network metrics work out of box
@@ -375,3 +394,6 @@ MIT License - See LICENSE file for details.
 ## Contributing
 
 Contributions welcome! Please open an issue or PR.
+## Network sensor sources
+
+Display numeric MQTT, HTTP, TCP and UDP readings alongside hardware metrics. Configure **Settings > Network Sensors...**, then select the source under **External Sensors** for text, gauges or charts. See [setup examples and payload formats](docs/NETWORK-SENSORS.md) for Home Assistant and telemetry integrations.

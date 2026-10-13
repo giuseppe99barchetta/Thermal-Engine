@@ -33,6 +33,7 @@ class ThemeElement:
         self.clip = kwargs.get("clip", False)
         self.source = kwargs.get("source", "static")
         self.value = kwargs.get("value", 50)
+        self.max_value = kwargs.get("max_value", 100)
         self.image_path = kwargs.get("image_path", "")
         self.scale_proportionally = kwargs.get("scale_proportionally", True)
         self.aspect_ratio = kwargs.get("aspect_ratio", 1.0)

@@ -7,6 +7,7 @@ falls back to safe user-mode Windows counters and psutil usage metrics.
 """
 
 import logging
+import math
 import ctypes
 import os
 import subprocess
@@ -30,6 +31,11 @@ DEFAULT_SENSOR_DATA = {
     "gpu_memory_clock": 0.0,
     "gpu_memory_percent": 0.0,
     "gpu_power": 0.0,
+    "pump_rpm": 0.0,
+    "fan_rpm": 0.0,
+    "liquid_temp": 0.0,
+    "disk_temp": 0.0,
+    "disk_percent": 0.0,
 }
 
 _LHM_TYPES = None
@@ -506,7 +512,8 @@ class _LibreHardwareMonitorReader:
         self.computer.IsGpuEnabled = True
         self.computer.IsMemoryEnabled = True
         self.computer.IsMotherboardEnabled = True
-        self.computer.IsStorageEnabled = False
+        self.computer.IsStorageEnabled = True
+        self.computer.IsControllerEnabled = True
         self.computer.Open()
         self._cached_sensors = []
         self._cache_initialized = False
@@ -714,6 +721,35 @@ class _LibreHardwareMonitorReader:
         _, SensorType = _load_lhm_types()
         return self._find_sensor(["gpu power", "board power"], SensorType.Power, sensors)
 
+    def get_cooling_storage_sensors(self, sensors):
+        """Use explicit sensor names; never guess that an unnamed fan is a pump."""
+        _, SensorType = _load_lhm_types()
+        values = {key: 0.0 for key in (
+            "pump_rpm", "fan_rpm", "liquid_temp", "disk_temp", "disk_percent"
+        )}
+        for sensor, _ in sensors:
+            if sensor.Value is None:
+                continue
+            value = float(sensor.Value)
+            if not math.isfinite(value) or value < 0:
+                continue
+            name = str(sensor.Name).lower()
+            is_storage = str(sensor.Hardware.HardwareType).lower() == "storage"
+            key = None
+            if sensor.SensorType == SensorType.Fan:
+                key = "pump_rpm" if "pump" in name else "fan_rpm"
+            elif sensor.SensorType == SensorType.Temperature:
+                if is_storage:
+                    key = "disk_temp"
+                elif any(word in name for word in ("liquid", "coolant", "water")):
+                    key = "liquid_temp"
+            elif (is_storage and sensor.SensorType == SensorType.Load
+                  and "used space" in name):
+                key = "disk_percent"
+            if key:
+                values[key] = max(values[key], value)
+        return values
+
     def get_thermal_sensors(self):
         with self._lock:
             sensors = self._get_sensors()
@@ -727,6 +763,7 @@ class _LibreHardwareMonitorReader:
                 "gpu_memory_clock": int(self.get_gpu_memory_clock(sensors)),
                 "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
                 "gpu_power": self.get_gpu_power(sensors),
+                **self.get_cooling_storage_sensors(sensors),
             }
 
     def invalidate_cache(self):

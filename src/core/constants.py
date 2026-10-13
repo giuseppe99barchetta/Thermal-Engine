@@ -2,6 +2,8 @@
 Constants and configuration for Thermal Engine.
 """
 
+import re
+
 # Display dimensions (default - can be overridden by device)
 DISPLAY_WIDTH = 1280  # Default for Trofeo AIO (ultrawide)
 DISPLAY_HEIGHT = 480
@@ -53,6 +55,11 @@ DATA_SOURCES = [
     "gpu_power",
     "net_upload",
     "net_download",
+    "pump_rpm",
+    "fan_rpm",
+    "liquid_temp",
+    "disk_temp",
+    "disk_percent",
 ]
 
 # Categorized data sources for UI display
@@ -84,6 +91,15 @@ DATA_SOURCES_CATEGORIZED = {
         ("net_upload", "Upload Speed", "speed", "MB/s"),
         ("net_download", "Download Speed", "speed", "MB/s"),
     ],
+    "Cooling": [
+        ("pump_rpm", "Pump Speed", "rpm", " RPM"),
+        ("fan_rpm", "Fan Speed (highest)", "rpm", " RPM"),
+        ("liquid_temp", "Liquid Temperature", "temp", "°C"),
+    ],
+    "Storage": [
+        ("disk_temp", "Disk Temperature (highest)", "temp", "°C"),
+        ("disk_percent", "Disk Space Used (highest)", "percent", "%"),
+    ],
 }
 
 # Lookup for source units
@@ -97,13 +113,32 @@ for category, sources in DATA_SOURCES_CATEGORIZED.items():
             "symbol": unit_symbol
         }
 
+def register_network_sources(sources):
+    """Update shared lookup objects so existing imports see configured sensors."""
+    for key in list(SOURCE_UNITS):
+        if key.startswith("network_"):
+            SOURCE_UNITS.pop(key)
+    DATA_SOURCES[:] = [key for key in DATA_SOURCES if not key.startswith("network_")]
+    DATA_SOURCES_CATEGORIZED.pop("External Sensors", None)
+    entries = []
+    for source in sources:
+        key = f"network_{source['id']}"
+        entries.append((key, source["name"], "number", source["unit"]))
+        DATA_SOURCES.append(key)
+        SOURCE_UNITS[key] = {"name": source["name"], "type": "number", "symbol": source["unit"]}
+    if entries:
+        DATA_SOURCES_CATEGORIZED["External Sensors"] = entries
+
+
 def get_value_with_unit(value, source, temp_hide_unit=False):
     """Format a value with its appropriate unit symbol."""
     unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
     symbol = unit_info["symbol"]
     unit_type = unit_info["type"]
 
-    if unit_type == "clock":
+    if unit_type == "number":
+        return f"{value:g}{symbol}"
+    elif unit_type == "clock":
         return f"{value:.0f}{symbol}"
     elif unit_type == "temp":
         # Option to show only ° instead of °C
@@ -118,6 +153,22 @@ def get_value_with_unit(value, source, temp_hide_unit=False):
         return f"{value:.1f}{symbol}"
     else:  # percent
         return f"{value:.0f}{symbol}"
+
+
+def format_sensor_template(text, sensor_data):
+    """Replace known {sensor} tokens; leave ordinary braces and unknown names intact."""
+    def replace(match):
+        source = match.group(1)
+        if (source not in SOURCE_UNITS and not source.startswith("network_")) or source == "static":
+            return match.group(0)
+        value = sensor_data.get(source)
+        return "--" if value is None else get_value_with_unit(value, source)
+
+    return re.sub(r"\{([a-z][a-z0-9_]*)\}", replace, text)
+
+
+def gauge_fraction(value, maximum=100):
+    return max(0, min(1, value / max(1, maximum)))
 
 # Default element properties by type
 DEFAULT_ELEMENT_PROPS = {
