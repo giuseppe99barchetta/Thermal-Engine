@@ -1,14 +1,16 @@
 """Local network sensor configuration, separate from portable display themes."""
 
-from PySide6.QtCore import QTimer
+import time
+
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
-    QPushButton, QSpinBox, QVBoxLayout, QWidget,
+    QPushButton, QSpinBox, QVBoxLayout, QWidget, QScrollArea,
 )
 
 from src.core import sensors
-from src.core.network_sensors import validate_sources
+from src.core.network_sensors import NetworkSensorManager, validate_sources
 from src.utils import settings
 
 
@@ -18,16 +20,23 @@ class NetworkSensorsDialog(QDialog):
         self.setWindowTitle("Network Sensors")
         self.resize(740, 640)
         config_error = None
+        self._credentials_unavailable = False
         try:
             self._sources = validate_sources(settings.get_setting("network_sensors", []))
-        except ValueError as exc:
-            self._sources = []
+        except (ValueError, RuntimeError) as exc:
+            self._credentials_unavailable = isinstance(exc, RuntimeError)
+            try:
+                self._sources = validate_sources(settings.get_setting("network_sensors", [], resolve_secrets=False))
+            except ValueError:
+                self._sources = []
             config_error = str(exc)
         self._config_error = config_error
         self._index = -1
+        self._probe = None
+        self._probe_result = None
         layout = QVBoxLayout(self)
         help_text = QLabel(
-            "Use a numeric payload or a numeric JSON field (for example: attributes.temperature or values.0). "
+            "Choose Number, Text or Boolean and an optional JSON field (for example: attributes.temperature or values.0). "
             "TCP connects to a sender and reads newline-delimited values; UDP listens for one value per packet. "
             "Saved sensors appear under External Sensors in the element's Data Source selector."
         )
@@ -49,25 +58,40 @@ class NetworkSensorsDialog(QDialog):
         remove.clicked.connect(self._remove)
         self.form_widget = QWidget()
         form = QFormLayout(self.form_widget)
-        body.addWidget(self.form_widget, 2)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.form_widget)
+        body.addWidget(scroll, 2)
         self.fields = {}
         labels = {
             "id": "Sensor ID", "name": "Display name", "protocol": "Protocol", "unit": "Unit suffix",
+            "value_type": "Value type",
+            "scale": "Multiplier", "offset": "Offset", "decimals": "Decimal places",
             "url": "HTTP URL", "token": "HTTP bearer token", "host": "Host / UDP bind address",
             "port": "Port", "topic": "MQTT topic", "username": "MQTT username", "password": "MQTT password",
             "tls": "MQTT TLS", "path": "JSON field path", "interval": "Poll / retry interval (s)",
             "stale_after": "Expire reading after (s)",
         }
         for key, label in labels.items():
-            if key == "protocol":
+            if key == "decimals":
                 field = QComboBox()
-                for protocol in ("http", "mqtt", "tcp", "udp"):
-                    field.addItem(protocol.upper(), protocol)
+                field.addItem("Auto", None)
+                for number in range(7):
+                    field.addItem(str(number), number)
+            elif key in ("protocol", "value_type"):
+                field = QComboBox()
+                choices = ("http", "mqtt", "tcp", "udp") if key == "protocol" else ("number", "text", "boolean")
+                for choice in choices:
+                    field.addItem(choice.upper() if key == "protocol" else choice.title(), choice)
             elif key == "tls":
                 field = QCheckBox("Verify server certificate")
             elif key == "port":
                 field = QSpinBox()
                 field.setRange(1, 65535)
+            elif key in ("scale", "offset"):
+                field = QDoubleSpinBox()
+                field.setDecimals(6)
+                field.setRange(-1e12, 1e12)
             elif key in ("interval", "stale_after"):
                 field = QDoubleSpinBox()
                 field.setRange(.1 if key == "interval" else 1, 3600 if key == "interval" else 86400)
@@ -81,10 +105,15 @@ class NetworkSensorsDialog(QDialog):
         self.fields["id"].setToolTip("Stable ID used by themes; use lowercase letters, digits and underscores.")
         self.fields["host"].setToolTip("UDP: 127.0.0.1 for this computer; 0.0.0.0 to accept packets from your LAN.")
         self.fields["protocol"].currentIndexChanged.connect(self._protocol_changed)
+        self.fields["value_type"].currentIndexChanged.connect(self._value_type_changed)
         self.status_label = QLabel()
+        self.status_label.setTextFormat(Qt.TextFormat.PlainText)
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
-        note = QLabel("Credentials are stored in your local settings file. Use trusted senders for TCP/UDP; LAN binding accepts unauthenticated packets.")
+        self.test_button = QPushButton("Test connection")
+        self.test_button.clicked.connect(self._test_connection)
+        layout.addWidget(self.test_button)
+        note = QLabel("Credentials are saved in your OS credential store. Re-enter missing credentials before saving. Use trusted senders for TCP/UDP; LAN binding accepts unauthenticated packets.")
         note.setWordWrap(True)
         layout.addWidget(note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -114,6 +143,8 @@ class NetworkSensorsDialog(QDialog):
         self.source_list.item(self._index).setText(source["name"] or source["id"] or "New sensor")
 
     def _select(self, index):
+        self._stop_probe()
+        self._probe_result = None
         self._store_fields()
         self._index = index
         self.form_widget.setEnabled(index >= 0)
@@ -133,14 +164,21 @@ class NetworkSensorsDialog(QDialog):
                 field.setText(str(value))
         self.fields["protocol"].blockSignals(False)
         self._protocol_changed()
+        self._value_type_changed()
         self._update_status()
+
+    def _value_type_changed(self):
+        numeric = self.fields["value_type"].currentData() == "number"
+        for key in ("scale", "offset", "decimals", "unit"):
+            self.form_widget.layout().setRowVisible(self.fields[key], numeric)
 
     def _protocol_changed(self):
         protocol = self.fields["protocol"].currentData()
         form = self.form_widget.layout()
         for key in ("url", "token", "host", "port", "topic", "username", "password", "tls"):
             visible = (key in ("url", "token") if protocol == "http"
-                       else key in ("host", "port") or protocol == "mqtt")
+                       else key in ("host", "port", "topic", "username", "password", "tls") if protocol == "mqtt"
+                       else key in ("host", "port"))
             form.setRowVisible(self.fields[key], visible)
         if self.sender() is self.fields["protocol"]:
             self.fields["port"].setValue(1883 if protocol == "mqtt" else 9000)
@@ -171,6 +209,23 @@ class NetworkSensorsDialog(QDialog):
             self._refresh_list()
 
     def _update_status(self):
+        self.test_button.setEnabled(self._index >= 0 and self._probe is None)
+        if self._probe:
+            source = self._probe.sources[0]
+            value = self._probe.snapshot().get(f"network_{source['id']}")
+            status = self._probe.statuses()[source["id"]]
+            if value is not None or time.monotonic() >= self._probe_deadline:
+                self._probe_result = (f"Test successful | Value: {value}" if value is not None
+                                      else f"Test ended without a valid reading: {status}")
+                self._stop_probe()
+            self.status_label.setText(self._probe_result or f"Testing unsaved connection: {status}")
+            return
+        if self._probe_result:
+            self.status_label.setText(self._probe_result)
+            return
+        if self._config_error:
+            self.status_label.setText(self._config_error)
+            return
         if self._index < 0:
             self.status_label.setText(f"Saved configuration could not be loaded: {self._config_error}"
                                       if self._config_error else "Add a sensor to get started.")
@@ -178,15 +233,50 @@ class NetworkSensorsDialog(QDialog):
         sensor_id = self.fields["id"].text()
         value = sensors.get_cached_sensors().get(f"network_{sensor_id}")
         status = sensors.get_network_sensor_statuses().get(sensor_id, "Save to start receiving")
-        self.status_label.setText(f"Current saved connection: {status}" + (f" | Value: {value:g}" if value is not None else ""))
+        self.status_label.setText(f"Current saved connection: {status}" + (f" | Value: {value}" if value is not None else ""))
 
     def _save(self):
         self._store_fields()
+        if self._credentials_unavailable and any(s.get(field + "_ref") and not s.get(field)
+                                                 for s in self._sources for field in ("password", "token")):
+            QMessageBox.warning(self, "Credentials unavailable", "Re-enter the missing saved credentials before saving; existing settings are preserved.")
+            return
         try:
             sources = validate_sources(self._sources)
         except ValueError as exc:
             QMessageBox.warning(self, "Invalid sensor configuration", str(exc))
             return
-        settings.set_setting("network_sensors", sources)
+        try:
+            settings.set_setting("network_sensors", sources)
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "Settings not saved", str(exc))
+            return
         sensors.configure_network_sensors(sources)
         self.accept()
+
+    def _test_connection(self):
+        if self._index < 0:
+            return
+        self._store_fields()
+        try:
+            probe = NetworkSensorManager([self._sources[self._index]])
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid sensor configuration", str(exc))
+            return
+        self._stop_probe()
+        self._probe_result = None
+        self._probe = probe
+        self._probe_deadline = time.monotonic() + 5
+        probe.start()
+        self._update_status()
+
+    def _stop_probe(self):
+        if self._probe:
+            self._probe.stop(wait=False)
+            self._probe = None
+        if hasattr(self, "test_button"):
+            self.test_button.setEnabled(self._index >= 0)
+
+    def done(self, result):
+        self._stop_probe()
+        super().done(result)

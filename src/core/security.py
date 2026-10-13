@@ -5,6 +5,7 @@ Handles path validation, schema validation, and integrity checks.
 
 import os
 import re
+from src.core.conditions import ACTIONS, COMPARISONS
 from src.utils.app_path import get_app_dir
 
 # Allowed directories for file loading (relative to app dir)
@@ -205,6 +206,21 @@ def validate_element_schema(element, index):
                 errors.append(f"{prefix}: {field}: {err}")
 
     # Validate string fields length
+    rule = element.get('condition', {})
+    if not isinstance(rule, dict):
+        errors.append(f"{prefix}: condition must be an object")
+    elif rule:
+        if set(rule) - {'source', 'operator', 'value', 'action', 'color', 'text'}:
+            errors.append(f"{prefix}: unknown condition fields")
+        if (not isinstance(rule.get('source'), str) or not 1 <= len(rule['source']) <= 500
+                or not isinstance(rule.get('operator'), str) or rule.get('operator') not in COMPARISONS
+                or rule.get('action') not in ACTIONS):
+            errors.append(f"{prefix}: invalid condition source, comparison or action")
+        for key in ('value', 'text'):
+            if not isinstance(rule.get(key, ''), str) or len(rule.get(key, '')) > 500:
+                errors.append(f"{prefix}: invalid condition {key}")
+        if rule.get('action') == 'color' and not is_valid_color(rule.get('color')):
+            errors.append(f"{prefix}: invalid condition color")
     string_fields = ['name', 'text', 'font_family', 'source']
     for field in string_fields:
         if field in element:

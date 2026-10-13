@@ -11,6 +11,7 @@ psutil>=5.9.0
 
 # MQTT network sensors
 paho-mqtt>=2.1.0,<3
+keyring>=25,<26
 
 # HID device communication (for LCD display)
 hidapi>=0.14.0

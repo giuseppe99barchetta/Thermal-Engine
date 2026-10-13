@@ -12,7 +12,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 ## Features
 
 - **Visual drag-and-drop editor** with live preview
-- **MQTT, HTTP, TCP and UDP sensors** for external numeric data; [setup guide](docs/NETWORK-SENSORS.md)
+- **MQTT, HTTP, TCP and UDP sensors** for external numbers, text and boolean values; [setup guide](docs/NETWORK-SENSORS.md)
 - **Shared PIL renderer** for the editor and display, with zoom (`Ctrl+wheel`),
   pan (middle mouse), rulers, smart alignment guides and page thumbnails
 - **First-run setup**: choose a device, native resolution and starting preset;
@@ -48,6 +48,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Auto Profiles**: automatically switch presets based on the foreground app or system load state (idle / gaming)
 - **Theme packages**: export and import themes as `.thermal` or `.zip` archives with embedded images
 - **Element grouping** for organizing complex themes
+- **Conditional rules**: General > Conditional rule lets an element change color/text or visibility based on a numeric, text or boolean sensor. One rule per element; missing data never matches and manual hiding is preserved.
 - **Undo/Redo** support
 - **Property controls**: collapsible sections and numeric labels you can drag
   horizontally (hold `Shift` for steps of ten)
@@ -95,6 +96,7 @@ usage metrics continue to work.
 
 Cooling and disk readings use the highest valid matching sensor. Unnamed fan
 headers are shown as fans; a pump must be identified as such by the hardware.
+To choose a particular fan, pump or disk, select an entry under **Specific Hardware** in Data Source. Temperature, fan, load, clock and power readings exposed by LibreHardwareMonitor have individual source IDs. **Settings > Refresh hardware sensors** rediscovers them after a hardware change. Missing individual readings show `--`; aggregate sources keep their existing behavior.
 For RPM gauges and charts, set **Data → Scale maximum** to the full-scale RPM
 (for example, 5000). Existing themes retain their default scale of 100.
 Text templates include units automatically and retain unknown placeholders as
@@ -394,6 +396,9 @@ MIT License - See LICENSE file for details.
 ## Contributing
 
 Contributions welcome! Please open an issue or PR.
+
+The **Checks** workflow runs lint and tests on Windows and Linux for pushes and pull requests to `main`, including `chore:` commits. It does not bump the version or build release artifacts. **Build and Release** retains its existing `fix:`, `feat:` and `major:` release triggers and its own pre-release validation.
+
 ## Network sensor sources
 
-Display numeric MQTT, HTTP, TCP and UDP readings alongside hardware metrics. Configure **Settings > Network Sensors...**, then select the source under **External Sensors** for text, gauges or charts. See [setup examples and payload formats](docs/NETWORK-SENSORS.md) for Home Assistant and telemetry integrations.
+Display numeric, text and boolean MQTT, HTTP, TCP and UDP readings alongside hardware metrics. Configure **Settings > Network Sensors...**, then select the source under **External Sensors**. Text and boolean values work in labels and conditional rules; numeric values also drive gauges and charts. See [setup examples and payload formats](docs/NETWORK-SENSORS.md) for Home Assistant and telemetry integrations.

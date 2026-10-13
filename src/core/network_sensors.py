@@ -1,4 +1,4 @@
-"""Numeric network sensors; I/O stays outside the hardware and render threads."""
+"""Network sensors; I/O stays outside the hardware and render threads."""
 
 import json
 import math
@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 from urllib.parse import urlsplit
+from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 MAX_PAYLOAD = 65536
@@ -38,6 +39,18 @@ def validate_sources(sources):
         protocol = config.get("protocol")
         if protocol not in ("http", "mqtt", "tcp", "udp"):
             raise ValueError("Protocol must be HTTP, MQTT, TCP or UDP.")
+        config.setdefault("value_type", "number")
+        if config["value_type"] not in ("number", "text", "boolean"):
+            raise ValueError("Value type must be number, text or boolean.")
+        for key, default in (("scale", 1), ("offset", 0)):
+            value = config.get(key, default)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 1e12:
+                raise ValueError(f"{key} must be a finite number within +/- 1e12.")
+            config[key] = value
+        config.setdefault("decimals", None)
+        decimals = config["decimals"]
+        if decimals is not None and (isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 6):
+            raise ValueError("Decimals must be Auto or an integer between 0 and 6.")
         defaults = {"name": sensor_id, "unit": "", "path": "", "host": "127.0.0.1",
                     "topic": "", "username": "", "password": "", "token": "", "url": ""}
         for key, default in defaults.items():
@@ -79,8 +92,8 @@ def validate_sources(sources):
     return result
 
 
-def parse_value(payload, path=""):
-    """Accept a number, or select a numeric JSON field with a dotted path."""
+def parse_value(payload, path="", value_type="number"):
+    """Select and validate a scalar without executing expressions from the sender."""
     if len(payload) > MAX_PAYLOAD:
         raise ValueError("Payload is too large.")
     text = payload.decode("utf-8").strip()
@@ -91,6 +104,19 @@ def parse_value(payload, path=""):
     if path:
         for key in path.split("."):
             value = value[int(key)] if isinstance(value, list) else value[key]
+    if value_type == "text":
+        if not isinstance(value, str) or len(value) > 512 or any(ord(c) < 32 and c not in "\n\t" for c in value):
+            raise ValueError("Text must be a string of at most 512 characters without control characters.")
+        value.encode("utf-8")
+        return value
+    if value_type == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str) and value.lower() in ("true", "false", "on", "off", "1", "0"):
+            return value.lower() in ("true", "on", "1")
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return bool(value)
+        raise ValueError("Boolean must be true/false, on/off or 1/0.")
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         raise ValueError("Sensor value must be numeric.")
     value = float(value)
@@ -121,7 +147,7 @@ class NetworkSensorManager:
             self._threads.append(thread)
             thread.start()
 
-    def stop(self):
+    def stop(self, wait=True):
         self._stop.set()
         with self._lock:
             sockets = list(self._sockets)
@@ -131,6 +157,8 @@ class NetworkSensorManager:
             except OSError:
                 pass
             sock.close()
+        if not wait:
+            return
         deadline = time.monotonic() + 4
         for thread in self._threads:
             thread.join(timeout=max(0, deadline - time.monotonic()))
@@ -156,7 +184,11 @@ class NetworkSensorManager:
     def _receive(self, sources, payload):
         for source in sources:
             try:
-                value = parse_value(payload, source["path"])
+                value = parse_value(payload, source["path"], source["value_type"])
+                if source["value_type"] == "number":
+                    value = value * source["scale"] + source["offset"]
+                    if not math.isfinite(value) or abs(value) > 1e12:
+                        raise ValueError("Converted reading is out of range.")
             except (ValueError, KeyError, IndexError, TypeError, OverflowError, RecursionError):
                 self._error([source], "Invalid payload / JSON field")
                 continue
@@ -175,9 +207,24 @@ class NetworkSensorManager:
                 if source["protocol"] == "http":
                     headers = {"Authorization": f"Bearer {source['token']}"} if source["token"] else {}
                     with build_opener(_SafeRedirectHandler()).open(Request(source["url"], headers=headers), timeout=3) as response:
-                        self._receive(sources, response.read(MAX_PAYLOAD + 1))
+                        payload = bytearray()
+                        deadline = time.monotonic() + 3
+                        while len(payload) <= MAX_PAYLOAD and not self._stop.is_set():
+                            chunk = response.read1(min(4096, MAX_PAYLOAD + 1 - len(payload)))
+                            if not chunk:
+                                break
+                            payload.extend(chunk)
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("HTTP body exceeded read budget")
+                        self._receive(sources, bytes(payload))
                 else:
                     self._socket_stream(sources)
+            except HTTPError as exc:
+                self._error(sources, f"HTTP error: {exc.code}")
+            except OSError as exc:
+                message = ("Port already in use" if exc.errno in (48, 98, 10048)
+                           or getattr(exc, "winerror", None) == 10048 else "Connection / read failed; retrying")
+                self._error(sources, message)
             except Exception:
                 # Exceptions may contain URLs, credentials or payloads: keep diagnostics generic.
                 self._error(sources, "Connection / read failed; retrying")

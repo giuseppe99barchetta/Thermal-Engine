@@ -49,10 +49,11 @@ def test_admin_restart_waits_for_current_process():
     from main import SensorSetupDialog
 
     dialog = SimpleNamespace(restart_requested=False, accept=MagicMock())
+    execute = MagicMock(return_value=33)
     with (
         patch("main.os.getpid", return_value=1234),
         patch("main.sys.argv", ["ThermalEngine.exe"]),
-        patch("main.ctypes.windll.shell32.ShellExecuteW", return_value=33) as execute,
+        patch("main.ctypes.windll", SimpleNamespace(shell32=SimpleNamespace(ShellExecuteW=execute)), create=True),
     ):
         SensorSetupDialog.restart_as_admin(dialog)
 

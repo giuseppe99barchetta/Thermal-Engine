@@ -788,6 +788,9 @@ class PropertiesPanel(QWidget):
         self.name_edit.textChanged.connect(self.on_property_changed)
         self.name_label = self.create_label("Name:")
         general_layout.addRow(self.name_label, self.name_edit)
+        self.condition_button = QPushButton("Conditional rule...")
+        self.condition_button.clicked.connect(self.edit_condition)
+        general_layout.addRow(self.condition_button)
 
         self.section_fields['general'] = [
             (self.name_label, self.name_edit)
@@ -1675,6 +1678,9 @@ class PropertiesPanel(QWidget):
 
     def setup_source_combo(self):
         """Setup the source combo box with categorized items."""
+        from src.core.constants import register_hardware_sources
+        from src.core.sensors import get_hardware_sensor_catalog
+        register_hardware_sources(get_hardware_sensor_catalog())
         self.source_combo.clear()
 
         for category, sources in DATA_SOURCES_CATEGORIZED.items():
@@ -1710,7 +1716,7 @@ class PropertiesPanel(QWidget):
                 self.source_combo.setCurrentIndex(i)
                 return
         # Fallback to static if not found
-        if source_id.startswith("network_"):
+        if source_id.startswith(("network_", "hardware_")):
             self.source_combo.addItem(f"    {source_id} (not configured)", source_id)
             self.source_combo.setCurrentIndex(self.source_combo.count() - 1)
             return
@@ -2414,6 +2420,16 @@ class PropertiesPanel(QWidget):
         self.show_clock_border_check.setEnabled(enabled)
         self.clock_face_style_combo.setEnabled(enabled)
         self.smooth_animation_check.setEnabled(enabled)
+
+    def edit_condition(self):
+        if not self.current_element or self.current_element.locked:
+            return
+        from src.ui.conditions import ConditionDialog
+        dialog = ConditionDialog(self.current_element.condition, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.rule() != self.current_element.condition:
+            self.property_will_change.emit()
+            self.current_element.condition = dialog.rule()
+            self.property_changed.emit()
 
     def on_property_changed(self):
         if self.current_element is None:

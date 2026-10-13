@@ -311,6 +311,7 @@ jobs:
           Pillow \
           psutil \
           'paho-mqtt>=2.1.0,<3' \
+          'keyring>=25,<26' \
           hidapi \
           pyusb \
           opencv-python \

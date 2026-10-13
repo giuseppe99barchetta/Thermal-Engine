@@ -2,6 +2,7 @@
 import os
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import copy_metadata
 
 datas = [
     ("elements", "elements"),
@@ -12,6 +13,8 @@ datas = [
 ]
 binaries = []
 hiddenimports = ["clr"] + collect_submodules("src") + collect_submodules("usb") + collect_submodules("paho.mqtt")
+hiddenimports += collect_submodules("keyring.backends")
+datas += copy_metadata("keyring", recursive=True)
 
 for package in ("pythonnet", "clr_loader"):
     package_datas, package_binaries, package_hiddenimports = collect_all(package)

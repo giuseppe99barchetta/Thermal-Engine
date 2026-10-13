@@ -179,7 +179,7 @@ class ThemeEditorWindow(QMainWindow):
         self.theme_path = None
         try:
             sensors.configure_network_sensors(settings.get_setting("network_sensors", []))
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             logger.warning("Network sensor configuration invalid: %s", exc)
         self.theme_name = "Untitled Theme"
         self.background_color = "#0f0f19"
@@ -917,6 +917,9 @@ class ThemeEditorWindow(QMainWindow):
         network_action = QAction("Network Sensors...", self)
         network_action.triggered.connect(self.show_network_sensors)
         settings_menu.addAction(network_action)
+        refresh_sensors_action = QAction("Refresh hardware sensors", self)
+        refresh_sensors_action.triggered.connect(self.refresh_hardware_sensors)
+        settings_menu.addAction(refresh_sensors_action)
 
         settings_menu.addSeparator()
 
@@ -2683,11 +2686,12 @@ class ThemeEditorWindow(QMainWindow):
                          [element for element in self.elements if element.page == page])
         for element in page_elements:
             data = element.to_dict()
-            if element.source.startswith("network_") and element.source not in sensor_data:
+            if element.source.startswith(("network_", "hardware_")) and element.source not in sensor_data:
                 data["value"] = 0
                 element.value = 0
             if element.source != "static" and element.source in sensor_data:
-                data["value"] = sensor_data[element.source]
+                value = sensor_data[element.source]
+                data["value"] = float(value) if isinstance(value, (int, float)) else 0
                 element.value = data["value"]
             if element.animate_gauge:
                 data["value"] = self._animated_value(element, float(data["value"]))
@@ -2883,16 +2887,23 @@ class ThemeEditorWindow(QMainWindow):
             except Exception as e:
                 raise DeviceIOError(f"Frame send failed: {e}") from e
 
+    def refresh_hardware_sensors(self):
+        sensors.invalidate_sensor_cache()
+        QTimer.singleShot(750, self.refresh_sensor_sources)
+
+    def refresh_sensor_sources(self):
+        panel = self.properties_panel
+        panel.source_combo.blockSignals(True)
+        panel.setup_source_combo()
+        if panel.current_element:
+            panel.set_source_by_id(panel.current_element.source)
+        panel.source_combo.blockSignals(False)
+        self.refresh_canvas()
+
     def show_network_sensors(self):
         from src.ui.network_sensors import NetworkSensorsDialog
         if NetworkSensorsDialog(self).exec() == QDialog.DialogCode.Accepted:
-            panel = self.properties_panel
-            panel.source_combo.blockSignals(True)
-            panel.setup_source_combo()
-            if panel.current_element:
-                panel.set_source_by_id(panel.current_element.source)
-            panel.source_combo.blockSignals(False)
-            self.refresh_canvas()
+            self.refresh_sensor_sources()
 
     def show_settings(self):
         """Show the settings dialog."""

@@ -94,12 +94,16 @@ def save_settings():
         logger.warning(f"Error saving settings: {e}")
 
 
-def get_setting(key, default=None):
+def get_setting(key, default=None, resolve_secrets=True):
     """Get a setting value."""
     global _settings
     if _settings is None:
         load_settings()
-    return _settings.get(key, default)
+    value = _settings.get(key, default)
+    if key == "network_sensors" and resolve_secrets and isinstance(value, list):
+        from src.utils.credentials import resolve_sources
+        return resolve_sources(value)
+    return value
 
 
 def set_setting(key, value):
@@ -107,6 +111,19 @@ def set_setting(key, value):
     global _settings
     if _settings is None:
         load_settings()
+    if key == "network_sensors":
+        from src.utils.credentials import protect_sources, references, delete_references
+        sanitized, created = protect_sources(value)
+        new_settings = {**_settings, key: sanitized}
+        try:
+            write_json_atomic(SETTINGS_FILE, new_settings)
+        except Exception:
+            delete_references(created)
+            raise RuntimeError("Could not save settings. Previous sensor configuration was preserved.") from None
+        previous = _settings.get(key, [])
+        _settings = new_settings
+        delete_references(references(previous) - references(sanitized))
+        return
     _settings[key] = value
     save_settings()
 
@@ -334,3 +351,12 @@ def apply_autostart_setting():
 
 # Initialize settings on module load
 load_settings()
+
+# Commit the migration only after the OS store can read each new credential.
+if isinstance(_settings.get("network_sensors"), list) and any(
+        isinstance(s, dict) and any(s.get(key) for key in ("password", "token"))
+        for s in _settings["network_sensors"]):
+    try:
+        set_setting("network_sensors", get_setting("network_sensors"))
+    except RuntimeError as exc:
+        logger.warning("Sensor credential migration deferred: %s", exc)

@@ -123,21 +123,47 @@ def register_network_sources(sources):
     entries = []
     for source in sources:
         key = f"network_{source['id']}"
-        entries.append((key, source["name"], "number", source["unit"]))
+        value_type = source.get("value_type", "number")
+        symbol = source["unit"] if value_type == "number" else ""
+        entries.append((key, source["name"], value_type, symbol))
         DATA_SOURCES.append(key)
-        SOURCE_UNITS[key] = {"name": source["name"], "type": "number", "symbol": source["unit"]}
+        SOURCE_UNITS[key] = {"name": source["name"], "type": value_type, "symbol": symbol,
+                             "decimals": source.get("decimals")}
     if entries:
         DATA_SOURCES_CATEGORIZED["External Sensors"] = entries
 
 
+def register_hardware_sources(sources):
+    for key in list(SOURCE_UNITS):
+        if key.startswith("hardware_"):
+            SOURCE_UNITS.pop(key)
+    DATA_SOURCES[:] = [key for key in DATA_SOURCES if not key.startswith("hardware_")]
+    DATA_SOURCES_CATEGORIZED.pop("Specific Hardware", None)
+    entries = []
+    for source in sources:
+        key = source["id"]
+        SOURCE_UNITS[key] = {"name": source["name"], "type": source["type"], "symbol": source["symbol"]}
+        entries.append((key, source["name"], source["type"], source["symbol"]))
+        DATA_SOURCES.append(key)
+    if entries:
+        DATA_SOURCES_CATEGORIZED["Specific Hardware"] = entries
+
+
 def get_value_with_unit(value, source, temp_hide_unit=False):
     """Format a value with its appropriate unit symbol."""
+    if value is None:
+        return "--"
+    if isinstance(value, bool):
+        return "ON" if value else "OFF"
+    if isinstance(value, str):
+        return value
     unit_info = SOURCE_UNITS.get(source, {"symbol": "%", "type": "percent"})
     symbol = unit_info["symbol"]
     unit_type = unit_info["type"]
 
     if unit_type == "number":
-        return f"{value:g}{symbol}"
+        decimals = unit_info.get("decimals")
+        return (f"{value:.{decimals}f}" if decimals is not None else f"{value:g}") + symbol
     elif unit_type == "clock":
         return f"{value:.0f}{symbol}"
     elif unit_type == "temp":
@@ -159,7 +185,7 @@ def format_sensor_template(text, sensor_data):
     """Replace known {sensor} tokens; leave ordinary braces and unknown names intact."""
     def replace(match):
         source = match.group(1)
-        if (source not in SOURCE_UNITS and not source.startswith("network_")) or source == "static":
+        if (source not in SOURCE_UNITS and not source.startswith(("network_", "hardware_"))) or source == "static":
             return match.group(0)
         value = sensor_data.get(source)
         return "--" if value is None else get_value_with_unit(value, source)

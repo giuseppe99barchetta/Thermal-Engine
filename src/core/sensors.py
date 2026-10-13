@@ -60,6 +60,7 @@ _SMOOTHED_SENSORS = {
 _reader = None
 _reader_lock = threading.RLock()
 _network_manager = None
+_hardware_catalog = []
 _sensor_status = {
     "backend": None,
     "thermal_available": False,
@@ -149,18 +150,23 @@ def _get_reader():
 
 def _sensor_polling_thread():
     global _latest_sensor_data, _sensor_thread_running, HAS_SAFE_MONITOR, HAS_LHM
+    global _hardware_catalog
 
     while _sensor_thread_running:
         try:
             with _reader_lock:
                 reader = _get_reader()
                 data = reader.get_thermal_sensors()
+                catalog = reader.get_sensor_catalog()
             if data:
                 smoothed = _apply_smoothing(data)
                 with _sensor_data_lock:
                     _latest_sensor_data = smoothed
+                    _hardware_catalog = catalog
                 _update_status(smoothed)
         except Exception as e:
+            with _sensor_data_lock:
+                _latest_sensor_data = {key: value for key, value in _latest_sensor_data.items() if not key.startswith("hardware_")}
             _update_status(get_cached_sensors(), e)
             with _reader_lock:
                 if _reader and hasattr(_reader, "invalidate_cache"):
@@ -173,6 +179,7 @@ def _sensor_polling_thread():
 def init_sensors(app_dir=None):
     global HAS_SAFE_MONITOR, SENSOR_ERROR, HAS_LHM, LHM_ERROR
     global _sensor_thread, _sensor_thread_running
+    global _hardware_catalog
 
     if _sensor_thread_running:
         stop_sensors()
@@ -181,9 +188,11 @@ def init_sensors(app_dir=None):
         with _reader_lock:
             reader = _get_reader()
             initial = reader.get_thermal_sensors()
+            catalog = reader.get_sensor_catalog()
         if initial:
             with _sensor_data_lock:
                 _latest_sensor_data.update(initial)
+                _hardware_catalog = catalog
         _update_status(initial)
         logger.info("Sensor backend initialized: %s", _sensor_status['backend'] or 'unknown')
 
@@ -209,6 +218,11 @@ def get_cached_sensors():
     if manager:
         data.update(manager.snapshot())
     return data
+
+
+def get_hardware_sensor_catalog():
+    with _sensor_data_lock:
+        return [dict(source) for source in _hardware_catalog]
 
 
 def configure_network_sensors(sources):
@@ -278,6 +292,7 @@ get_lhm_sensors_sync = get_sensors_sync
 def stop_sensors():
     global _sensor_thread_running, _sensor_thread, HAS_SAFE_MONITOR, HAS_LHM, _reader
     global _network_manager
+    global _hardware_catalog, _latest_sensor_data
 
     logger.info("Stopping sensor monitoring")
     if _network_manager:
@@ -293,6 +308,9 @@ def stop_sensors():
         if _reader and hasattr(_reader, "close"):
             _reader.close()
     _reader = None
+    with _sensor_data_lock:
+        _hardware_catalog = []
+        _latest_sensor_data = {key: value for key, value in _latest_sensor_data.items() if not key.startswith("hardware_")}
     HAS_SAFE_MONITOR = False
     HAS_LHM = False
     _update_status({}, None)

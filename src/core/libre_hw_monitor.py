@@ -8,6 +8,7 @@ falls back to safe user-mode Windows counters and psutil usage metrics.
 
 import logging
 import math
+import hashlib
 import ctypes
 import os
 import subprocess
@@ -516,6 +517,8 @@ class _LibreHardwareMonitorReader:
         self.computer.IsControllerEnabled = True
         self.computer.Open()
         self._cached_sensors = []
+        self._sensor_catalog = []
+        self._specific_sensors = []
         self._cache_initialized = False
         self._sensor_mapping_cache = {}
         self._gpu_usage_sensors = None
@@ -542,6 +545,18 @@ class _LibreHardwareMonitorReader:
                     sensors.append((sensor, f"{hw.Name} {sub.Name} {sensor.Name}".lower()))
 
         self._cached_sensors = sensors
+        units = {"Fan": ("rpm", " RPM"), "Temperature": ("temp", "°C"),
+                 "Load": ("percent", "%"), "Clock": ("clock", "MHz"), "Power": ("power", "W")}
+        self._sensor_catalog, self._specific_sensors = [], []
+        for sensor, label in sensors:
+            kind = str(sensor.SensorType)
+            identifier = str(getattr(sensor, "Identifier", ""))
+            if kind not in units or not identifier:
+                continue
+            source = "hardware_" + hashlib.sha256(identifier.encode()).hexdigest()[:16]
+            unit_type, symbol = units[kind]
+            self._sensor_catalog.append({"id": source, "name": f"{label} [{identifier}]", "type": unit_type, "symbol": symbol})
+            self._specific_sensors.append((source, sensor))
         self._cache_initialized = True
         return sensors
 
@@ -753,6 +768,12 @@ class _LibreHardwareMonitorReader:
     def get_thermal_sensors(self):
         with self._lock:
             sensors = self._get_sensors()
+            specific = {}
+            for source, sensor in self._specific_sensors:
+                if sensor.Value is not None:
+                    value = float(sensor.Value)
+                    if math.isfinite(value) and abs(value) <= 1e12:
+                        specific[source] = value
             return {
                 "cpu_temp": self.get_cpu_temp(sensors),
                 "cpu_clock": int(self.get_cpu_clock(sensors)),
@@ -764,11 +785,18 @@ class _LibreHardwareMonitorReader:
                 "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
                 "gpu_power": self.get_gpu_power(sensors),
                 **self.get_cooling_storage_sensors(sensors),
+                **specific,
             }
+
+    def get_sensor_catalog(self):
+        with self._lock:
+            return [dict(source) for source in self._sensor_catalog]
 
     def invalidate_cache(self):
         with self._lock:
             self._cached_sensors = []
+            self._sensor_catalog = []
+            self._specific_sensors = []
             self._cache_initialized = False
             self._sensor_mapping_cache.clear()
             self._gpu_usage_sensors = None
@@ -822,6 +850,10 @@ class LibreHardwareMonitorReader:
         with self._lock:
             if hasattr(self._reader, "close"):
                 self._reader.close()
+
+    def get_sensor_catalog(self):
+        with self._lock:
+            return self._reader.get_sensor_catalog() if hasattr(self._reader, "get_sensor_catalog") else []
 
     def invalidate_cache(self):
         with self._lock:

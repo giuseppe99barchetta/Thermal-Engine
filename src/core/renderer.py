@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageChops
 from elements import get_custom_element
 from src.core.constants import get_value_with_unit, format_sensor_template, gauge_fraction
 from src.core.element import ThemeElement
+from src.core.conditions import apply_condition
 from src.core.security import is_safe_path
 
 logger = logging.getLogger(__name__)
@@ -273,7 +274,22 @@ class ThemeRenderer:
                    else Image.new("RGBA", size, color=snapshot["background_color"]))
             for cache_key, data in reversed(snapshot["elements"]):
                 element = ThemeElement.from_dict(data)
+                apply_condition(element, snapshot.get("sensor_data", {}))
+                live_value = snapshot.get("sensor_data", {}).get(element.source)
+                if element.source.startswith(("network_", "hardware_")):
+                    if element.type == "text":
+                        element.value = live_value
+                    elif live_value is None or isinstance(live_value, str):
+                        if element.type == "circle_gauge":
+                            element.x -= element.radius
+                            element.y -= element.radius
+                            element.width = element.height = element.radius * 2
+                        element.type = "text"
+                        element.source = "static"
+                        element.text = "--"
                 if element.type == "text":
+                    if element.source != "static" and element.source in snapshot.get("sensor_data", {}):
+                        element.value = snapshot["sensor_data"][element.source]
                     text = format_sensor_template(element.text, snapshot.get("sensor_data", {}))
                     if text != element.text:
                         element.text = text

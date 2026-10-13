@@ -1,5 +1,9 @@
 # Third-party notices
 
+- Python keyring 25.x is distributed under the MIT License. Its package metadata
+  and license are included in builds; see the
+  [upstream project](https://github.com/jaraco/keyring).
+
 - Eclipse Paho MQTT Python 2.x is distributed under the Eclipse Public License
   2.0 or Eclipse Distribution License 1.0. See its upstream
   [license notice](https://github.com/eclipse-paho/paho.mqtt.python/blob/v2.1.0/LICENSE.txt).

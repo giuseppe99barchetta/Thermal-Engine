@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import threading
 from unittest.mock import patch
 
 from src.core.constants import DATA_SOURCES, SOURCE_UNITS, get_value_with_unit
@@ -37,3 +38,45 @@ def test_storage_and_controller_discovery_are_enabled():
     with patch("src.core.libre_hw_monitor._load_lhm_types", return_value=(lambda: computer, None)):
         _LibreHardwareMonitorReader()
     assert computer.IsStorageEnabled and computer.IsControllerEnabled
+
+
+def test_specific_hardware_keeps_same_names_separate_and_stable():
+    from src.core.constants import register_hardware_sources, format_sensor_template
+    from src.core import sensors
+    from src.ui.properties import PropertiesPanel
+    from PySide6.QtWidgets import QApplication
+    types = SimpleNamespace(Fan="Fan", Temperature="Temperature", Load="Load", Clock="Clock", Power="Power")
+    first, _ = sensor("Fan", "Fan", 800)
+    second, _ = sensor("Fan", "Fan", 1600)
+    first.Identifier, second.Identifier = "/cooler/fan/0", "/cooler/fan/1"
+    hardware = SimpleNamespace(Name="Cooler", Sensors=[first, second], SubHardware=[], Update=lambda: None)
+    reader = _LibreHardwareMonitorReader.__new__(_LibreHardwareMonitorReader)
+    reader.computer = SimpleNamespace(Hardware=[hardware])
+    reader._lock = threading.RLock()
+    reader._cache_initialized = False
+    reader._sensor_mapping_cache = {}
+    reader._cpu_temp_sensors = None
+    reader._gpu_usage_sensors = None
+    reader._gpu_usage_fallback = None
+    with patch("src.core.libre_hw_monitor._load_lhm_types", return_value=(None, types)):
+        readings = reader.get_thermal_sensors()
+        catalog = reader.get_sensor_catalog()
+        assert len(catalog) == 2
+        assert catalog[0]["id"] != catalog[1]["id"]
+        assert [readings[s["id"]] for s in catalog] == [800, 1600]
+        second.Value = None
+        assert catalog[1]["id"] not in reader.get_thermal_sensors()
+        reader.invalidate_cache()
+        reader.get_thermal_sensors()
+        assert reader.get_sensor_catalog() == catalog
+    app = QApplication.instance() or QApplication([])
+    try:
+        with patch.object(sensors, "_hardware_catalog", catalog):
+            panel = PropertiesPanel()
+            panel.set_source_by_id(catalog[0]["id"])
+            assert panel.get_selected_source() == catalog[0]["id"]
+            assert format_sensor_template("{" + catalog[0]["id"] + "}", readings) == "800 RPM"
+            panel.deleteLater()
+    finally:
+        register_hardware_sources([])
+        app.processEvents()

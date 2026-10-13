@@ -1,16 +1,22 @@
 # Network sensors
 
-Thermal Engine can display numeric values from MQTT, HTTP, TCP and UDP on any supported display, including Trofeo. Hardware sensors keep working alongside these sources.
+Thermal Engine can display numbers, text and boolean values from MQTT, HTTP, TCP and UDP on any supported display, including Trofeo. Hardware sensors keep working alongside these sources.
 
-Open **Settings > Network Sensors...**, add a sensor and save. Select it under **External Sensors** in an element's Data Source selector. Text labels, gauges and charts use the same value. Set the element's gauge maximum to match your data, for example 9000 for engine RPM.
+Open **Settings > Network Sensors...**, add a sensor and save. Select it under **External Sensors** in an element's Data Source selector. Labels and conditional rules use the selected value; numeric gauges and charts support numbers and booleans. Set the element's gauge maximum to match your data, for example 9000 for engine RPM.
+
+Use **Test connection** to try the selected sensor's unsaved fields for up to five seconds. The test shows a received value or connection/payload status, does not save settings, and stops when the dialog closes. For UDP, the test requires a free bind port; an already-running listener on that port remains active and the test reports that the port is in use.
 
 Each sensor has a stable ID: `room_temperature` becomes the source `network_room_temperature`. Use `{network_room_temperature}` in a text label to include the formatted value. IDs must use lowercase letters, digits and underscores, starting with a letter. Changing an ID requires updating elements that refer to it.
 
 ## Payloads
 
+Choose **Value type**: **Number** retains the existing numeric behavior; **Text** accepts a string of at most 512 characters for labels and templates; **Boolean** accepts JSON `true`/`false`, `on`/`off` or `1`/`0` and displays `ON`/`OFF`. Text values do not feed numeric gauges or charts. Boolean values can drive numeric elements as 1/0. Unit suffixes apply to numbers only.
+
+For numbers, **Multiplier** and **Offset** apply `display_value = received_value * multiplier + offset` before the reading reaches elements or conditional rules. Defaults (1 and 0) preserve existing behavior. **Decimal places** controls labels and templates (Auto, or 0–6); rounding does not alter the numeric value used by gauges and rules. For example, multiplier 3.6 converts m/s to km/h.
+
 Send a UTF-8 number such as `21.5`, or JSON containing a numeric field. Set **JSON field path** to `temperature` for `{"temperature":21.5}`, `attributes.temperature` for a nested field, or `values.0` for an array item. Leave the path empty for a plain number. Numeric strings such as Home Assistant's `"21.5"` state also work. Units come from the configured suffix, not the payload: use ` C`, ` RPM`, ` km/h`, `%`, or leave it empty.
 
-Payloads are limited to 64 KiB. Invalid JSON fields, nonnumeric values, NaN, infinity and numbers outside +/- 1e12 are rejected. The last valid reading remains available until **Expire reading after** seconds have elapsed. Text templates show `--` when a source is unavailable; gauges and charts return to zero. The settings dialog shows the saved connection's latest value and status. An unsaved edit does not test or change the running connection.
+Payloads are limited to 64 KiB. Invalid fields, values that do not match the selected type, NaN, infinity and numbers outside +/- 1e12 are rejected. The last valid reading remains available until **Expire reading after** seconds have elapsed. Labels, templates, gauges and charts show `--` when a network source is unavailable. A valid zero continues to display as zero. The settings dialog shows the saved connection's latest value and status. Unsaved edits affect a connection only when tested or saved.
 
 ## MQTT / Home Assistant
 
@@ -49,6 +55,10 @@ with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
 
 ## Settings and sharing
 
-Connections and credentials are stored in the application's local `settings.json`, separate from themes. Theme exports contain source IDs, not broker passwords or API tokens. A recipient configures their own connections with matching IDs. Credentials in the local settings file are plaintext; protect that file and use trusted senders. TCP/UDP have no authentication or encryption. UDP LAN binding accepts packets from any reachable sender.
+Connection settings and opaque credential references are stored in local `settings.json`, separate from themes. Passwords and API tokens are stored with [keyring](https://keyring.readthedocs.io/en/stable/) in Windows Credential Manager, macOS Keychain or a supported Linux Secret Service/KWallet store; plaintext keyring backends are rejected. Theme exports contain source IDs, not credentials. A recipient configures their own connections with matching IDs.
 
-This version supports up to 64 numeric sensors. It does not decode binary telemetry, display arbitrary string states, or implement Home Assistant MQTT discovery. UDP uses IPv4; TCP can resolve IPv4 or IPv6 hosts.
+Existing plaintext sensor credentials are migrated on startup only after the OS store confirms they can be read back. A failed migration preserves the existing settings and logs a message; install the new requirements and unlock/configure your OS credential store, then relaunch or save the sensors. New saves with credentials fail visibly if secure storage is unavailable. Missing saved secrets must be re-entered, and a failed file save keeps the previous configuration. Moving `settings.json` to another computer does not move its secrets. OS storage protects credentials at rest, not against other processes running with access to the same user's vault.
+
+TCP/UDP have no authentication or encryption. UDP LAN binding accepts packets from any reachable sender; use trusted senders.
+
+This version supports up to 64 sensors. It does not decode binary telemetry or implement Home Assistant MQTT discovery. UDP uses IPv4; TCP can resolve IPv4 or IPv6 hosts.
