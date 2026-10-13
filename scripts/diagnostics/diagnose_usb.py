@@ -203,7 +203,7 @@ try:
     trofeo_or_fw360_hid = [d for d in hid_devices if d['vendor_id'] == 0x0416 and d['product_id'] == 0x5302]
 
     if fw360_hid:
-        print(f"  [OK] FW 360 Ultra found as HID device!")
+        print("  [OK] FW 360 Ultra found as HID device!")
         for d in fw360_hid:
             print(f"    Path: {d['path']}")
             print(f"    Manufacturer: {d.get('manufacturer_string', 'N/A')}")
@@ -217,13 +217,13 @@ try:
             mfr = d.get('manufacturer_string', '')
             prod = d.get('product_string', '')
             if 'USBDISPLAY' in mfr or 'USBDISPLAY' in prod:
-                print(f"  [OK] FW 360 found as HID device at 0416:5302!")
+                print("  [OK] FW 360 found as HID device at 0416:5302!")
                 print(f"    Path: {d['path']}")
                 print(f"    Manufacturer: {mfr or 'N/A'}")
                 print(f"    Product: {prod or 'N/A'}")
                 print("  This device is supported as FW 360 (select 'Thermalright FW 360' in Thermal-Engine).")
             else:
-                print(f"  [OK] Trofeo AIO found as HID device!")
+                print("  [OK] Trofeo AIO found as HID device!")
                 print("  This device is fully supported via HID.")
     else:
         print("  [FAIL] Trofeo AIO / FW 360 not found as HID device")

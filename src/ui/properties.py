@@ -2,12 +2,13 @@
 PropertiesPanel - Element property editing widget.
 """
 
+import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QSpinBox, QDoubleSpinBox, QColorDialog, QFileDialog, QComboBox,
     QFormLayout, QScrollArea, QFrame, QCheckBox, QPushButton,
     QStyledItemDelegate, QStyle, QSlider, QDialog, QDialogButtonBox,
-    QSizePolicy, QGroupBox
+    QSizePolicy, QGroupBox, QToolButton
 )
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QPoint
 from PySide6.QtGui import QColor, QFont, QPixmap, QFontDatabase, QPainter, QLinearGradient, QPen, QBrush, QIcon
@@ -213,8 +214,6 @@ class GradientPreviewWidget(QPushButton):
 
     def _update_style(self):
         """Update button style to show gradient."""
-        # Build CSS gradient string
-        stops_css = ", ".join([f"{color} {int(pos * 100)}%" for pos, color in sorted(self.gradient_stops)])
         self.setStyleSheet(f"""
             QPushButton {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, {self._stops_to_css()});
@@ -398,7 +397,6 @@ class GradientBarEditor(QWidget):
 
     def _find_stop_at(self, x, y):
         """Find stop index at given coordinates, or -1 if none."""
-        bar_rect = self._get_bar_rect()
         # Check if in marker area (below the bar)
         if y < 25 or y > 48:
             return -1
@@ -550,6 +548,9 @@ class GradientBarEditor(QWidget):
 
 
 from src.core.constants import DISPLAY_WIDTH, DISPLAY_HEIGHT, DATA_SOURCES_CATEGORIZED
+from src.utils.settings import get_setting, set_setting
+
+logger = logging.getLogger(__name__)
 
 
 class FontPreviewDelegate(QStyledItemDelegate):
@@ -647,10 +648,17 @@ class PropertiesPanel(QWidget):
         section_layout.setContentsMargins(10, 8, 10, 10)
         section_layout.setSpacing(6)
 
-        # Title label
-        title_label = QLabel(title)
-        title_label.setStyleSheet("""
-            QLabel {
+        # Clickable title collapses the section; the choice is remembered per title
+        collapsed = title in get_setting("collapsed_sections", [])
+        title_btn = QToolButton()
+        title_btn.setText(title)
+        title_btn.setCheckable(True)
+        title_btn.setChecked(not collapsed)
+        title_btn.setArrowType(Qt.ArrowType.RightArrow if collapsed else Qt.ArrowType.DownArrow)
+        title_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        title_btn.setAccessibleName(f"{title} section")
+        title_btn.setStyleSheet("""
+            QToolButton {
                 font-weight: bold;
                 color: #aaa;
                 font-size: 11px;
@@ -660,44 +668,42 @@ class PropertiesPanel(QWidget):
                 margin-bottom: 4px;
             }
         """)
-        section_layout.addWidget(title_label)
+        section_layout.addWidget(title_btn)
 
         # Form layout for fields
-        form_layout = QFormLayout()
+        content = QWidget()
+        form_layout = QFormLayout(content)
         form_layout.setSpacing(6)
         form_layout.setContentsMargins(0, 0, 0, 0)
         form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        section_layout.addLayout(form_layout)
+        content.setVisible(not collapsed)
+        section_layout.addWidget(content)
 
+        def on_toggled(expanded):
+            content.setVisible(expanded)
+            title_btn.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+            names = set(get_setting("collapsed_sections", []))
+            names.discard(title) if expanded else names.add(title)
+            set_setting("collapsed_sections", sorted(names))
+
+        title_btn.toggled.connect(on_toggled)
         return frame, form_layout
+
+    def set_no_selection_widget(self, widget):
+        """Show `widget` (e.g. theme settings) instead of the placeholder text when nothing is selected."""
+        layout = self.no_selection_container.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().setParent(None)
+        layout.addWidget(widget)
+        layout.addStretch()
 
     def create_label(self, text):
         """Create a label with vertical center alignment."""
         label = QLabel(text)
         label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         return label
-
-    def _set_svg_icon(self, button, svg_content):
-        """Set an SVG icon on a button using QIcon."""
-        from PySide6.QtSvg import QSvgRenderer
-        from PySide6.QtGui import QPixmap, QPainter
-        from PySide6.QtCore import QByteArray
-
-        # Replace currentColor with actual color based on palette
-        color = "#cccccc"  # Light gray for dark theme
-        svg_content = svg_content.replace("currentColor", color)
-
-        svg_bytes = QByteArray(svg_content.encode('utf-8'))
-        renderer = QSvgRenderer(svg_bytes)
-
-        pixmap = QPixmap(20, 20)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-
-        button.setIcon(QIcon(pixmap))
-        button.setIconSize(pixmap.size())
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -1672,8 +1678,9 @@ class PropertiesPanel(QWidget):
 
         # Update preview value visibility based on whether source is static
         is_static = source_id == "static"
-        self.value_label.setVisible(is_static and self.value_label.parent().isVisible())
-        self.value_spin.setVisible(is_static and self.value_spin.parent().isVisible())
+        data_section_shown = not self.section_headers['data'].isHidden()
+        self.value_label.setVisible(is_static and data_section_shown)
+        self.value_spin.setVisible(is_static and data_section_shown)
 
         if self.current_element:
             if self.current_element.locked:
@@ -2652,7 +2659,7 @@ class PropertiesPanel(QWidget):
                     self.width_spin.blockSignals(False)
                     self.height_spin.blockSignals(False)
                 except Exception as e:
-                    print(f"Error reading GIF dimensions: {e}")
+                    logger.warning(f"Error reading GIF dimensions: {e}")
 
     def browse_image(self):
         path, _ = QFileDialog.getOpenFileName(

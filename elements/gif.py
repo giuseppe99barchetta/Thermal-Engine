@@ -13,8 +13,6 @@ from PIL import Image as PILImage
 
 logger = logging.getLogger(__name__)
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap, QImage, QPen, QColor
 
 # Add parent directory to path for project imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -202,64 +200,6 @@ def get_scaled_frame(frame, element_width, element_height, scale_mode):
 def get_scaled_gif_frame(path, frame_idx, width, height, scale_mode):
     data = get_gif_data(path)
     return get_scaled_frame(data.frames[frame_idx], width, height, scale_mode)
-
-
-def draw_preview(painter, element, x, y, scale):
-    """Draw the GIF in the Qt preview canvas."""
-    width = int(element.width * scale)
-    height = int(element.height * scale)
-
-    gif_path = getattr(element, 'gif_path', '')
-    scale_mode = getattr(element, 'scale_mode', 'fit')
-
-    # Validate path is safe before loading
-    if gif_path:
-        safe, _, err = is_safe_path(gif_path, allow_absolute=True)
-        if not safe:
-            painter.fillRect(x, y, width, height, QColor(60, 40, 40))
-            painter.setPen(QPen(QColor(150, 100, 100)))
-            painter.drawRect(x, y, width, height)
-            painter.drawText(x + 5, y + height // 2, "Unsafe path")
-            return
-
-    if not gif_path or not os.path.exists(gif_path):
-        # Draw placeholder
-        painter.fillRect(x, y, width, height, QColor(40, 40, 60))
-        painter.setPen(QPen(QColor(100, 100, 120)))
-        painter.drawRect(x, y, width, height)
-        painter.drawText(x + 5, y + height // 2, "No GIF")
-        return
-
-    gif_data = get_gif_data(gif_path)
-
-    if not gif_data or not gif_data.loaded:
-        # Draw error placeholder
-        painter.fillRect(x, y, width, height, QColor(60, 40, 40))
-        painter.setPen(QPen(QColor(150, 100, 100)))
-        painter.drawRect(x, y, width, height)
-        error = gif_data.error if gif_data else "Load error"
-        painter.drawText(x + 5, y + height // 2, error[:20])
-        return
-
-    # Get current frame
-    frame_idx = get_current_frame_index(element, gif_data)
-    scaled_frame = get_scaled_gif_frame(
-        gif_path, frame_idx, element.width, element.height, scale_mode
-    )
-
-    # Scale for preview
-    if scale != 1.0:
-        preview_width = int(element.width * scale)
-        preview_height = int(element.height * scale)
-        scaled_frame = scaled_frame.resize((preview_width, preview_height), PILImage.Resampling.BILINEAR)
-
-    # Convert PIL to QPixmap
-    data = scaled_frame.tobytes("raw", "RGBA")
-    qimage = QImage(data, scaled_frame.width, scaled_frame.height,
-                    scaled_frame.width * 4, QImage.Format.Format_RGBA8888)
-    pixmap = QPixmap.fromImage(qimage)
-
-    painter.drawPixmap(x, y, pixmap)
 
 
 def render_image(draw, img, element):

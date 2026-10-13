@@ -2,17 +2,44 @@
 ElementListPanel - Element list management widget with group support.
 """
 
+import os
+import re
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QComboBox, QTreeWidget, QTreeWidgetItem,
+    QToolButton, QTreeWidget, QTreeWidgetItem, QHeaderView,
     QMenu, QInputDialog, QAbstractItemView, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QIcon
 
-from src.core.constants import ELEMENT_TYPES, DEFAULT_ELEMENT_PROPS
+from src.core import constants
+from src.core.constants import DEFAULT_ELEMENT_PROPS, SOURCE_UNITS
 from src.core.element import ThemeElement
+from src.ui.icons import icon
 from elements import get_custom_element
+
+TYPE_NAMES = {
+    "circle_gauge": "Gauge",
+    "bar_gauge": "Bar",
+    "text": "Text",
+    "rectangle": "Rectangle",
+    "clock": "Clock",
+    "analog_clock": "Analog Clock",
+    "image": "Image",
+    "line_chart": "Chart",
+    "gif": "GIF",
+}
+
+# Tree columns: label, visibility toggle, lock toggle
+COL_LABEL, COL_VISIBLE, COL_LOCK = 0, 1, 2
+
+
+def type_display_name(element_type):
+    custom = get_custom_element(element_type)
+    if element_type not in TYPE_NAMES and custom:
+        return custom.get("name", element_type)
+    return TYPE_NAMES.get(element_type, element_type.replace("_", " ").title())
 
 
 class ElementTreeWidget(QTreeWidget):
@@ -27,6 +54,13 @@ class ElementTreeWidget(QTreeWidget):
         self.setHeaderHidden(True)
         self.setIndentation(20)
         self.setExpandsOnDoubleClick(False)
+        self.setColumnCount(3)
+        header = self.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(COL_LABEL, QHeaderView.ResizeMode.Stretch)
+        for col in (COL_VISIBLE, COL_LOCK):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(col, 26)
 
     def dropEvent(self, event):
         super().dropEvent(event)
@@ -51,94 +85,63 @@ class ElementListPanel(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
 
+        header_layout = QHBoxLayout()
         title = QLabel("Elements")
         title.setStyleSheet("font-weight: bold; font-size: 14px; padding: 5px;")
-        layout.addWidget(title)
+        header_layout.addWidget(title)
+        header_layout.addStretch()
 
-        add_layout = QHBoxLayout()
-
-        self.add_combo = QComboBox()
-        self.add_combo.addItems(ELEMENT_TYPES)
-        add_layout.addWidget(self.add_combo)
-
-        self.add_btn = QPushButton("+ Add")
-        self.add_btn.clicked.connect(self.add_element)
+        self.add_btn = QToolButton()
+        self.add_btn.setText("Add")
+        self.add_btn.setIcon(icon("plus"))
+        self.add_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.add_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.add_btn.setToolTip("Add new element")
         self.add_btn.setAccessibleName("Add new element")
-        add_layout.addWidget(self.add_btn)
-
-        layout.addLayout(add_layout)
+        self.add_menu = QMenu(self)
+        self.add_menu.aboutToShow.connect(self._populate_add_menu)
+        self.add_btn.setMenu(self.add_menu)
+        header_layout.addWidget(self.add_btn)
+        layout.addLayout(header_layout)
 
         self.tree_widget = ElementTreeWidget()
         self.tree_widget.itemSelectionChanged.connect(self.on_selection_changed)
+        self.tree_widget.itemClicked.connect(self._on_item_clicked)
         self.tree_widget.items_reordered.connect(self.on_items_reordered)
         self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
         layout.addWidget(self.tree_widget)
 
-        btn_layout = QHBoxLayout()
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(2)
+        for attr, icon_name, tip, slot in (
+            ("duplicate_btn", "duplicate", "Duplicate selected elements", self.duplicate_element),
+            ("remove_btn", "trash", "Remove selected elements", self.remove_element),
+            ("group_btn", "group", "Group selected elements (Ctrl+G)", self.group_selected),
+            ("ungroup_btn", "ungroup", "Ungroup selected elements (Ctrl+Shift+G)", self.ungroup_selected),
+            ("lock_btn", "lock", "Lock / unlock selected elements", self.toggle_lock_selected),
+            ("up_btn", "up", "Move selected elements up", self.move_up),
+            ("down_btn", "down", "Move selected elements down", self.move_down),
+        ):
+            btn = QToolButton()
+            btn.setIcon(icon(icon_name))
+            btn.setAutoRaise(True)
+            btn.setToolTip(tip)
+            btn.setAccessibleName(tip)
+            btn.clicked.connect(slot)
+            setattr(self, attr, btn)
+            toolbar.addWidget(btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
 
-        self.duplicate_btn = QPushButton("Duplicate")
-        self.duplicate_btn.clicked.connect(self.duplicate_element)
-        self.duplicate_btn.setToolTip("Duplicate selected elements")
-        self.duplicate_btn.setAccessibleName("Duplicate selected elements")
-        btn_layout.addWidget(self.duplicate_btn)
-
-        self.remove_btn = QPushButton("Remove")
-        self.remove_btn.clicked.connect(self.remove_element)
-        self.remove_btn.setToolTip("Remove selected elements")
-        self.remove_btn.setAccessibleName("Remove selected elements")
-        btn_layout.addWidget(self.remove_btn)
-
-        layout.addLayout(btn_layout)
-
-        group_layout = QHBoxLayout()
-
-        self.group_btn = QPushButton("Group")
-        self.group_btn.clicked.connect(self.group_selected)
-        self.group_btn.setToolTip("Group selected elements (Ctrl+G)")
-        self.group_btn.setAccessibleName("Group selected elements (Ctrl+G)")
-        group_layout.addWidget(self.group_btn)
-
-        self.ungroup_btn = QPushButton("Ungroup")
-        self.ungroup_btn.clicked.connect(self.ungroup_selected)
-        self.ungroup_btn.setToolTip("Ungroup selected elements (Ctrl+Shift+G)")
-        self.ungroup_btn.setAccessibleName("Ungroup selected elements (Ctrl+Shift+G)")
-        group_layout.addWidget(self.ungroup_btn)
-
-        layout.addLayout(group_layout)
-
-        lock_layout = QHBoxLayout()
-
-        self.lock_btn = QPushButton("Lock")
-        self.lock_btn.clicked.connect(self.lock_selected)
-        self.lock_btn.setToolTip("Lock selected elements (prevent editing)")
-        self.lock_btn.setAccessibleName("Lock selected elements (prevent editing)")
-        lock_layout.addWidget(self.lock_btn)
-
-        self.unlock_btn = QPushButton("Unlock")
-        self.unlock_btn.clicked.connect(self.unlock_selected)
-        self.unlock_btn.setToolTip("Unlock selected elements")
-        self.unlock_btn.setAccessibleName("Unlock selected elements")
-        lock_layout.addWidget(self.unlock_btn)
-
-        layout.addLayout(lock_layout)
-
-        move_layout = QHBoxLayout()
-
-        self.up_btn = QPushButton("Move Up")
-        self.up_btn.clicked.connect(self.move_up)
-        self.up_btn.setToolTip("Move selected elements up")
-        self.up_btn.setAccessibleName("Move selected elements up")
-        move_layout.addWidget(self.up_btn)
-
-        self.down_btn = QPushButton("Move Down")
-        self.down_btn.clicked.connect(self.move_down)
-        self.down_btn.setToolTip("Move selected elements down")
-        self.down_btn.setAccessibleName("Move selected elements down")
-        move_layout.addWidget(self.down_btn)
-
-        layout.addLayout(move_layout)
+    def _populate_add_menu(self):
+        """Built on open so custom elements loaded at startup are included."""
+        self.add_menu.clear()
+        for element_type in constants.ELEMENT_TYPES:
+            action = self.add_menu.addAction(
+                self.get_element_icon(element_type), type_display_name(element_type)
+            )
+            action.triggered.connect(lambda checked=False, t=element_type: self.add_element(t))
 
     def show_context_menu(self, position):
         """Show context menu for tree items."""
@@ -267,23 +270,62 @@ class ElementListPanel(QWidget):
         return self._group_icon
 
     def get_friendly_label(self, element):
-        """Create a user-friendly label for an element."""
-        type_names = {
-            "circle_gauge": "Gauge",
-            "bar_gauge": "Bar",
-            "text": "Text",
-            "rectangle": "Rectangle",
-            "clock": "Clock",
-            "analog_clock": "Analog Clock",
-            "image": "Image",
-            "line_chart": "Chart",
-            "gif": "GIF",
-        }
+        """Label for the tree: the user's name if renamed, otherwise what the element shows."""
+        type_label = type_display_name(element.type)
+        auto_named = re.fullmatch(rf"{re.escape(element.type)}_\d+(_copy)*", element.name or "")
+        if element.name and not auto_named:
+            return element.name
 
-        type_label = type_names.get(element.type, element.type.replace("_", " ").title())
+        detail = ""
+        if element.source and element.source != "static" and element.source in SOURCE_UNITS:
+            detail = SOURCE_UNITS[element.source]["name"]
+        elif element.type in ("text", "circle_gauge", "bar_gauge"):
+            detail = element.text
+        elif element.type == "image" and element.image_path:
+            detail = os.path.basename(element.image_path)
+        elif element.type == "gif" and getattr(element, "gif_path", ""):
+            detail = os.path.basename(element.gif_path)
+        detail = " ".join(str(detail).split())
+        if len(detail) > 28:
+            detail = detail[:27] + "\u2026"
+        return f"{type_label} \u00b7 {detail}" if detail else type_label
 
-        # Use element name from properties panel
-        return f"{type_label} - {element.name}"
+    def _make_element_item(self, idx, element):
+        item = QTreeWidgetItem([self.get_friendly_label(element), "", ""])
+        item.setIcon(COL_LABEL, self.get_element_icon(element.type))
+        item.setData(0, Qt.ItemDataRole.UserRole, idx)  # Store element index
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, "element")  # Mark as element
+        self._set_toggle_icons(item, element.visible, element.locked)
+        return item
+
+    def _set_toggle_icons(self, item, visible, locked):
+        item.setIcon(COL_VISIBLE, icon("eye") if visible else icon("eye_off", "#666666"))
+        item.setToolTip(COL_VISIBLE, "Hide" if visible else "Show")
+        item.setIcon(COL_LOCK, icon("lock") if locked else icon("unlock", "#555555"))
+        item.setToolTip(COL_LOCK, "Unlock" if locked else "Lock")
+        if locked or not visible:
+            item.setForeground(COL_LABEL, QColor(128, 128, 128))
+
+    def _item_elements(self, item):
+        """Element indices an item stands for (a group row covers its members on this page)."""
+        if item.data(0, Qt.ItemDataRole.UserRole + 1) == "group":
+            name = item.data(0, Qt.ItemDataRole.UserRole)
+            return [i for i, el in enumerate(self.elements) if el.group == name and self._on_page(el)]
+        return [item.data(0, Qt.ItemDataRole.UserRole)]
+
+    def _on_item_clicked(self, item, column):
+        if column not in (COL_VISIBLE, COL_LOCK):
+            return
+        indices = self._item_elements(item)
+        if not indices:
+            return
+        attr = "visible" if column == COL_VISIBLE else "locked"
+        new_value = not all(getattr(self.elements[i], attr) for i in indices)
+        self.elements_will_change.emit()
+        for i in indices:
+            setattr(self.elements[i], attr, new_value)
+        self.refresh_list()
+        self.elements_changed.emit()
 
     def refresh_list(self, preserve_state=True):
         """Refresh the tree widget to reflect current elements and groups."""
@@ -313,6 +355,8 @@ class ElementListPanel(QWidget):
         seen_groups = set()
 
         for i, element in enumerate(self.elements):
+            if not self._on_page(element):
+                continue
             if element.group:
                 if element.group not in groups:
                     groups[element.group] = []
@@ -327,53 +371,24 @@ class ElementListPanel(QWidget):
         for item_type, item_data in visual_items:
             if item_type == 'group':
                 group_name = item_data
-                # Check if all elements in group are locked (group is locked)
                 group_elements = groups[group_name]
-                group_is_locked = all(el.locked for _, el in group_elements)
-
-                # Build group label with lock indicator if locked
-                group_label = f"🔒 {group_name}" if group_is_locked else group_name
-
-                group_item = QTreeWidgetItem([group_label])
-                group_item.setIcon(0, self.get_group_icon())
+                group_item = QTreeWidgetItem([group_name, "", ""])
+                group_item.setIcon(COL_LABEL, self.get_group_icon())
                 group_item.setData(0, Qt.ItemDataRole.UserRole, group_name)  # Store group name
                 group_item.setData(0, Qt.ItemDataRole.UserRole + 1, "group")  # Mark as group
                 group_item.setExpanded(True)
-
-                # Gray out locked groups
-                if group_is_locked:
-                    group_item.setForeground(0, QColor(128, 128, 128))
-
+                self._set_toggle_icons(
+                    group_item,
+                    any(el.visible for _, el in group_elements),
+                    all(el.locked for _, el in group_elements),
+                )
                 self.tree_widget.addTopLevelItem(group_item)
-
-                # Add elements in this group
                 for idx, element in group_elements:
-                    icon = self.get_element_icon(element.type)
-                    label = self.get_friendly_label(element)
-                    if element.locked:
-                        label = f"🔒 {label}"
-                    child_item = QTreeWidgetItem([label])
-                    child_item.setIcon(0, icon)
-                    child_item.setData(0, Qt.ItemDataRole.UserRole, idx)  # Store element index
-                    child_item.setData(0, Qt.ItemDataRole.UserRole + 1, "element")  # Mark as element
-                    if element.locked:
-                        child_item.setForeground(0, QColor(128, 128, 128))  # Gray out locked
-                    group_item.addChild(child_item)
+                    group_item.addChild(self._make_element_item(idx, element))
 
             else:  # item_type == 'element' (ungrouped)
                 idx = item_data
-                element = self.elements[idx]
-                icon = self.get_element_icon(element.type)
-                label = self.get_friendly_label(element)
-                if element.locked:
-                    label = f"🔒 {label}"
-                item = QTreeWidgetItem([label])
-                item.setIcon(0, icon)
-                item.setData(0, Qt.ItemDataRole.UserRole, idx)  # Store element index
-                item.setData(0, Qt.ItemDataRole.UserRole + 1, "element")  # Mark as element
-                if element.locked:
-                    item.setForeground(0, QColor(128, 128, 128))  # Gray out locked
-                self.tree_widget.addTopLevelItem(item)
+                self.tree_widget.addTopLevelItem(self._make_element_item(idx, self.elements[idx]))
 
         # Restore expanded state and selection
         if preserve_state:
@@ -455,7 +470,9 @@ class ElementListPanel(QWidget):
         for i in range(count):
             process_item(self.tree_widget.topLevelItem(i))
 
-        self.elements[:] = new_elements
+        # The tree only shows the current page; keep the other pages' elements.
+        shown = {id(el) for el in new_elements}
+        self.elements[:] = new_elements + [el for el in self.elements if id(el) not in shown]
         self.refresh_list()
 
         # Restore selection based on element identity
@@ -465,9 +482,8 @@ class ElementListPanel(QWidget):
 
         self.elements_changed.emit()
 
-    def add_element(self):
+    def add_element(self, element_type):
         self.elements_will_change.emit()
-        element_type = self.add_combo.currentText()
 
         custom = get_custom_element(element_type)
         if custom:
@@ -607,6 +623,14 @@ class ElementListPanel(QWidget):
         self.select_elements(indices)
         self.elements_changed.emit()
 
+    def toggle_lock_selected(self):
+        """Lock the selection, or unlock it when everything selected is already locked."""
+        indices = self.get_selected_element_indices()
+        if indices and all(self.elements[i].locked for i in indices):
+            self.unlock_selected()
+        else:
+            self.lock_selected()
+
     def is_selection_locked(self):
         """Check if any selected element is locked."""
         indices = self.get_selected_element_indices()
@@ -660,6 +684,8 @@ class ElementListPanel(QWidget):
         seen_groups = set()
 
         for i, element in enumerate(self.elements):
+            if not self._on_page(element):
+                continue
             if element.group:
                 if element.group not in seen_groups:
                     visual_items.append(('group', element.group))
@@ -668,6 +694,9 @@ class ElementListPanel(QWidget):
                 visual_items.append(('element', i))
 
         return visual_items
+
+    def _on_page(self, element):
+        return getattr(element, 'page', 1) == self.current_page
 
     def get_selected_top_level_item(self):
         """Get the selected top-level item (group name or 'element' for ungrouped)."""

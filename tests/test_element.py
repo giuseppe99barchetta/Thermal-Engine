@@ -1,4 +1,3 @@
-import pytest
 from src.core.element import ThemeElement
 
 def test_theme_element_initialization_defaults():
@@ -243,10 +242,19 @@ def test_theme_element_to_dict_content():
         "label_font_italic", "label_text_color", "gif_path", "scale_mode",
         "time_format", "show_am_pm", "show_seconds", "show_leading_zero",
         "show_seconds_hand", "show_clock_border", "clock_face_style",
-        "smooth_animation", "group", "locked", "temp_hide_unit", "page"
+        "smooth_animation", "group", "locked", "visible", "temp_hide_unit", "page"
     ]
 
     for key in expected_keys:
         assert key in data
 
     assert len(data) == len(expected_keys)
+
+
+def test_to_dict_skips_runtime_caches():
+    """Underscore attributes (canvas caches) must never reach saved themes."""
+    elem = ThemeElement("image")
+    elem._cached_pixmap = object()
+    data = elem.to_dict()
+    assert "_cached_pixmap" not in data
+    assert ThemeElement.from_dict(data).to_dict() == data

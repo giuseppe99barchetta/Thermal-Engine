@@ -2,74 +2,11 @@
 CanvasPreview - Visual preview and editing widget.
 """
 
-import os
-import time
-
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap, QImage
+from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QImage
 
 from src.core import constants
-from src.core.constants import SOURCE_UNITS, get_value_with_unit
-from elements import get_custom_element
-from src.ui.video_background import video_background
-
-
-def apply_opacity(color, opacity):
-    """Apply opacity (0-100) to a QColor and return the modified color."""
-    if isinstance(color, str):
-        color = QColor(color)
-    else:
-        color = QColor(color)  # Make a copy
-    alpha = int(255 * opacity / 100)
-    color.setAlpha(alpha)
-    return color
-
-
-def get_text_color(element):
-    """Get the effective text color for an element (value text), with opacity applied."""
-    color = getattr(element, 'text_color', element.color)
-    opacity = getattr(element, 'text_color_opacity', 100)
-    return apply_opacity(color, opacity)
-
-
-def get_label_text_color(element):
-    """Get the label text color for an element (circle gauge labels), with opacity applied."""
-    color = getattr(element, 'label_text_color', element.color)
-    opacity = getattr(element, 'text_color_opacity', 100)
-    return apply_opacity(color, opacity)
-
-
-def interpolate_gradient_color(gradient_stops, position):
-    """Interpolate color from gradient stops at a given position (0-1)."""
-    if not gradient_stops:
-        return QColor("#00ff96")
-
-    sorted_stops = sorted(gradient_stops)
-
-    # Clamp position
-    position = max(0.0, min(1.0, position))
-
-    # Find surrounding stops
-    if position <= sorted_stops[0][0]:
-        return QColor(sorted_stops[0][1])
-    if position >= sorted_stops[-1][0]:
-        return QColor(sorted_stops[-1][1])
-
-    for i in range(len(sorted_stops) - 1):
-        p1, c1 = sorted_stops[i]
-        p2, c2 = sorted_stops[i + 1]
-        if p1 <= position <= p2:
-            # Interpolate between these two stops
-            t = (position - p1) / (p2 - p1) if p2 != p1 else 0
-            color1 = QColor(c1)
-            color2 = QColor(c2)
-            r = int(color1.red() + t * (color2.red() - color1.red()))
-            g = int(color1.green() + t * (color2.green() - color1.green()))
-            b = int(color1.blue() + t * (color2.blue() - color1.blue()))
-            return QColor(r, g, b)
-
-    return QColor(sorted_stops[-1][1])
 
 
 class CanvasPreview(QWidget):
@@ -78,6 +15,11 @@ class CanvasPreview(QWidget):
     element_moved = Signal(int, int, int)
     element_resized = Signal(int)  # Emitted when element is resized
     drag_started = Signal()  # Emitted when drag/resize starts (for undo)
+    zoom_changed = Signal()
+
+    FIT_PADDING = 24  # px around the display frame in fit mode
+    GUIDE_SNAP_PX = 6  # Smart-guide snap distance, in widget pixels
+    MIN_ZOOM, MAX_ZOOM = 0.1, 8.0
 
     # Resize handle positions
     HANDLE_NONE = 0
@@ -88,7 +30,8 @@ class CanvasPreview(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.elements = []
+        self.elements = []  # Full theme list; indices are global everywhere
+        self.page = None  # Only elements on this page are drawn/hit-tested (None = all)
         self.selected_indices = []  # Support multiple selection
         self.dragging = False
         self.resizing = False
@@ -99,23 +42,24 @@ class CanvasPreview(QWidget):
         self.resize_start_pos_element = (0, 0)
         self.resize_start_size = (0, 0)
         self.resize_start_bounds = None  # For multi-element resize
-        self.scale = constants.PREVIEW_SCALE
+        self.zoom = None  # None = fit to widget; otherwise display px -> widget px factor
+        self.pan = QPointF(0, 0)  # Offset of the frame from centered, in widget px
+        self._pan_anchor = None  # Mouse position while middle-button panning
+        self.guides = []  # Active smart guides while dragging: ("v", x) / ("h", y) in display px
+        self.scale = 1.0
         self.background_color = QColor(15, 15, 25)
         self.handle_size = 10
         self.group_selection_mode = False  # True when a complete group is selected
-        self._glass_background = None  # Cached background for glass effect
-        self._glass_cache_valid = False  # Track if glass cache needs rebuild
-        self._has_glass_cache = None  # Cache result of _has_glass_elements()
-        self._animated_values = {}  # Track display values for animated gauges {element_name: current_display_value}
+        # Callable returning the display frame (PIL RGB image at display size).
+        # The editor shows exactly what the device receives; None draws only the background.
+        self.frame_renderer = None
 
         # Grid settings
         self.show_grid = True
         self.snap_to_grid = True
         self.grid_spacing = 20  # Grid spacing in actual pixels (not scaled)
 
-        # Canvas dimensions (actual display size scaled)
-        self.canvas_width = int(constants.DISPLAY_WIDTH * self.scale)
-        self.canvas_height = int(constants.DISPLAY_HEIGHT * self.scale)
+        self._update_scale()
 
         # Allow widget to expand to fill available space
         # Margins will be calculated dynamically in paintEvent
@@ -127,59 +71,17 @@ class CanvasPreview(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Enable keyboard input
 
-    def set_elements(self, elements):
+    def set_elements(self, elements, page=None):
         self.elements = elements
-        self._glass_cache_valid = False  # Invalidate glass cache when elements change
-        self._has_glass_cache = None  # Clear has_glass cache
+        self.page = page
         self.update()
 
-    def get_animated_value(self, element):
-        """Get the display value for a gauge, handling animation if enabled.
-
-        Stores the animated value on the element itself so display renderer can use it too.
-        """
-        target_value = float(element.value)
-
-        if not getattr(element, 'animate_gauge', False):
-            # Clear any stored animated value when animation is disabled
-            if hasattr(element, '_animated_display_value'):
-                delattr(element, '_animated_display_value')
-            return target_value
-
-        # Get current animated value from element (shared with display renderer)
-        current = getattr(element, '_animated_display_value', None)
-
-        if current is None:
-            # Initialize with current value
-            element._animated_display_value = target_value
-            return target_value
-
-        diff = target_value - current
-
-        # Pixel-perfect threshold - stop when difference is negligible
-        if abs(diff) < 0.001:
-            element._animated_display_value = target_value
-            return target_value
-
-        # Ultra-smooth animation using ease-out cubic
-        # This creates natural deceleration as it approaches target
-        speed = getattr(element, 'animation_speed', 0.05)
-
-        # Ease-out: faster at start, slower near end (feels more natural)
-        # The further from target, the bigger the step
-        t = min(1.0, abs(diff) / 50.0)  # Normalize distance (50% gauge = full speed)
-        eased_speed = speed * (1.0 + t * 2.0)  # Speed up for large changes
-
-        step = diff * eased_speed
-
-        # Minimum step for pixel-by-pixel movement (prevents stalling)
-        min_step = 0.05
-        if abs(step) < min_step and abs(diff) >= 0.001:
-            step = min_step if diff > 0 else -min_step
-
-        new_value = current + step
-        element._animated_display_value = new_value
-        return new_value
+    def visible_indices(self):
+        """Global indices of shown (on this page, not hidden) elements, front (0) to back."""
+        return [
+            i for i, el in enumerate(self.elements)
+            if el.visible and (self.page is None or getattr(el, 'page', 1) == self.page)
+        ]
 
     def set_selected(self, index):
         """Set single selection (backwards compatible)."""
@@ -226,11 +128,58 @@ class CanvasPreview(QWidget):
         """Toggle snap to grid."""
         self.snap_to_grid = snap
 
+    def _update_scale(self):
+        """Recompute scale and frame size from the zoom mode and widget size."""
+        if self.zoom is None:
+            avail_w = max(1, self.width() - 2 * self.FIT_PADDING)
+            avail_h = max(1, self.height() - 2 * self.FIT_PADDING)
+            self.scale = min(avail_w / constants.DISPLAY_WIDTH, avail_h / constants.DISPLAY_HEIGHT)
+            self.pan = QPointF(0, 0)
+        else:
+            self.scale = self.zoom
+        self.canvas_width = int(constants.DISPLAY_WIDTH * self.scale)
+        self.canvas_height = int(constants.DISPLAY_HEIGHT * self.scale)
+
+    def set_zoom(self, zoom, anchor=None):
+        """Set zoom (None = fit). Keeps the display point under `anchor` (widget pos) still."""
+        if zoom is not None:
+            zoom = max(self.MIN_ZOOM, min(self.MAX_ZOOM, zoom))
+        before = self.widget_to_canvas_pos(anchor) / self.scale if anchor is not None else None
+        self.zoom = zoom
+        self._update_scale()
+        if before is not None and zoom is not None:
+            after = self.widget_to_canvas_pos(anchor) / self.scale
+            self.pan += (after - before) * self.scale
+        self.zoom_changed.emit()
+        self.update()
+
+    def zoom_by(self, factor, anchor=None):
+        self.set_zoom(self.scale * factor, anchor)
+
+    def resizeEvent(self, event):
+        self._update_scale()
+        super().resizeEvent(event)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta()
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if delta.y():
+                self.zoom_by(1.15 if delta.y() > 0 else 1 / 1.15, event.position())
+        elif self.zoom is not None:
+            # Scroll the zoomed view; Shift scrolls horizontally on mice without a tilt wheel
+            dx, dy = delta.x(), delta.y()
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                dx, dy = dy, 0
+            self.pan += QPointF(dx, dy) / 2
+            self.update()
+        else:
+            super().wheelEvent(event)
+
     def get_canvas_margins(self):
-        """Calculate margins dynamically to center canvas in widget."""
-        margin_x = (self.width() - self.canvas_width) // 2
-        margin_y = (self.height() - self.canvas_height) // 2
-        return max(0, margin_x), max(0, margin_y)
+        """Top-left of the display frame in widget coordinates (centered, plus pan)."""
+        margin_x = (self.width() - self.canvas_width) // 2 + int(self.pan.x())
+        margin_y = (self.height() - self.canvas_height) // 2 + int(self.pan.y())
+        return margin_x, margin_y
 
     def draw_grid(self, painter):
         """Draw grid lines on canvas."""
@@ -260,895 +209,63 @@ class CanvasPreview(QWidget):
             widget_pos.y() - margin_y
         )
 
-    def _has_glass_elements(self):
-        """Check if any element has glass effect enabled (cached)."""
-        if self._has_glass_cache is None:
-            self._has_glass_cache = any(
-                el.type == "rectangle" and getattr(el, 'glass_effect', False)
-                for el in self.elements
-            )
-        return self._has_glass_cache
-
-    def _render_background_for_glass(self):
-        """Render everything except glass effects to a buffer for blur source."""
-        buffer = QPixmap(self.size())
-        buffer.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(buffer)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        # Draw video background if enabled, otherwise solid color
-        if video_background.enabled:
-            pixmap = video_background.get_frame_qpixmap(self.scale)
-            if pixmap:
-                painter.drawPixmap(0, 0, pixmap)
-            else:
-                painter.fillRect(self.rect(), self.background_color)
-        else:
-            painter.fillRect(self.rect(), self.background_color)
-
-        # Draw elements without glass effect and without selection boxes
-        for i in range(len(self.elements) - 1, -1, -1):
-            element = self.elements[i]
-            # Skip glass rectangles - they'll use this buffer
-            if element.type == "rectangle" and getattr(element, 'glass_effect', False):
-                continue
-            self.draw_element(painter, element, False)
-
-        painter.end()
-        return buffer
-
     def paintEvent(self, event):
-        # If we have glass elements, pre-render the background for blur
-        # Only rebuild if cache is invalid or video is playing (video changes every frame)
-        if self._has_glass_elements():
-            needs_rebuild = not self._glass_cache_valid or video_background.enabled
-            if needs_rebuild or self._glass_background is None:
-                self._glass_background = self._render_background_for_glass()
-                self._glass_cache_valid = True
-        else:
-            self._glass_background = None
-
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        # Draw dark background for the entire widget (margin area)
+        # Dark background for the margin area, then center the canvas
         painter.fillRect(self.rect(), QColor(25, 25, 35))
-
-        # Calculate dynamic margins to center canvas
         margin_x, margin_y = self.get_canvas_margins()
-
-        # Translate painter to draw canvas in center with margin
         painter.translate(margin_x, margin_y)
 
-        # Draw canvas area background
         canvas_rect = QRectF(0, 0, self.canvas_width, self.canvas_height)
-        if video_background.enabled:
-            pixmap = video_background.get_frame_qpixmap(self.scale)
-            if pixmap:
-                painter.drawPixmap(0, 0, pixmap)
-            else:
-                painter.fillRect(canvas_rect, self.background_color)
+        frame = self.frame_renderer() if self.frame_renderer else None
+        if frame is not None:
+            frame = frame.convert("RGB")
+            data = frame.tobytes("raw", "RGB")  # must outlive the QImage below
+            image = QImage(data, frame.width, frame.height, frame.width * 3, QImage.Format.Format_RGB888)
+            painter.drawImage(canvas_rect, image)
         else:
             painter.fillRect(canvas_rect, self.background_color)
 
-        # Draw canvas border
         painter.setPen(QPen(QColor(100, 100, 120), 3))
         painter.drawRect(canvas_rect)
 
-        # Draw grid if enabled
         if self.show_grid:
             self.draw_grid(painter)
 
-        # Draw elements in reverse: last in list drawn first (back), first in list drawn last (front)
-        # Tree shows first element at top, so top of tree = front of display
-        for i in range(len(self.elements) - 1, -1, -1):
-            # In group selection mode, don't draw individual selection boxes
-            # (we'll draw only the combined box instead)
-            is_selected = i in self.selected_indices
-            draw_individual_selection = is_selected and not self.group_selection_mode
-            self.draw_element(painter, self.elements[i], draw_individual_selection)
+        # Editor-only overlays: placeholders for empty media, then selection
+        for i in self.visible_indices():
+            element = self.elements[i]
+            if self._is_empty_media(element):
+                self.draw_placeholder(painter, element)
+            if i in self.selected_indices and not self.group_selection_mode:
+                self.draw_selection_box(painter, element, 0, 0)
 
-        # Draw combined selection box if multiple elements selected (always for groups,
-        # or for multi-select of individual elements)
         if len(self.selected_indices) > 1:
             self.draw_multi_selection_box(painter)
 
+        self.draw_guides(painter)
         painter.end()
 
-    def draw_element(self, painter, element, selected):
-        x = int(element.x * self.scale)
-        y = int(element.y * self.scale)
-
-        # Only apply clipping for text/clock elements that have clip enabled
-        needs_clip = element.clip and element.type in ["text", "clock"]
-        if needs_clip:
-            clip_rect = QRectF(x, y, element.width * self.scale, element.height * self.scale)
-            painter.setClipRect(clip_rect)
-
-        if element.type == "circle_gauge":
-            self.draw_circle_gauge(painter, element, x, y, selected)
-        elif element.type == "bar_gauge":
-            self.draw_bar_gauge(painter, element, x, y, selected)
-        elif element.type == "text":
-            self.draw_text(painter, element, x, y, selected)
-        elif element.type == "rectangle":
-            self.draw_rectangle(painter, element, x, y, selected)
-        elif element.type == "clock":
-            self.draw_clock(painter, element, x, y, selected)
-        elif element.type == "analog_clock":
-            self.draw_analog_clock(painter, element, x, y, selected)
-        elif element.type == "image":
-            self.draw_image(painter, element, x, y, selected)
-        else:
-            # Try custom element
-            custom = get_custom_element(element.type)
-            if custom and custom.get('draw_preview'):
-                try:
-                    custom['draw_preview'](painter, element, x, y, self.scale)
-                except Exception as e:
-                    print(f"Custom element draw error: {e}")
-
-        if needs_clip:
-            painter.setClipping(False)
-
-        if selected:
-            self.draw_selection_box(painter, element, x, y)
-
-    def draw_circle_gauge(self, painter, element, x, y, selected):
-        radius = int(element.radius * self.scale)
-        bg_color = apply_opacity(element.background_color, getattr(element, 'background_color_opacity', 100))
-
-        # Get animated display value
-        display_value = self.get_animated_value(element)
-
-        # Determine color (with auto color change support)
-        use_gradient = getattr(element, 'gradient_fill', False)
-        if not use_gradient:
-            auto_color = getattr(element, 'auto_color_change', False)
-            if auto_color:
-                if "temp" in element.source:
-                    if display_value < 60:
-                        color_hex = element.color
-                    elif display_value < 80:
-                        color_hex = "#ffcc00"
-                    else:
-                        color_hex = "#ff3232"
-                else:
-                    if display_value < 70:
-                        color_hex = element.color
-                    elif display_value < 90:
-                        color_hex = "#ffcc00"
-                    else:
-                        color_hex = "#ff3232"
-            else:
-                color_hex = element.color
-            color = apply_opacity(color_hex, getattr(element, 'color_opacity', 100))
-        else:
-            color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
-
-        # Check for rounded ends (pill shape)
-        rounded_ends = getattr(element, 'gauge_rounded_ends', False)
-        pen_width = int(15 * self.scale)
-
-        # Draw background arc
-        bg_pen = QPen(bg_color, pen_width)
-        if rounded_ends:
-            bg_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(bg_pen)
-        painter.drawArc(
-            x - radius, y - radius, radius * 2, radius * 2,
-            225 * 16, -270 * 16
-        )
-
-        sweep = int(-270 * (display_value / 100) * 16)
-
-        if use_gradient and display_value > 0:
-            # Draw gradient arc using multiple small segments
-            from PySide6.QtGui import QColor as QC
-            gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
-            # Draw in small increments for smooth gradient
-            num_segments = max(1, int(display_value * 2.7))  # ~2.7 segments per percent (270 degrees / 100)
-            for i in range(num_segments):
-                t = i / (270.0)  # Position along full arc range (0 to 1 for full 270 degrees)
-                segment_color = interpolate_gradient_color(gradient_stops, t)
-                segment_pen = QPen(QC(segment_color), pen_width)
-                if rounded_ends:
-                    segment_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-                painter.setPen(segment_pen)
-                segment_start = 225 * 16 - int(i * 16)
-                segment_sweep = -16  # 1 degree at a time
-                painter.drawArc(
-                    x - radius, y - radius, radius * 2, radius * 2,
-                    segment_start, segment_sweep
-                )
-        else:
-            fill_color = color
-            fill_pen = QPen(fill_color, pen_width)
-            if rounded_ends:
-                fill_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(fill_pen)
-            painter.drawArc(
-                x - radius, y - radius, radius * 2, radius * 2,
-                225 * 16, sweep
-            )
-
-        # Draw value text
-        painter.setPen(QPen(get_text_color(element)))
-        font = QFont(element.font_family)
-        font.setPixelSize(int(element.font_size * self.scale))
-        font.setBold(element.font_bold)
-        font.setItalic(element.font_italic)
-        painter.setFont(font)
-
-        text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
-        text_rect = QRectF(x - radius, y - radius / 2, radius * 2, radius)
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
-
-        # Draw label with separate label font settings and color
-        label_font = QFont(getattr(element, 'label_font_family', element.font_family))
-        label_font.setPixelSize(int(getattr(element, 'label_font_size', 16) * self.scale))
-        label_font.setBold(getattr(element, 'label_font_bold', False))
-        label_font.setItalic(getattr(element, 'label_font_italic', False))
-        painter.setFont(label_font)
-        painter.setPen(QPen(get_label_text_color(element)))
-        label_rect = QRectF(x - radius, y + radius / 4, radius * 2, radius / 2)
-        painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, element.text)
-
-    def draw_bar_gauge(self, painter, element, x, y, selected):
-        from PySide6.QtGui import QPainterPath, QLinearGradient
-
-        width = int(element.width * self.scale)
-        height = int(element.height * self.scale)
-        bg_color = apply_opacity(element.background_color, getattr(element, 'background_color_opacity', 100))
-
-        # Get animated display value
-        display_value = self.get_animated_value(element)
-
-        rounded = getattr(element, 'rounded_corners', False)
-        use_gradient = getattr(element, 'gradient_fill', False)
-        corner_radius = height // 2 if rounded else 0
-
-        # Determine color (with auto color change support)
-        if not use_gradient:
-            auto_color = getattr(element, 'auto_color_change', False)
-            if auto_color:
-                if display_value < 70:
-                    color_hex = element.color
-                elif display_value < 90:
-                    color_hex = "#ffcc00"
-                else:
-                    color_hex = "#ff3232"
-            else:
-                color_hex = element.color
-            color = apply_opacity(color_hex, getattr(element, 'color_opacity', 100))
-        else:
-            color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
-
-        # Draw background
-        if rounded:
-            bg_path = QPainterPath()
-            bg_path.addRoundedRect(x, y, width, height, corner_radius, corner_radius)
-            painter.fillPath(bg_path, bg_color)
-        else:
-            painter.fillRect(x, y, width, height, bg_color)
-
-        # Draw fill
-        fill_width = int(width * display_value / 100)
-        if fill_width > 0:
-            if use_gradient:
-                # Use horizontal gradient with custom stops
-                gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
-                grad = QLinearGradient(x, y, x + width, y)
-                for pos, stop_color in gradient_stops:
-                    grad.setColorAt(pos, QColor(stop_color))
-                fill_brush = QBrush(grad)
-            else:
-                fill_brush = QBrush(color)
-
-            if rounded:
-                fill_path = QPainterPath()
-                fill_path.addRoundedRect(x, y, fill_width, height, corner_radius, corner_radius)
-                painter.fillPath(fill_path, fill_brush)
-            else:
-                painter.fillRect(x, y, fill_width, height, fill_brush)
-
-        # Draw border if enabled
-        bar_border = getattr(element, 'bar_border', False)
-        if bar_border:
-            border_width = int(getattr(element, 'bar_border_width', 2) * self.scale)
-            border_color = getattr(element, 'bar_border_color', '#ffffff')
-            border_opacity = getattr(element, 'bar_border_opacity', 100)
-            border_position = getattr(element, 'bar_border_position', 'center')
-            border_qcolor = apply_opacity(border_color, border_opacity)
-
-            border_pen = QPen(border_qcolor, border_width)
-            painter.setPen(border_pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-
-            half_border = border_width / 2
-
-            # Calculate offset based on border position
-            if border_position == "inside":
-                offset = half_border
-                size_adjust = -border_width
-                radius_adjust = -half_border
-            elif border_position == "center":
-                offset = 0
-                size_adjust = 0
-                radius_adjust = 0
-            else:  # outside
-                offset = -half_border
-                size_adjust = border_width
-                radius_adjust = half_border
-
-            if rounded:
-                border_path = QPainterPath()
-                border_path.addRoundedRect(
-                    x + offset, y + offset,
-                    width + size_adjust, height + size_adjust,
-                    max(0, corner_radius + radius_adjust), max(0, corner_radius + radius_adjust)
-                )
-                painter.drawPath(border_path)
-            else:
-                painter.drawRect(
-                    int(x + offset), int(y + offset),
-                    int(width + size_adjust), int(height + size_adjust)
-                )
-
-        # Draw text based on bar_text_mode and bar_text_position
-        bar_text_mode = getattr(element, 'bar_text_mode', 'full')
-        bar_text_position = getattr(element, 'bar_text_position', 'inside')
-
-        if bar_text_mode != 'none':
-            # Value text font
-            value_font = QFont(element.font_family)
-            value_font.setPixelSize(int(element.font_size * self.scale))
-            value_font.setBold(element.font_bold)
-            value_font.setItalic(element.font_italic)
-
-            # Label text font (separate styling)
-            label_font = QFont(getattr(element, 'label_font_family', element.font_family))
-            label_font.setPixelSize(int(getattr(element, 'label_font_size', element.font_size) * self.scale))
-            label_font.setBold(getattr(element, 'label_font_bold', element.font_bold))
-            label_font.setItalic(getattr(element, 'label_font_italic', element.font_italic))
-
-            value_text = get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))
-
-            if bar_text_position == 'inside':
-                if bar_text_mode == 'full':
-                    # Draw label and value separately with their own fonts
-                    painter.setFont(label_font)
-                    label_metrics = painter.fontMetrics()
-                    label_text = f"{element.text} "
-                    label_width = label_metrics.horizontalAdvance(label_text)
-
-                    painter.setFont(value_font)
-                    value_metrics = painter.fontMetrics()
-                    value_width = value_metrics.horizontalAdvance(value_text)
-
-                    total_width = label_width + value_width
-                    start_x = x + (width - total_width) / 2
-
-                    # Draw label
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    label_rect = QRectF(start_x, y, label_width, height)
-                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
-
-                    # Draw value
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    value_rect = QRectF(start_x + label_width, y, value_width, height)
-                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'value_only':
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    text_rect = QRectF(x, y, width, height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, value_text)
-                elif bar_text_mode == 'label_only':
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    text_rect = QRectF(x, y, width, height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, element.text)
-
-            elif bar_text_position == 'left':
-                if bar_text_mode == 'full':
-                    # Draw label and value separately, centered with bar
-                    painter.setFont(label_font)
-                    label_metrics = painter.fontMetrics()
-                    label_text = f"{element.text} "
-                    label_width = label_metrics.horizontalAdvance(label_text)
-
-                    painter.setFont(value_font)
-                    value_metrics = painter.fontMetrics()
-                    value_width = value_metrics.horizontalAdvance(value_text)
-
-                    total_width = label_width + value_width
-                    start_x = x - total_width - 10 * self.scale
-
-                    # Draw label centered with bar's vertical center
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    label_rect = QRectF(start_x, y, label_width, height)
-                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
-
-                    # Draw value centered with bar's vertical center
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    value_rect = QRectF(start_x + label_width, y, value_width, height)
-                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'value_only':
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(value_text)
-                    text_x = x - text_width - 10 * self.scale
-                    text_rect = QRectF(text_x, y, text_width, height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'label_only':
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(element.text)
-                    text_x = x - text_width - 10 * self.scale
-                    text_rect = QRectF(text_x, y, text_width, height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
-
-            elif bar_text_position == 'right':
-                if bar_text_mode == 'full':
-                    # Draw label and value separately, centered with bar
-                    painter.setFont(label_font)
-                    label_metrics = painter.fontMetrics()
-                    label_text = f"{element.text} "
-                    label_width = label_metrics.horizontalAdvance(label_text)
-
-                    painter.setFont(value_font)
-                    value_metrics = painter.fontMetrics()
-                    value_width = value_metrics.horizontalAdvance(value_text)
-
-                    start_x = x + width + 10 * self.scale
-
-                    # Draw label centered with bar's vertical center
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    label_rect = QRectF(start_x, y, label_width, height)
-                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
-
-                    # Draw value centered with bar's vertical center
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    value_rect = QRectF(start_x + label_width, y, value_width, height)
-                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'value_only':
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(value_text)
-                    text_x = x + width + 10 * self.scale
-                    text_rect = QRectF(text_x, y, text_width, height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'label_only':
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(element.text)
-                    text_x = x + width + 10 * self.scale
-                    text_rect = QRectF(text_x, y, text_width, height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
-
-            elif bar_text_position == 'top':
-                # Label and value inline above bar with 16px padding
-                if bar_text_mode == 'full':
-                    # Draw label and value inline above bar with vertical center alignment
-                    painter.setFont(label_font)
-                    label_metrics = painter.fontMetrics()
-                    label_text = f"{element.text} "
-                    label_width = label_metrics.horizontalAdvance(label_text)
-                    label_height = label_metrics.height()
-
-                    painter.setFont(value_font)
-                    value_metrics = painter.fontMetrics()
-                    value_width = value_metrics.horizontalAdvance(value_text)
-                    value_height = value_metrics.height()
-
-                    total_width = label_width + value_width
-                    max_height = max(label_height, value_height)
-                    start_x = x + (width - total_width) / 2
-                    center_y = y - 16 * self.scale - max_height / 2
-
-                    # Draw label centered vertically
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    label_rect = QRectF(start_x, center_y - label_height / 2, label_width, label_height)
-                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
-
-                    # Draw value centered vertically
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    value_rect = QRectF(start_x + label_width, center_y - value_height / 2, value_width, value_height)
-                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'value_only':
-                    # Value only above bar
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(value_text)
-                    text_height = metrics.height()
-                    text_x = x + (width - text_width) / 2
-                    text_y = y - 16 * self.scale - text_height
-                    text_rect = QRectF(text_x, text_y, text_width, text_height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'label_only':
-                    # Label only above bar
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(element.text)
-                    text_height = metrics.height()
-                    text_x = x + (width - text_width) / 2
-                    text_y = y - 16 * self.scale - text_height
-                    text_rect = QRectF(text_x, text_y, text_width, text_height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
-
-            elif bar_text_position == 'bottom':
-                # Label and value inline below bar with 16px padding
-                if bar_text_mode == 'full':
-                    # Draw label and value inline below bar with vertical center alignment
-                    painter.setFont(label_font)
-                    label_metrics = painter.fontMetrics()
-                    label_text = f"{element.text} "
-                    label_width = label_metrics.horizontalAdvance(label_text)
-                    label_height = label_metrics.height()
-
-                    painter.setFont(value_font)
-                    value_metrics = painter.fontMetrics()
-                    value_width = value_metrics.horizontalAdvance(value_text)
-                    value_height = value_metrics.height()
-
-                    total_width = label_width + value_width
-                    max_height = max(label_height, value_height)
-                    start_x = x + (width - total_width) / 2
-                    center_y = y + height + 16 * self.scale + max_height / 2
-
-                    # Draw label centered vertically
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    label_rect = QRectF(start_x, center_y - label_height / 2, label_width, label_height)
-                    painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter, label_text)
-
-                    # Draw value centered vertically
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    value_rect = QRectF(start_x + label_width, center_y - value_height / 2, value_width, value_height)
-                    painter.drawText(value_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'value_only':
-                    # Value only below bar
-                    painter.setPen(QPen(get_text_color(element)))
-                    painter.setFont(value_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(value_text)
-                    text_height = metrics.height()
-                    text_x = x + (width - text_width) / 2
-                    text_y = y + height + 16 * self.scale
-                    text_rect = QRectF(text_x, text_y, text_width, text_height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, value_text)
-                elif bar_text_mode == 'label_only':
-                    # Label only below bar
-                    painter.setPen(QPen(get_label_text_color(element)))
-                    painter.setFont(label_font)
-                    metrics = painter.fontMetrics()
-                    text_width = metrics.horizontalAdvance(element.text)
-                    text_height = metrics.height()
-                    text_x = x + (width - text_width) / 2
-                    text_y = y + height + 16 * self.scale
-                    text_rect = QRectF(text_x, text_y, text_width, text_height)
-                    painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, element.text)
-
-    def draw_text(self, painter, element, x, y, selected):
-        color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
-
-        painter.setPen(QPen(color))
-        font = QFont(element.font_family)
-        font.setPixelSize(int(element.font_size * self.scale))
-        font.setBold(element.font_bold)
-        font.setItalic(element.font_italic)
-        painter.setFont(font)
-
-        # Determine text to display based on source
-        source = getattr(element, 'source', 'static')
-        if source and source != 'static':
-            # Display sensor value, optionally with label
-            value_text = get_value_with_unit(element.value, source, getattr(element, 'temp_hide_unit', False))
-            if element.text:
-                text = f"{element.text}: {value_text}"
-            else:
-                text = value_text
-        else:
-            text = element.text
-
-        metrics = painter.fontMetrics()
-        text_width = metrics.horizontalAdvance(text)
-        text_height = metrics.height()
-
-        width = int(element.width * self.scale)
-        height = int(element.height * self.scale)
-
-        if element.text_align == "left":
-            draw_x = x
-        elif element.text_align == "right":
-            draw_x = x + width - text_width
-        else:
-            draw_x = x + (width - text_width) // 2
-
-        draw_y = y + (height + text_height) // 2 - metrics.descent()
-
-        painter.drawText(draw_x, draw_y, text)
-
-    def draw_rectangle(self, painter, element, x, y, selected):
-        width = int(element.width * self.scale)
-        height = int(element.height * self.scale)
-        color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
-        border_radius = int(getattr(element, 'border_radius', 0) * self.scale)
-        glass_effect = getattr(element, 'glass_effect', False)
-
-        if glass_effect:
-            self.draw_glass_rectangle(painter, element, x, y, width, height, border_radius, color)
-        elif border_radius > 0:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QBrush(color))
-            painter.drawRoundedRect(x, y, width, height, border_radius, border_radius)
-        else:
-            painter.fillRect(x, y, width, height, color)
-
-    def draw_glass_rectangle(self, painter, element, x, y, width, height, border_radius, color):
-        """Draw a frosted glass effect rectangle using pre-rendered background."""
-        from PySide6.QtGui import QPainterPath
-
-        glass_blur = getattr(element, 'glass_blur', 10)
-        glass_opacity = getattr(element, 'glass_opacity', 50)
-
-        # Use the pre-rendered background (no recursive grab needed)
-        if self._glass_background is not None and width > 0 and height > 0:
-            # Extract the region we need to blur
-            region = self._glass_background.copy(x, y, width, height)
-
-            # Apply blur by downscaling and upscaling (fast box blur approximation)
-            blur_amount = max(2, glass_blur // 2)
-            small = region.scaled(
-                max(1, width // blur_amount),
-                max(1, height // blur_amount),
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-            blurred = small.scaled(
-                width, height,
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-
-            # Draw the blurred background
-            if border_radius > 0:
-                path = QPainterPath()
-                path.addRoundedRect(x, y, width, height, border_radius, border_radius)
-                painter.setClipPath(path)
-                painter.drawPixmap(x, y, blurred)
-                painter.setClipping(False)
-            else:
-                painter.drawPixmap(x, y, blurred)
-
-        # Draw semi-transparent tinted overlay
-        tint_color = QColor(color)
-        tint_color.setAlpha(int(255 * glass_opacity / 100))
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(tint_color))
-
-        if border_radius > 0:
-            painter.drawRoundedRect(x, y, width, height, border_radius, border_radius)
-        else:
-            painter.fillRect(x, y, width, height, tint_color)
-
-        # Draw subtle border for glass effect
-        border_color = QColor(255, 255, 255, 40)
-        painter.setPen(QPen(border_color, 1))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        if border_radius > 0:
-            painter.drawRoundedRect(x, y, width, height, border_radius, border_radius)
-        else:
-            painter.drawRect(x, y, width, height)
-
-    def draw_clock(self, painter, element, x, y, selected):
-        color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
-
-        painter.setPen(QPen(color))
-        font = QFont(element.font_family)
-        font.setPixelSize(int(element.font_size * self.scale))
-        font.setBold(element.font_bold)
-        font.setItalic(element.font_italic)
-        painter.setFont(font)
-
-        # Build time format string based on element settings
-        time_format = getattr(element, 'time_format', '24h')
-        show_seconds = getattr(element, 'show_seconds', True)
-        show_am_pm = getattr(element, 'show_am_pm', True)
-        show_leading_zero = getattr(element, 'show_leading_zero', True)
-
-        if time_format == '12h':
-            fmt = "%I:%M:%S" if show_seconds else "%I:%M"
-            if show_am_pm:
-                fmt += " %p"
-        else:  # 24h
-            fmt = "%H:%M:%S" if show_seconds else "%H:%M"
-
-        current_time = time.strftime(fmt)
-
-        # Remove leading zero from hour if disabled
-        if not show_leading_zero and current_time[0] == '0':
-            current_time = current_time[1:]
-
-        metrics = painter.fontMetrics()
-        text_width = metrics.horizontalAdvance(current_time)
-        text_height = metrics.height()
-
-        width = int(element.width * self.scale)
-        height = int(element.height * self.scale)
-
-        if element.text_align == "left":
-            draw_x = x
-        elif element.text_align == "right":
-            draw_x = x + width - text_width
-        else:
-            draw_x = x + (width - text_width) // 2
-
-        draw_y = y + (height + text_height) // 2 - metrics.descent()
-
-        painter.drawText(draw_x, draw_y, current_time)
-
-    def draw_analog_clock(self, painter, element, x, y, selected):
-        import math
-        import datetime
-
-        radius = int(element.radius * self.scale)
-        color = apply_opacity(element.color, getattr(element, 'color_opacity', 100))
-        bg_color = apply_opacity(element.background_color, getattr(element, 'background_color_opacity', 100))
-
-        # Get options
-        show_seconds = getattr(element, 'show_seconds_hand', True)
-        show_border = getattr(element, 'show_clock_border', True)
-        face_style = getattr(element, 'clock_face_style', 'numbers')
-        smooth = getattr(element, 'smooth_animation', True)
-
-        # Get current time with milliseconds for smooth animation
-        now = datetime.datetime.now()
-        hours = now.hour % 12
-        minutes = now.minute
-        seconds = now.second
-        microseconds = now.microsecond
-
-        if smooth:
-            # Smooth movement - include fractional parts
-            second_angle = (seconds + microseconds / 1000000) * 6  # 360/60 = 6 degrees per second
-            minute_angle = (minutes + seconds / 60) * 6  # 6 degrees per minute
-            hour_angle = (hours + minutes / 60) * 30  # 30 degrees per hour
-        else:
-            # Tick movement - discrete steps
-            second_angle = seconds * 6
-            minute_angle = minutes * 6
-            hour_angle = hours * 30 + minutes * 0.5  # Still smooth hour hand
-
-        # Draw clock face background
-        painter.setBrush(QBrush(bg_color))
-        if show_border:
-            painter.setPen(QPen(color, 2 * self.scale))
-        else:
-            painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(x - radius, y - radius, radius * 2, radius * 2)
-
-        # Draw tick marks or numbers
-        text_color = get_text_color(element)
-        painter.setPen(QPen(text_color, 1 * self.scale))
-        font = QFont(getattr(element, 'font_family', 'Arial'))
-        font.setPixelSize(int(getattr(element, 'font_size', 14) * self.scale * 0.8))
-        painter.setFont(font)
-
-        for i in range(12):
-            angle_rad = math.radians(i * 30 - 90)  # Start at 12 o'clock
-
-            if face_style == 'numbers':
-                # Draw numbers 1-12
-                num = i if i > 0 else 12
-                text = str(num)
-                metrics = painter.fontMetrics()
-                text_width = metrics.horizontalAdvance(text)
-                text_height = metrics.height()
-
-                text_radius = radius * 0.78
-                tx = x + text_radius * math.cos(angle_rad) - text_width / 2
-                ty = y + text_radius * math.sin(angle_rad) + text_height / 4
-
-                painter.drawText(int(tx), int(ty), text)
-
-            elif face_style == 'ticks':
-                # Draw tick marks
-                inner_radius = radius * 0.85
-                outer_radius = radius * 0.95
-
-                # Longer ticks for 12, 3, 6, 9
-                if i % 3 == 0:
-                    inner_radius = radius * 0.75
-                    painter.setPen(QPen(text_color, 2 * self.scale))
-                else:
-                    painter.setPen(QPen(text_color, 1 * self.scale))
-
-                x1 = x + inner_radius * math.cos(angle_rad)
-                y1 = y + inner_radius * math.sin(angle_rad)
-                x2 = x + outer_radius * math.cos(angle_rad)
-                y2 = y + outer_radius * math.sin(angle_rad)
-
-                painter.drawLine(int(x1), int(y1), int(x2), int(y2))
-
-        # Draw center dot
-        painter.setBrush(QBrush(color))
-        painter.setPen(Qt.PenStyle.NoPen)
-        center_radius = int(4 * self.scale)
-        painter.drawEllipse(x - center_radius, y - center_radius, center_radius * 2, center_radius * 2)
-
-        # Draw hour hand (shortest, thickest)
-        hour_length = radius * 0.5
-        hour_rad = math.radians(hour_angle - 90)
-        hx = x + hour_length * math.cos(hour_rad)
-        hy = y + hour_length * math.sin(hour_rad)
-        painter.setPen(QPen(color, 4 * self.scale, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(x, y, int(hx), int(hy))
-
-        # Draw minute hand (longer, medium thickness)
-        minute_length = radius * 0.7
-        minute_rad = math.radians(minute_angle - 90)
-        mx = x + minute_length * math.cos(minute_rad)
-        my = y + minute_length * math.sin(minute_rad)
-        painter.setPen(QPen(color, 3 * self.scale, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(x, y, int(mx), int(my))
-
-        # Draw second hand (longest, thinnest) - optional
-        if show_seconds:
-            second_length = radius * 0.85
-            second_rad = math.radians(second_angle - 90)
-            sx = x + second_length * math.cos(second_rad)
-            sy = y + second_length * math.sin(second_rad)
-            # Second hand in a slightly different shade (reddish)
-            second_color = QColor(255, 80, 80)
-            second_color.setAlpha(color.alpha())
-            painter.setPen(QPen(second_color, 1.5 * self.scale, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            painter.drawLine(x, y, int(sx), int(sy))
-
-    def draw_image(self, painter, element, x, y, selected):
-        width = int(element.width * self.scale)
-        height = int(element.height * self.scale)
-
-        if element.image_path and os.path.exists(element.image_path):
-            # ⚡ Bolt: Cache expensive QPixmap loading and scaling operations
-            # This prevents disk I/O and synchronous scaling on every UI paint event
-            cache_key = f"{element.image_path}_{width}_{height}_{element.scale_proportionally}"
-
-            if getattr(element, '_cached_pixmap_key', None) != cache_key:
-                pixmap = QPixmap(element.image_path)
-                if element.scale_proportionally:
-                    # Maintain aspect ratio - fit within bounds
-                    pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                else:
-                    # Stretch to fill exact dimensions
-                    pixmap = pixmap.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-
-                element._cached_pixmap = pixmap
-                element._cached_pixmap_key = cache_key
-
-            painter.drawPixmap(x, y, element._cached_pixmap)
-        else:
-            painter.fillRect(x, y, width, height, QColor(40, 40, 60))
-            painter.setPen(QPen(QColor(100, 100, 120)))
-            painter.drawRect(x, y, width, height)
-            painter.drawText(x + 5, y + height // 2, "No Image")
+    @staticmethod
+    def _is_empty_media(element):
+        if element.type == "image":
+            return not element.image_path
+        if element.type == "gif":
+            return not getattr(element, "gif_path", "")
+        return False
+
+    def draw_placeholder(self, painter, element):
+        """Media elements without a file render nothing; keep them visible and clickable."""
+        bounds = self.get_element_bounds(element)
+        painter.setPen(QPen(QColor(120, 120, 150), 1, Qt.PenStyle.DashLine))
+        painter.setBrush(QColor(40, 40, 60, 160))
+        painter.drawRect(bounds)
+        painter.setPen(QColor(150, 150, 180))
+        label = "No image" if element.type == "image" else "No GIF"
+        painter.drawText(bounds, Qt.AlignmentFlag.AlignCenter, label)
 
     def get_element_bounds(self, element):
         """Get the bounding rectangle for an element."""
@@ -1258,7 +375,7 @@ class CanvasPreview(QWidget):
     def get_element_at(self, pos):
         # Check from index 0 first (top of tree = front of display)
         # This matches rendering order where index 0 is drawn last (on top)
-        for i in range(len(self.elements)):
+        for i in self.visible_indices():
             element = self.elements[i]
             x = element.x * self.scale
             y = element.y * self.scale
@@ -1299,6 +416,10 @@ class CanvasPreview(QWidget):
         return self.HANDLE_NONE
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._pan_anchor = event.position()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             pos = self.widget_to_canvas_pos(event.position())
             modifiers = event.modifiers()
@@ -1353,7 +474,7 @@ class CanvasPreview(QWidget):
                     # Ctrl+click: Toggle selection (respects groups)
                     if clicked_group:
                         # Get all indices in this group
-                        group_indices = [i for i, el in enumerate(self.elements) if getattr(el, 'group', None) == clicked_group]
+                        group_indices = [i for i in self.visible_indices() if getattr(self.elements[i], 'group', None) == clicked_group]
                         # Check if entire group is selected
                         all_selected = all(i in self.selected_indices for i in group_indices)
                         if all_selected:
@@ -1376,8 +497,8 @@ class CanvasPreview(QWidget):
                     # Shift+click: Range selection
                     last_selected = self.selected_indices[-1]
                     start, end = min(last_selected, index), max(last_selected, index)
-                    for i in range(start, end + 1):
-                        if i not in self.selected_indices:
+                    for i in self.visible_indices():
+                        if start <= i <= end and i not in self.selected_indices:
                             self.selected_indices.append(i)
                 else:
                     # Normal click behavior:
@@ -1388,7 +509,7 @@ class CanvasPreview(QWidget):
                         pass
                     elif clicked_group:
                         # Not selected, but in a group - select entire group
-                        group_indices = [i for i, el in enumerate(self.elements) if getattr(el, 'group', None) == clicked_group]
+                        group_indices = [i for i in self.visible_indices() if getattr(self.elements[i], 'group', None) == clicked_group]
                         self.selected_indices = group_indices
                         self.group_selection_mode = True
                     else:
@@ -1426,6 +547,14 @@ class CanvasPreview(QWidget):
             self.update()
 
     def mouseMoveEvent(self, event):
+        if self._pan_anchor is not None:
+            if self.zoom is None:
+                self.zoom = self.scale  # Panning leaves fit mode at the current scale
+                self.zoom_changed.emit()
+            self.pan += event.position() - self._pan_anchor
+            self._pan_anchor = event.position()
+            self.update()
+            return
         pos = self.widget_to_canvas_pos(event.position())
 
         # Handle multi-element resizing
@@ -1532,6 +661,12 @@ class CanvasPreview(QWidget):
             dx = (pos.x() - self.drag_start_mouse.x()) / self.scale
             dy = (pos.y() - self.drag_start_mouse.y()) / self.scale
 
+            # Smart guides win over the grid on the axis they snap (Alt disables them)
+            self.guides = []
+            if not event.modifiers() & Qt.KeyboardModifier.AltModifier:
+                dx, dy, self.guides = self._snap_to_guides(dx, dy)
+            guide_axes = {axis for axis, _ in self.guides}
+
             for idx in self.selected_indices:
                 if idx in self.drag_start_positions and 0 <= idx < len(self.elements):
                     start_x, start_y = self.drag_start_positions[idx]
@@ -1540,8 +675,10 @@ class CanvasPreview(QWidget):
 
                     # Apply snap to grid if enabled
                     if self.snap_to_grid:
-                        new_x = self.snap_to_grid_coord(new_x)
-                        new_y = self.snap_to_grid_coord(new_y)
+                        if "v" not in guide_axes:
+                            new_x = self.snap_to_grid_coord(new_x)
+                        if "h" not in guide_axes:
+                            new_y = self.snap_to_grid_coord(new_y)
 
                     new_x = int(new_x)
                     new_y = int(new_y)
@@ -1581,8 +718,71 @@ class CanvasPreview(QWidget):
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
+    @staticmethod
+    def _display_extent(element, x, y):
+        """(left, top, right, bottom) in display px for an element placed at x, y."""
+        if element.type in ("circle_gauge", "analog_clock"):
+            return x - element.radius, y - element.radius, x + element.radius, y + element.radius
+        return x, y, x + element.width, y + element.height
+
+    def _snap_to_guides(self, dx, dy):
+        """Nudge the drag delta so selection edges/centers meet other elements or the display."""
+        boxes = [
+            self._display_extent(self.elements[i], *self.drag_start_positions[i])
+            for i in self.selected_indices if i in self.drag_start_positions
+        ]
+        if not boxes:
+            return dx, dy, []
+        left = min(b[0] for b in boxes)
+        top = min(b[1] for b in boxes)
+        right = max(b[2] for b in boxes)
+        bottom = max(b[3] for b in boxes)
+
+        targets_x = [0, constants.DISPLAY_WIDTH / 2, constants.DISPLAY_WIDTH]
+        targets_y = [0, constants.DISPLAY_HEIGHT / 2, constants.DISPLAY_HEIGHT]
+        for i in self.visible_indices():
+            if i in self.selected_indices:
+                continue
+            el = self.elements[i]
+            l, t, r, b = self._display_extent(el, el.x, el.y)
+            targets_x += [l, (l + r) / 2, r]
+            targets_y += [t, (t + b) / 2, b]
+
+        threshold = self.GUIDE_SNAP_PX / self.scale
+        guides = []
+
+        def best(edges, targets):
+            options = [(abs(t - e), t - e, t) for e in edges for t in targets if abs(t - e) <= threshold]
+            return min(options) if options else None
+
+        snap_x = best([left + dx, (left + right) / 2 + dx, right + dx], targets_x)
+        if snap_x:
+            dx += snap_x[1]
+            guides.append(("v", snap_x[2]))
+        snap_y = best([top + dy, (top + bottom) / 2 + dy, bottom + dy], targets_y)
+        if snap_y:
+            dy += snap_y[1]
+            guides.append(("h", snap_y[2]))
+        return dx, dy, guides
+
+    def draw_guides(self, painter):
+        painter.setPen(QPen(QColor(255, 0, 170), 1))
+        for axis, value in self.guides:
+            p = value * self.scale
+            if axis == "v":
+                painter.drawLine(int(p), 0, int(p), self.canvas_height)
+            else:
+                painter.drawLine(0, int(p), self.canvas_width, int(p))
+
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._pan_anchor = None
+            self.unsetCursor()
+            return
         if event.button() == Qt.MouseButton.LeftButton:
+            if self.guides:
+                self.guides = []
+                self.update()
             self.dragging = False
             self.resizing = False
             self.resize_handle = self.HANDLE_NONE
@@ -1620,19 +820,11 @@ class CanvasPreview(QWidget):
         # Emit drag_started for undo state
         self.drag_started.emit()
 
-        # Move all selected elements
+        # Move all selected elements. No grid snap: it would round a 1px nudge back.
         for idx in self.selected_indices:
             element = self.elements[idx]
-            new_x = element.x + dx
-            new_y = element.y + dy
-
-            # Apply snap to grid if enabled
-            if self.snap_to_grid:
-                new_x = self.snap_to_grid_coord(new_x)
-                new_y = self.snap_to_grid_coord(new_y)
-
-            element.x = int(new_x)
-            element.y = int(new_y)
+            element.x = int(element.x + dx)
+            element.y = int(element.y + dy)
             self.element_moved.emit(idx, element.x, element.y)
 
         self.update()

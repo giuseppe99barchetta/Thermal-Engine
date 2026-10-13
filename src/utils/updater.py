@@ -295,7 +295,7 @@ def check_for_updates(parent=None, silent=False):
         # Truncate release notes if too long
         notes = release_notes[:500] + "..." if len(release_notes) > 500 else release_notes
 
-        msg_box.setText(f"A new version of Thermal Engine is available!")
+        msg_box.setText("A new version of Thermal Engine is available!")
         msg_box.setInformativeText(
             f"Current version: {__version__}\n"
             f"Latest version: {version}\n\n"
@@ -305,7 +305,7 @@ def check_for_updates(parent=None, silent=False):
         # Add custom buttons
         button_text = "Download Update" if asset_name else "Open Releases"
         download_btn = msg_box.addButton(button_text, QMessageBox.ButtonRole.AcceptRole)
-        later_btn = msg_box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        msg_box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
 
         msg_box.exec()
 

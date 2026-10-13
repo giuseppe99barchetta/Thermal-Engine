@@ -3,8 +3,17 @@ Application path utilities.
 Handles path resolution for both script and frozen executable.
 """
 
+import json
 import sys
 import os
+
+
+def write_json_atomic(path, data):
+    """Write JSON via a temp file + rename so a crash never leaves a half-written file."""
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp_path, path)
 
 
 def _get_project_root():

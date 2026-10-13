@@ -1,7 +1,6 @@
 import os
 import json
 import zipfile
-import shutil
 import tempfile
 import pytest
 from src.utils.theme_package import import_theme

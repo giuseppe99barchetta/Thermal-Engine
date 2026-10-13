@@ -3,6 +3,7 @@ Settings management for Thermal Engine.
 Handles persistent settings and platform autostart.
 """
 
+import logging
 import os
 import sys
 import json
@@ -17,12 +18,15 @@ if IS_WINDOWS:
     import winreg
 
 from src.utils.app_path import (
+    write_json_atomic,
     get_app_dir,
     get_bundled_resource_path,
     get_resource_path,
     get_user_data_path,
 )
 from src.core.security import escape_registry_path
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "ThermalEngine"
 WINDOWS_AUTOSTART_TASK_NAME = "ThermalEngine Elevated Startup"
@@ -48,6 +52,7 @@ DEFAULT_SETTINGS = {
     "profiles": [],  # Auto-switch profile rules
     "profiles_enabled": False,  # Whether auto-switching is active
     "profiles_default_preset": None,  # Preset when no profile matches
+    "collapsed_sections": [],  # Properties panel sections the user folded
 }
 
 _settings = None
@@ -59,14 +64,14 @@ def load_settings():
 
     if os.path.exists(SETTINGS_FILE):
         try:
-            with open(SETTINGS_FILE, 'r') as f:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                 _settings = json.load(f)
             # Ensure all default keys exist
             for key, value in DEFAULT_SETTINGS.items():
                 if key not in _settings:
                     _settings[key] = value
         except Exception as e:
-            print(f"[Settings] Error loading settings: {e}")
+            logger.warning(f"Error loading settings: {e}")
             _settings = DEFAULT_SETTINGS.copy()
     else:
         _settings = DEFAULT_SETTINGS.copy()
@@ -82,10 +87,9 @@ def save_settings():
         _settings = DEFAULT_SETTINGS.copy()
 
     try:
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(_settings, f, indent=2)
+        write_json_atomic(SETTINGS_FILE, _settings)
     except Exception as e:
-        print(f"[Settings] Error saving settings: {e}")
+        logger.warning(f"Error saving settings: {e}")
 
 
 def get_setting(key, default=None):
@@ -221,11 +225,11 @@ def _configure_windows_autostart_task(enabled):
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except OSError as e:
-        print(f"[Settings] Error configuring elevated autostart: {e}")
+        logger.warning(f"Error configuring elevated autostart: {e}")
         return False
 
     if result.returncode != 0:
-        print(f"[Settings] Error configuring elevated autostart: {result.stderr.strip()}")
+        logger.warning(f"Error configuring elevated autostart: {result.stderr.strip()}")
         return False
 
     _remove_legacy_windows_autostart()
@@ -256,11 +260,11 @@ def set_autostart(enabled):
                     os.remove(desktop_entry_path)
             return True
         except Exception as e:
-            print(f"[Settings] Error setting Linux autostart: {e}")
+            logger.warning(f"Error setting Linux autostart: {e}")
             return False
 
     if not IS_WINDOWS:
-        print("[Settings] Autostart is not supported on this platform")
+        logger.warning("Autostart is not supported on this platform")
         return False
 
     if _is_windows_elevated():
@@ -304,9 +308,9 @@ def _remove_startup_folder_shortcut():
         shortcut_path = os.path.join(startup_folder, f"{APP_NAME}.lnk")
         if os.path.exists(shortcut_path):
             os.remove(shortcut_path)
-            print(f"[Settings] Removed Startup folder shortcut to avoid duplicate launch")
+            logger.info("Removed Startup folder shortcut to avoid duplicate launch")
     except Exception as e:
-        print(f"[Settings] Could not remove Startup shortcut: {e}")
+        logger.warning(f"Could not remove Startup shortcut: {e}")
 
 
 def apply_autostart_setting():

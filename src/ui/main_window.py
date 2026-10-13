@@ -17,17 +17,17 @@ import webbrowser
 
 # Windows-specific imports for power event handling
 if sys.platform == 'win32':
-    import ctypes
-    import ctypes.wintypes
+    pass
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QColorDialog, QFileDialog,
     QComboBox, QSplitter, QMessageBox, QStatusBar, QTabWidget,
     QDialog, QCheckBox, QDialogButtonBox, QGroupBox, QFormLayout, QSystemTrayIcon,
-    QTextEdit, QPlainTextEdit, QSpinBox, QApplication, QProgressDialog, QStyle
+    QTextEdit, QPlainTextEdit, QSpinBox, QApplication, QProgressDialog, QStyle,
+    QTabBar, QToolButton, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer, QByteArray, Signal, QObject
+from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QColor, QAction, QKeySequence, QIcon, QTextCursor, QFont
 
 
@@ -43,7 +43,12 @@ class ConsoleOutputStream(QObject):
         if text:
             self.text_written.emit(text)
             if self.original_stream:
-                self.original_stream.write(text)
+                try:
+                    self.original_stream.write(text)
+                except UnicodeEncodeError:
+                    # Legacy Windows consoles (cp1252) can't print symbols like ✓
+                    encoding = getattr(self.original_stream, "encoding", None) or "ascii"
+                    self.original_stream.write(text.encode(encoding, "replace").decode(encoding))
                 self.original_stream.flush()
 
     def flush(self):
@@ -149,14 +154,8 @@ def _get_cached_image_element(image_path, width, height, scale_proportionally, c
     return img_overlay
 
 
-try:
-    import hid
-    HAS_HID = True
-except ImportError:
-    HAS_HID = False
-
 from src.core import constants
-from src.core.constants import SOURCE_UNITS, get_value_with_unit
+from src.core.constants import get_value_with_unit
 from src.core.display_size import (
     DISPLAY_SIZE_PROFILES,
     device_size_key,
@@ -166,10 +165,9 @@ from src.core.display_size import (
 )
 
 # Device backend system for multi-device support
-from src.core import device_backends
 from src.core.device_backends import (
-    DisplayBackend, enumerate_available_devices,
-    find_device_definition, create_backend, SUPPORTED_DEVICES
+    DeviceIOError, enumerate_available_devices,
+    create_backend
 )
 
 # Setup logger for main window
@@ -181,9 +179,9 @@ from src.core import sensors
 from src.core.sensors import get_cached_sensors, stop_sensors
 from src.utils import settings
 from src.utils.app_path import (
-    get_resource_path,
     get_bundled_resource_path,
     get_user_data_path,
+    write_json_atomic,
 )
 from src.utils.updater import (
     GITHUB_RELEASES_URL,
@@ -204,6 +202,7 @@ def hex_to_rgba(hex_color, opacity=100):
     a = int(255 * opacity / 100)
     return (r, g, b, a)
 from src.ui.canvas import CanvasPreview
+from src.ui.icons import icon as svg_icon
 from src.ui.properties import PropertiesPanel
 from src.ui.element_list import ElementListPanel
 from src.ui.presets import PresetsPanel
@@ -243,6 +242,7 @@ class ThemeEditorWindow(QMainWindow):
 
         # Canvas update throttling (skip canvas updates during high-speed rendering)
         self._canvas_update_counter = 0
+        self._animated_values = {}  # id(element) -> (shown value, timestamp)
         self._canvas_update_interval = 3  # Update canvas every N frames when connected
 
         # Frame timing for smooth delivery
@@ -286,7 +286,7 @@ class ThemeEditorWindow(QMainWindow):
         self._autosave_timer.timeout.connect(self._do_autosave)
 
         # Auto Profiles
-        from src.utils.profiles import ProfileManager, ForegroundAppMonitor, SystemStateMonitor
+        from src.utils.profiles import ProfileManager
         self._profile_manager = ProfileManager()
         self._foreground_monitor = None
         self._system_state_monitor = None
@@ -340,12 +340,12 @@ class ThemeEditorWindow(QMainWindow):
                         # System is waking up
                         self._handle_system_wake()
             except Exception as e:
-                print(f"[Power] Error handling power event: {e}")
+                logger.warning(f"Error handling power event: {e}")
         return super().nativeEvent(eventType, message)
 
     def _handle_system_sleep(self):
         """Handle system going to sleep."""
-        print("[Power] System going to sleep")
+        logger.info("System going to sleep")
         self._was_connected_before_sleep = self.device is not None
         # Stop reconnect timer if running
         if self._reconnect_timer:
@@ -354,7 +354,7 @@ class ThemeEditorWindow(QMainWindow):
 
     def _handle_system_wake(self):
         """Handle system waking from sleep."""
-        print("[Power] System waking up")
+        logger.info("System waking up")
         self._last_wake_time = time.time()
 
         # Reset video background timing to prevent frame jumps
@@ -402,7 +402,7 @@ class ThemeEditorWindow(QMainWindow):
         """Attempt to reconnect to the display."""
         self._reconnect_attempts += 1
 
-        print(f"[Power] Reconnect attempt {self._reconnect_attempts}")
+        logger.info(f"Reconnect attempt {self._reconnect_attempts}")
 
         if self.connect_display(show_error=False):
             # Success!
@@ -411,7 +411,7 @@ class ThemeEditorWindow(QMainWindow):
                 self._reconnect_timer = None
             self._was_connected_before_sleep = False
             self.status_bar.showMessage("Reconnected to display after wake")
-            print("[Power] Reconnected successfully")
+            logger.info("Reconnected successfully")
         else:
             # Keep trying with backoff (no max limit - will retry indefinitely)
             self._start_reconnect_timer()
@@ -432,7 +432,7 @@ class ThemeEditorWindow(QMainWindow):
                 ThemeElement.from_dict(e) for e in default_preset_data.get("elements", [])
             ]
             self.element_list.set_elements(self.elements)
-            self.canvas.set_elements(self.elements)
+            self._rebuild_pages()
 
             # Load video background settings if present
             video_data = default_preset_data.get("video_background", {})
@@ -442,7 +442,7 @@ class ThemeEditorWindow(QMainWindow):
                 video_background.clear_video()
             self._update_video_ui()
 
-            print(f"[Startup] Loaded default preset: {self.theme_name}")
+            logger.info(f"Loaded default preset: {self.theme_name}")
 
     def setup_ui(self):
         self.setWindowTitle("Thermal Engine")
@@ -475,59 +475,41 @@ class ThemeEditorWindow(QMainWindow):
         canvas_container = QWidget()
         canvas_layout = QVBoxLayout(canvas_container)
 
-        name_layout = QHBoxLayout()
-        name_layout.addWidget(QLabel("Theme Name:"))
         self.theme_name_edit = QLineEdit(self.theme_name)
         self.theme_name_edit.textChanged.connect(self.on_theme_name_changed)
-        name_layout.addWidget(self.theme_name_edit)
 
         self.quick_save_btn = QPushButton("Save")
-        self.quick_save_btn.setFixedWidth(60)
         self.quick_save_btn.clicked.connect(self.quick_save)
         self.quick_save_btn.setToolTip("Save to presets folder (Ctrl+S)")
         self.quick_save_btn.setAccessibleName("Save to presets folder (Ctrl+S)")
-        name_layout.addWidget(self.quick_save_btn)
 
-        name_layout.addWidget(QLabel("Background:"))
         self.bg_color_btn = QPushButton()
-        self.bg_color_btn.setFixedSize(30, 25)
+        self.bg_color_btn.setFixedSize(60, 25)
         self.bg_color_btn.setStyleSheet(f"background-color: {self.background_color};")
         self.bg_color_btn.setToolTip("Change background color")
         self.bg_color_btn.setAccessibleName("Change background color")
         self.bg_color_btn.clicked.connect(self.choose_background_color)
-        name_layout.addWidget(self.bg_color_btn)
 
-        name_layout.addWidget(QLabel("Video:"))
         self.video_btn = QPushButton("None")
-        self.video_btn.setFixedWidth(80)
         self.video_btn.clicked.connect(self.choose_video_background)
         self.video_btn.setToolTip("Choose video background")
         self.video_btn.setAccessibleName("Choose video background")
-        name_layout.addWidget(self.video_btn)
 
         self.video_fit_combo = QComboBox()
         self.video_fit_combo.addItem("Fit Height", "fit_height")
         self.video_fit_combo.addItem("Fit Width", "fit_width")
-        self.video_fit_combo.setFixedWidth(90)
         self.video_fit_combo.currentIndexChanged.connect(self.on_video_fit_changed)
         self.video_fit_combo.setEnabled(False)
-        name_layout.addWidget(self.video_fit_combo)
 
         self.clear_video_btn = QPushButton("Clear")
-        self.clear_video_btn.setFixedWidth(50)
         self.clear_video_btn.clicked.connect(self.clear_video_background)
         self.clear_video_btn.setEnabled(False)
-        name_layout.addWidget(self.clear_video_btn)
-
-        name_layout.addStretch()
-
-        canvas_layout.addLayout(name_layout)
 
         self.canvas = CanvasPreview()
+        self.canvas.frame_renderer = self._render_preview_frame
 
         # Set size policy to allow canvas to shrink when window is small
         # This prevents canvas from covering page controls
-        from PySide6.QtWidgets import QSizePolicy
         self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         # Override canvas minimum height to prevent it from covering page controls
         self.canvas.setMinimumHeight(300)  # Ensure at least 300px height
@@ -542,41 +524,24 @@ class ThemeEditorWindow(QMainWindow):
 
         # Page controls at bottom (stretch factor 0 = fixed size, always visible)
         page_controls_layout = QHBoxLayout()
-        page_controls_layout.addWidget(QLabel("Page:"))
 
-        self.prev_page_btn = QPushButton("◀")
-        self.prev_page_btn.setFixedWidth(40)
-        self.prev_page_btn.setToolTip("Previous Page")
-        self.prev_page_btn.setAccessibleName("Previous Page")
-        self.prev_page_btn.clicked.connect(self.prev_page)
-        page_controls_layout.addWidget(self.prev_page_btn)
+        self.page_tabs = QTabBar()
+        self.page_tabs.setDrawBase(False)
+        self.page_tabs.setExpanding(False)
+        self.page_tabs.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self.page_tabs.currentChanged.connect(self.on_page_changed)
+        self.page_tabs.tabCloseRequested.connect(self.delete_page)
+        self.update_page_tabs()
+        page_controls_layout.addWidget(self.page_tabs)
 
-        self.page_combo = QComboBox()
-        self.page_combo.setFixedWidth(120)
-        self.page_combo.currentIndexChanged.connect(self.on_page_changed)
-        self.update_page_combo()
-        page_controls_layout.addWidget(self.page_combo)
-
-        self.next_page_btn = QPushButton("▶")
-        self.next_page_btn.setFixedWidth(40)
-        self.next_page_btn.setToolTip("Next Page")
-        self.next_page_btn.setAccessibleName("Next Page")
-        self.next_page_btn.clicked.connect(self.next_page)
-        page_controls_layout.addWidget(self.next_page_btn)
-
-        self.add_page_btn = QPushButton("+ Add Page")
-        self.add_page_btn.setFixedWidth(90)
+        self.add_page_btn = QToolButton()
+        self.add_page_btn.setIcon(svg_icon("plus"))
+        self.add_page_btn.setAutoRaise(True)
         self.add_page_btn.setToolTip("Add a new page")
         self.add_page_btn.setAccessibleName("Add a new page")
         self.add_page_btn.clicked.connect(self.add_page)
         page_controls_layout.addWidget(self.add_page_btn)
-
-        self.delete_page_btn = QPushButton("Delete Page")
-        self.delete_page_btn.setFixedWidth(90)
-        self.delete_page_btn.setToolTip("Delete current page")
-        self.delete_page_btn.setAccessibleName("Delete current page")
-        self.delete_page_btn.clicked.connect(self.delete_page)
-        page_controls_layout.addWidget(self.delete_page_btn)
+        page_controls_layout.addSpacing(12)
 
         self.auto_rotate_checkbox = QCheckBox("Auto-Rotate")
         self.auto_rotate_checkbox.setChecked(self.auto_rotate_pages)
@@ -593,6 +558,13 @@ class ThemeEditorWindow(QMainWindow):
 
         page_controls_layout.addStretch()
 
+        self.zoom_btn = QPushButton()
+        self.zoom_btn.setFlat(True)
+        self.zoom_btn.setToolTip("Zoom (Ctrl+wheel). Click to fit to window (Ctrl+0)")
+        self.zoom_btn.setAccessibleName("Zoom level; click to fit to window")
+        self.zoom_btn.clicked.connect(lambda: self.canvas.set_zoom(None))
+        page_controls_layout.addWidget(self.zoom_btn)
+
         canvas_layout.addLayout(page_controls_layout)
 
         splitter.addWidget(canvas_container)
@@ -600,6 +572,7 @@ class ThemeEditorWindow(QMainWindow):
         self.properties_panel = PropertiesPanel()
         self.properties_panel.setMinimumWidth(280)
         self.properties_panel.setMaximumWidth(320)
+        self.properties_panel.set_no_selection_widget(self._build_theme_section())
         splitter.addWidget(self.properties_panel)
 
         splitter.setSizes([200, 650, 300])
@@ -621,6 +594,45 @@ class ThemeEditorWindow(QMainWindow):
         self.status_bar.addPermanentWidget(self.perf_indicator)
         self.status_bar.addPermanentWidget(self.perf_label)
 
+    def _build_theme_section(self):
+        """Theme-wide settings, shown in the Properties panel when nothing is selected."""
+        frame, form = self.properties_panel.create_section("Theme")
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(self.theme_name_edit, 1)
+        name_row.addWidget(self.quick_save_btn)
+        form.addRow("Name:", name_row)
+        form.addRow("Background:", self.bg_color_btn)
+        form.addRow("Video:", self.video_btn)
+        video_row = QHBoxLayout()
+        video_row.addWidget(self.video_fit_combo, 1)
+        video_row.addWidget(self.clear_video_btn)
+        form.addRow("", video_row)
+
+        display_row = QHBoxLayout()
+        self.display_size_label = QLabel()
+        display_row.addWidget(self.display_size_label, 1)
+        change_size_btn = QPushButton("Change…")
+        change_size_btn.setToolTip("Change display resolution")
+        change_size_btn.setAccessibleName("Change display resolution")
+        change_size_btn.clicked.connect(self.show_display_size_dialog)
+        display_row.addWidget(change_size_btn)
+        form.addRow("Display:", display_row)
+        self._update_display_size_label()
+
+        hint = QLabel("Select an element on the canvas or in the list to edit it.")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #888; font-style: italic; padding: 8px 2px;")
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(frame)
+        layout.addWidget(hint)
+        return container
+
+    def _update_display_size_label(self):
+        self.display_size_label.setText(f"{constants.DISPLAY_WIDTH} \u00d7 {constants.DISPLAY_HEIGHT}")
+
     def setup_console(self):
         """Setup console output capture and window."""
         self.console_window = ConsoleWindow(self)
@@ -634,6 +646,11 @@ class ThemeEditorWindow(QMainWindow):
 
         sys.stdout = self.stdout_stream
         sys.stderr = self.stderr_stream
+
+        # Log records also go to the console window (the file handler is set up in main.py)
+        console_handler = logging.StreamHandler(self.stdout_stream)
+        console_handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+        logging.getLogger().addHandler(console_handler)
 
     def show_console(self):
         """Show the console output window."""
@@ -777,6 +794,18 @@ class ThemeEditorWindow(QMainWindow):
         self.snap_to_grid_action.triggered.connect(self.toggle_snap_to_grid)
         view_menu.addAction(self.snap_to_grid_action)
 
+        view_menu.addSeparator()
+        for label, shortcut, slot in (
+            ("Zoom In", "Ctrl+=", lambda: self.canvas.zoom_by(1.25)),
+            ("Zoom Out", "Ctrl+-", lambda: self.canvas.zoom_by(1 / 1.25)),
+            ("Fit to Window", "Ctrl+0", lambda: self.canvas.set_zoom(None)),
+            ("Actual Size (100%)", "Ctrl+1", lambda: self.canvas.set_zoom(1.0)),
+        ):
+            action = QAction(label, self)
+            action.setShortcut(QKeySequence(shortcut))
+            action.triggered.connect(slot)
+            view_menu.addAction(action)
+
         display_menu = menubar.addMenu("Display")
 
         self.connect_action = QAction("Connect", self)
@@ -900,11 +929,7 @@ class ThemeEditorWindow(QMainWindow):
         self.element_list.elements_will_change.connect(self.save_undo_state)
         self.element_list.elements_changed.connect(self.refresh_canvas)
 
-        self.canvas.element_selected.connect(self.on_canvas_element_selected)
-        self.canvas.elements_selected.connect(self.on_canvas_elements_selected)
-        self.canvas.element_moved.connect(self.on_element_moved)
-        self.canvas.element_resized.connect(self.on_element_resized)
-        self.canvas.drag_started.connect(self.save_undo_state)
+        self._connect_canvas_signals()
 
         self.properties_panel.property_will_change.connect(self.save_undo_state)
         self.properties_panel.property_changed.connect(self._on_property_changed)
@@ -920,14 +945,29 @@ class ThemeEditorWindow(QMainWindow):
         self.properties_panel.property_changed.connect(self._schedule_autosave)
         self.properties_panel.alignment_changed.connect(self._schedule_autosave)
         self.element_list.elements_changed.connect(self._schedule_autosave)
+
+    def _connect_canvas_signals(self):
+        """Wire the canvas; also used when it is recreated for a new display size."""
+        self.canvas.element_selected.connect(self.on_canvas_element_selected)
+        self.canvas.elements_selected.connect(self.on_canvas_elements_selected)
+        self.canvas.element_moved.connect(self.on_element_moved)
+        self.canvas.element_resized.connect(self.on_element_resized)
+        self.canvas.drag_started.connect(self.save_undo_state)
         self.canvas.element_moved.connect(self._schedule_autosave)
         self.canvas.element_resized.connect(self._schedule_autosave)
+        self.canvas.zoom_changed.connect(self._update_zoom_label)
+        self._update_zoom_label()
 
     def setup_performance_monitor(self):
         """Setup timer to update performance stats."""
         self.perf_update_timer = QTimer(self)
         self.perf_update_timer.timeout.connect(self.update_performance_stats)
         self.perf_update_timer.start(500)  # Update every 500ms
+
+        # Keep clocks, sensors and animations moving in the editor when no display is connected
+        self.preview_timer = QTimer(self)
+        self.preview_timer.timeout.connect(self._tick_preview)
+        self.preview_timer.start(100)
 
     def update_performance_stats(self):
         """Update the performance indicator in the status bar."""
@@ -1023,7 +1063,7 @@ class ThemeEditorWindow(QMainWindow):
 
         self.elements = defaults
         self.element_list.set_elements(self.elements)
-        self.canvas.set_elements(self.elements)
+        self._rebuild_pages()
 
     def on_element_selected(self, idx):
         self.canvas.set_selected(idx)
@@ -1084,9 +1124,7 @@ class ThemeEditorWindow(QMainWindow):
 
     def _do_refresh_canvas(self):
         """Actually perform the canvas refresh."""
-        # Filter elements by current page
-        visible_elements = [el for el in self.elements if getattr(el, 'page', 1) == self.current_page]
-        self.canvas.set_elements(visible_elements)
+        self.canvas.set_elements(self.elements, self.current_page)
         self.canvas.update()
 
     def _schedule_autosave(self, *args):
@@ -1130,71 +1168,43 @@ class ThemeEditorWindow(QMainWindow):
 
     def save_undo_state(self):
         """Save current state to undo stack."""
-        state = {
-            'elements': [e.to_dict() for e in self.elements],
-            'background_color': self.background_color
-        }
-        self.undo_stack.append(state)
+        self.undo_stack.append(self._snapshot_state())
         if len(self.undo_stack) > self.max_undo_levels:
             self.undo_stack.pop(0)
         self.redo_stack.clear()
+        self.update_undo_actions()
+
+    def _snapshot_state(self):
+        return {
+            'elements': [e.to_dict() for e in self.elements],
+            'background_color': self.background_color
+        }
+
+    def _restore_state(self, state):
+        self.elements = [ThemeElement.from_dict(e) for e in state['elements']]
+        self.background_color = state['background_color']
+        self.element_list.set_elements(self.elements)
+        self.canvas.set_background_color(self.background_color)
+        self.bg_color_btn.setStyleSheet(f"background-color: {self.background_color};")
+        self._rebuild_pages(keep_existing=True)
         self.update_undo_actions()
 
     def undo(self):
         """Undo the last action."""
         if not self.undo_stack:
             return
-
-        # Save current state to redo stack
-        current_state = {
-            'elements': [e.to_dict() for e in self.elements],
-            'background_color': self.background_color
-        }
-        self.redo_stack.append(current_state)
-        # Limit redo stack size to match undo stack
+        self.redo_stack.append(self._snapshot_state())
         if len(self.redo_stack) > self.max_undo_levels:
             self.redo_stack.pop(0)
-
-        # Restore previous state
-        state = self.undo_stack.pop()
-        self.elements = [ThemeElement.from_dict(e) for e in state['elements']]
-        self.background_color = state['background_color']
-
-        self.element_list.set_elements(self.elements)
-        self.canvas.set_elements(self.elements)
-        self.canvas.set_background_color(self.background_color)
-        self.bg_color_btn.setStyleSheet(f"background-color: {self.background_color};")
-        self.properties_panel.set_element(None)
-        self.canvas.set_selected_indices([])
-
-        self.update_undo_actions()
+        self._restore_state(self.undo_stack.pop())
         self.status_bar.showMessage("Undo", 1500)
 
     def redo(self):
         """Redo the last undone action."""
         if not self.redo_stack:
             return
-
-        # Save current state to undo stack
-        current_state = {
-            'elements': [e.to_dict() for e in self.elements],
-            'background_color': self.background_color
-        }
-        self.undo_stack.append(current_state)
-
-        # Restore redo state
-        state = self.redo_stack.pop()
-        self.elements = [ThemeElement.from_dict(e) for e in state['elements']]
-        self.background_color = state['background_color']
-
-        self.element_list.set_elements(self.elements)
-        self.canvas.set_elements(self.elements)
-        self.canvas.set_background_color(self.background_color)
-        self.bg_color_btn.setStyleSheet(f"background-color: {self.background_color};")
-        self.properties_panel.set_element(None)
-        self.canvas.set_selected_indices([])
-
-        self.update_undo_actions()
+        self.undo_stack.append(self._snapshot_state())
+        self._restore_state(self.redo_stack.pop())
         self.status_bar.showMessage("Redo", 1500)
 
     def update_undo_actions(self):
@@ -1233,10 +1243,7 @@ class ThemeEditorWindow(QMainWindow):
         self.element_list.set_elements(self.elements)
         self.refresh_canvas()
         # Select newly pasted elements
-        new_indices = [self.elements.index(el) for el in new_elements]
-        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
-        canvas_indices = [page_elements.index(el) for el in new_elements if el in page_elements]
-        self.canvas.set_selected_indices(canvas_indices)
+        self.canvas.set_selected_indices([self.elements.index(el) for el in new_elements])
         self.status_bar.showMessage(
             f"Pasted {len(new_elements)} element(s)", 2000
         )
@@ -1246,16 +1253,8 @@ class ThemeEditorWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _get_selected_global_indices(self):
-        """Map canvas.selected_indices → indices into self.elements."""
-        page_elements = [e for e in self.elements if getattr(e, 'page', 1) == self.current_page]
-        result = []
-        for ci in self.canvas.selected_indices:
-            if 0 <= ci < len(page_elements):
-                try:
-                    result.append(self.elements.index(page_elements[ci]))
-                except ValueError:
-                    pass
-        return result
+        """Canvas selection indices (already global into self.elements)."""
+        return [i for i in self.canvas.selected_indices if 0 <= i < len(self.elements)]
 
     def bring_to_front(self):
         """Move selected elements to index 0 (front)."""
@@ -1445,7 +1444,7 @@ class ThemeEditorWindow(QMainWindow):
             self.status_bar.showMessage(f"Loaded preset: {self.theme_name}")
 
         self.element_list.set_elements(self.elements)
-        self.canvas.set_elements(self.elements)
+        self._rebuild_pages()
         self.properties_panel.set_element(None)
         self.canvas.set_selected_indices([])
 
@@ -1480,7 +1479,7 @@ class ThemeEditorWindow(QMainWindow):
             if thumbnail_image and thumbnail_image.mode == 'RGBA':
                 thumbnail_image = thumbnail_image.convert('RGB')
         except Exception as e:
-            print(f"[Preset] Failed to capture thumbnail: {e}")
+            logger.warning(f"Failed to capture thumbnail: {e}")
 
         self.presets_panel.save_preset(self.theme_name, theme_data, thumbnail_image)
 
@@ -1600,8 +1599,8 @@ class ThemeEditorWindow(QMainWindow):
         """Update video UI controls to match current video_background state."""
         if video_background.enabled:
             filename = os.path.basename(video_background.video_path)
-            if len(filename) > 12:
-                filename = filename[:10] + "..."
+            if len(filename) > 26:
+                filename = filename[:24] + "\u2026"
             self.video_btn.setText(filename)
             self.video_btn.setToolTip(video_background.video_path)
             self.video_fit_combo.setEnabled(True)
@@ -1625,7 +1624,7 @@ class ThemeEditorWindow(QMainWindow):
         self.canvas.set_background_color(self.background_color)
         self.elements = []
         self.element_list.set_elements(self.elements)
-        self.canvas.set_elements(self.elements)
+        self._rebuild_pages()
         self.properties_panel.set_element(None)
         # Clear video background
         video_background.clear_video()
@@ -1640,7 +1639,7 @@ class ThemeEditorWindow(QMainWindow):
         )
         if path:
             try:
-                with open(path, 'r') as f:
+                with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
 
                 # Validate theme schema before loading
@@ -1660,7 +1659,7 @@ class ThemeEditorWindow(QMainWindow):
                     ThemeElement.from_dict(e) for e in data.get("elements", [])
                 ]
                 self.element_list.set_elements(self.elements)
-                self.canvas.set_elements(self.elements)
+                self._rebuild_pages()
 
                 # Load video background settings
                 video_data = data.get("video_background", {})
@@ -1703,8 +1702,7 @@ class ThemeEditorWindow(QMainWindow):
                 "video_background": video_background.to_dict()
             }
 
-            with open(path, 'w') as f:
-                json.dump(data, f, indent=2)
+            write_json_atomic(path, data)
 
             self.theme_path = path
             self.status_bar.showMessage(f"Saved: {path}")
@@ -2063,8 +2061,9 @@ class ThemeEditorWindow(QMainWindow):
         snap_to_grid = getattr(old_canvas, "snap_to_grid", True)
 
         self.canvas = CanvasPreview()
+        self.canvas.frame_renderer = self._render_preview_frame
         self.canvas.set_background_color(self.background_color)
-        self.canvas.set_elements(self.get_current_page_elements())
+        self.canvas.set_elements(self.elements, self.current_page)
         self.canvas.set_show_grid(show_grid)
         self.canvas.set_snap_to_grid(snap_to_grid)
         self.canvas.set_selected_indices(selected_indices)
@@ -2073,11 +2072,11 @@ class ThemeEditorWindow(QMainWindow):
         canvas_wrapper.layout().replaceWidget(old_canvas, self.canvas)
         old_canvas.deleteLater()
 
-        self.canvas.element_selected.connect(self.on_canvas_element_selected)
-        self.canvas.elements_selected.connect(self.on_canvas_elements_selected)
-        self.canvas.element_moved.connect(self.on_element_moved)
-        self.canvas.element_resized.connect(self.on_element_resized)
-        self.canvas.drag_started.connect(self.save_undo_state)
+        self._connect_canvas_signals()
+
+    def _update_zoom_label(self):
+        percent = f"{round(self.canvas.scale * 100)}%"
+        self.zoom_btn.setText(f"Fit \u00b7 {percent}" if self.canvas.zoom is None else percent)
 
     def _set_display_size(self, width, height, stretch_layout=False):
         """Apply output dimensions to rendering, preview, presets, and backend."""
@@ -2108,7 +2107,7 @@ class ThemeEditorWindow(QMainWindow):
             self.backend.device_def.height = height
 
         self.presets_panel.set_display_resolution(width, height)
-        constants.PREVIEW_SCALE = 1.0 if width / height < 1.5 else 0.5
+        self._update_display_size_label()
 
         with self._render_cache_lock:
             self._element_render_cache.clear()
@@ -2325,7 +2324,6 @@ class ThemeEditorWindow(QMainWindow):
                 "Display dimensions set to "
                 f"{constants.DISPLAY_WIDTH}x{constants.DISPLAY_HEIGHT}"
             )
-            logger.info(f"Preview scale set to {constants.PREVIEW_SCALE}x")
             logger.info("Canvas recreated with device dimensions")
 
             # Update button text to "Disconnect"
@@ -2369,7 +2367,7 @@ class ThemeEditorWindow(QMainWindow):
             try:
                 self.backend.disconnect()
             except Exception as e:
-                print(f"Error disconnecting backend: {e}")
+                logger.warning(f"Error disconnecting backend: {e}")
             finally:
                 self.backend = None
                 self.device = None  # Clear legacy reference
@@ -2485,56 +2483,66 @@ class ThemeEditorWindow(QMainWindow):
         settings.set_setting("snap_to_grid", checked)
         self.status_bar.showMessage(f"Snap to Grid: {'Enabled' if checked else 'Disabled'}")
 
-    def update_page_combo(self):
+    def update_page_tabs(self):
         """Update page combo box with current pages."""
-        self.page_combo.blockSignals(True)
-        self.page_combo.clear()
+        self.page_tabs.blockSignals(True)
+        while self.page_tabs.count():
+            self.page_tabs.removeTab(0)
         for page in self.pages:
-            self.page_combo.addItem(page["name"], page["number"])
+            self.page_tabs.addTab(page["name"])
         # Select current page
         for i, page in enumerate(self.pages):
             if page["number"] == self.current_page:
-                self.page_combo.setCurrentIndex(i)
+                self.page_tabs.setCurrentIndex(i)
                 break
-        self.page_combo.blockSignals(False)
+        self.page_tabs.setTabsClosable(len(self.pages) > 1)  # The last page can't be deleted
+        self.page_tabs.blockSignals(False)
+
+    def _show_page(self, number):
+        """Make `number` the edited page in the window, element list and canvas."""
+        self.current_page = number
+        self.element_list.current_page = number
+        self.element_list.refresh_list(preserve_state=False)
+        self.canvas.set_selected_indices([])
+        self.properties_panel.set_element(None)
+        self._do_refresh_canvas()
+
+    def _rebuild_pages(self, keep_existing=False):
+        """Derive the page list from elements (themes only persist element.page).
+
+        keep_existing=False is for a freshly loaded theme: reset to its first page.
+        """
+        numbers = {getattr(e, 'page', 1) for e in self.elements} | {1}
+        if keep_existing:
+            numbers |= {p["number"] for p in self.pages}
+        self.pages = [{"name": f"Page {n}", "number": n} for n in sorted(numbers)]
+        if not keep_existing or self.current_page not in numbers:
+            self.current_page = min(numbers)
+        self.update_page_tabs()
+        self._show_page(self.current_page)
 
     def on_page_changed(self, index):
         """Handle page selection change."""
         if index >= 0 and index < len(self.pages):
-            self.current_page = self.pages[index]["number"]
-            self.element_list.current_page = self.current_page  # Update element list's current page
-            self.refresh_canvas()
+            self._show_page(self.pages[index]["number"])
             self.status_bar.showMessage(f"Switched to {self.pages[index]['name']}")
-
-    def prev_page(self):
-        """Go to previous page."""
-        current_index = self.page_combo.currentIndex()
-        if current_index > 0:
-            self.page_combo.setCurrentIndex(current_index - 1)
-
-    def next_page(self):
-        """Go to next page."""
-        current_index = self.page_combo.currentIndex()
-        if current_index < len(self.pages) - 1:
-            self.page_combo.setCurrentIndex(current_index + 1)
 
     def add_page(self):
         """Add a new page."""
         new_page_num = max(p["number"] for p in self.pages) + 1 if self.pages else 1
         new_page = {"name": f"Page {new_page_num}", "number": new_page_num}
         self.pages.append(new_page)
-        self.update_page_combo()
+        self.update_page_tabs()
         # Switch to new page
-        self.page_combo.setCurrentIndex(len(self.pages) - 1)
+        self.page_tabs.setCurrentIndex(len(self.pages) - 1)
         self.status_bar.showMessage(f"Created {new_page['name']}")
 
-    def delete_page(self):
-        """Delete current page (if not the last one)."""
+    def delete_page(self, current_index):
+        """Delete the page at tab `current_index` (if not the last one)."""
         if len(self.pages) <= 1:
             QMessageBox.warning(self, "Cannot Delete", "Cannot delete the last page.")
             return
 
-        current_index = self.page_combo.currentIndex()
         page_to_delete = self.pages[current_index]
 
         # Confirm deletion
@@ -2546,16 +2554,16 @@ class ThemeEditorWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
+            self.save_undo_state()
             # Remove elements on this page
             self.elements = [el for el in self.elements if getattr(el, 'page', 1) != page_to_delete["number"]]
-            # Remove page
             self.pages.pop(current_index)
-            # Switch to previous page or first page
-            new_index = max(0, current_index - 1)
-            self.current_page = self.pages[new_index]["number"]
-            self.update_page_combo()
-            self.refresh_canvas()
+            # Closing another tab keeps the current page; closing this one moves to a neighbor
+            if self.current_page == page_to_delete["number"]:
+                self.current_page = self.pages[max(0, current_index - 1)]["number"]
+            self.update_page_tabs()
             self.element_list.set_elements(self.elements)
+            self._show_page(self.current_page)
             self.status_bar.showMessage(f"Deleted {page_to_delete['name']}")
 
     def toggle_auto_rotate(self, checked):
@@ -2590,9 +2598,9 @@ class ThemeEditorWindow(QMainWindow):
 
     def rotate_to_next_page(self):
         """Rotate to next page (wraps around to first page)."""
-        current_index = self.page_combo.currentIndex()
+        current_index = self.page_tabs.currentIndex()
         next_index = (current_index + 1) % len(self.pages)
-        self.page_combo.setCurrentIndex(next_index)
+        self.page_tabs.setCurrentIndex(next_index)
 
     def _start_render_thread(self):
         """Start the one-slot latest-frame worker."""
@@ -2645,11 +2653,39 @@ class ThemeEditorWindow(QMainWindow):
             if element.source != "static" and element.source in sensor_data:
                 data["value"] = sensor_data[element.source]
                 element.value = data["value"]
+            if element.animate_gauge:
+                data["value"] = self._animated_value(element, float(data["value"]))
             elements.append((id(element), data))
         return {
             "background_color": self.background_color,
             "elements": elements,
         }
+
+    def _animated_value(self, element, target):
+        """Ease the shown gauge value toward target, independent of frame rate.
+
+        Both the editor preview and the device loop call this (GUI thread only).
+        """
+        now = time.perf_counter()
+        current, last = self._animated_values.get(id(element), (target, now))
+        dt = min(now - last, 0.5)
+        diff = target - current
+        # Bigger jumps move faster (ease-out), tuned as a per-1/60s step like the old canvas
+        speed = min(0.9, element.animation_speed * (1.0 + min(1.0, abs(diff) / 50.0) * 2.0))
+        current += diff * (1 - (1 - speed) ** (dt * 60))
+        if abs(target - current) < 0.05:
+            current = target
+        self._animated_values[id(element)] = (current, now)
+        return current
+
+    def _render_preview_frame(self):
+        """Editor canvas frame: the same image the device receives."""
+        return self.render_theme_image(snapshot=self._capture_render_snapshot())
+
+    def _tick_preview(self):
+        # While connected, send_frame_with_sensors already refreshes the canvas
+        if self.live_preview_timer is None and self.isVisible() and not self.isMinimized():
+            self.canvas.update()
 
     def start_continuous_send(self):
         interval = round(1000 / self.target_fps)
@@ -2708,21 +2744,19 @@ class ThemeEditorWindow(QMainWindow):
             self._canvas_update_counter += 1
             if self._canvas_update_counter >= self._canvas_update_interval:
                 self._canvas_update_counter = 0
-                self.canvas.set_elements(self.get_current_page_elements())
+                self.canvas.set_elements(self.elements, self.current_page)
                 self.canvas.update()
 
+        except DeviceIOError as e:
+            logger.warning(f"Device error, disconnecting: {e}")
+            self.disconnect_display()
+            self._was_connected_before_sleep = True
+            self._reconnect_attempts = 0
+            self._start_reconnect_timer()
+            self.status_bar.showMessage("Display disconnected - attempting to reconnect...")
         except Exception as e:
-            error_str = str(e).lower()
-            if "device" in error_str or "hid" in error_str or "write" in error_str or "closed" in error_str:
-                print(f"[HID] Device error, disconnecting: {e}")
-                self.disconnect_display()
-                self._was_connected_before_sleep = True
-                self._reconnect_attempts = 0
-                self._start_reconnect_timer()
-                self.status_bar.showMessage("Display disconnected - attempting to reconnect...")
-            else:
-                print(f"Send error: {e}")
-                self.status_bar.showMessage(f"Error: {e}")
+            logger.exception("Frame render error")
+            self.status_bar.showMessage(f"Error: {e}")
 
     _font_cache = None
 
@@ -2951,7 +2985,8 @@ class ThemeEditorWindow(QMainWindow):
 
         # Render in reverse order so elements at top of list appear in front
         for cache_key, element in reversed(page_elements):
-            self.render_element_with_opacity(img, element, cache_key=cache_key)
+            if element.visible:
+                self.render_element_with_opacity(img, element, cache_key=cache_key)
 
         # Convert back to RGB for output
         return img.convert('RGB')
@@ -3039,7 +3074,7 @@ class ThemeEditorWindow(QMainWindow):
                 safe, resolved_path, err = is_safe_path(element.image_path, allow_absolute=True)
                 if not safe or not os.path.exists(element.image_path):
                     if not safe:
-                        print(f"Unsafe image path blocked: {element.image_path} - {err}")
+                        logger.warning(f"Unsafe image path blocked: {element.image_path} - {err}")
                     return
                 try:
                     # Use cached image element to prevent disk I/O and expensive LANCZOS resampling on every frame
@@ -3052,7 +3087,7 @@ class ThemeEditorWindow(QMainWindow):
                     )
                     overlay.paste(img_overlay, (element.x, element.y), img_overlay)
                 except Exception as e:
-                    print(f"Image load error: {e}")
+                    logger.warning(f"Image load error: {e}")
         else:
             custom = get_custom_element(element.type)
             if custom and custom.get('render_image'):
@@ -3060,7 +3095,7 @@ class ThemeEditorWindow(QMainWindow):
                     draw = ImageDraw.Draw(overlay)
                     custom['render_image'](draw, overlay, element)
                 except Exception as e:
-                    print(f"Custom element render error: {e}")
+                    logger.warning(f"Custom element render error: {e}")
         
         # Cache the rendered overlay
         # Optimization: Crop the overlay to its non-transparent bounding box
@@ -3194,53 +3229,6 @@ class ThemeEditorWindow(QMainWindow):
 
             self._fast_alpha_composite(img, overlay)
 
-    def render_text(self, draw, img, element, font):
-        # Determine text to display based on source
-        source = getattr(element, 'source', 'static')
-        if source and source != 'static':
-            # Display sensor value, optionally with label
-            value_text = get_value_with_unit(element.value, source, getattr(element, 'temp_hide_unit', False))
-            if element.text:
-                text = f"{element.text}: {value_text}"
-            else:
-                text = value_text
-        else:
-            text = element.text
-
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-
-        if element.text_align == "left":
-            x = element.x
-        elif element.text_align == "right":
-            x = element.x + element.width - text_width
-        else:
-            x = element.x + (element.width - text_width) // 2
-
-        y = element.y + (element.height - text_height) // 2
-
-        if element.clip:
-            mask = Image.new('L', img.size, 0)
-            mask_draw = ImageDraw.Draw(mask)
-            mask_draw.rectangle([element.x, element.y, element.x + element.width, element.y + element.height], fill=255)
-
-            temp = Image.new('RGBA', img.size, (0, 0, 0, 0))
-            temp_draw = ImageDraw.Draw(temp)
-            temp_draw.text((x, y), text, fill=element.color, font=font)
-
-            r, g, b = img.split()
-            tr, tg, tb, ta = temp.split()
-
-            r = Image.composite(tr, r, mask)
-            g = Image.composite(tg, g, mask)
-            b = Image.composite(tb, b, mask)
-
-            img_temp = Image.merge('RGB', (r, g, b))
-            img.paste(img_temp)
-        else:
-            draw.text((x, y), text, fill=element.color, font=font)
-
     def interpolate_gradient_color(self, gradient_stops, position):
         """Interpolate color from gradient stops at a given position (0-1)."""
         if not gradient_stops:
@@ -3321,8 +3309,7 @@ class ThemeEditorWindow(QMainWindow):
         """Render circle gauge with opacity support."""
         x, y = element.x, element.y
         radius = element.radius
-        # Use animated value if available (from canvas animation), otherwise use raw value
-        value = getattr(element, '_animated_display_value', element.value)
+        value = element.value
 
         # Check for gradient fill
         use_gradient = getattr(element, 'gradient_fill', False)
@@ -3532,8 +3519,7 @@ class ThemeEditorWindow(QMainWindow):
     def render_bar_gauge_rgba(self, img, element, font, color_opacity, bg_opacity):
         """Render bar gauge with opacity support."""
         x, y = element.x, element.y
-        # Use animated value if available (from canvas animation), otherwise use raw value
-        value = getattr(element, '_animated_display_value', element.value)
+        value = element.value
         width, height = element.width, element.height
 
         # Check for gradient fill
@@ -4046,348 +4032,6 @@ class ThemeEditorWindow(QMainWindow):
         self._fast_alpha_composite(img, clock_face_overlay)
         self._fast_alpha_composite(img, hands_overlay)
 
-    def render_circle_gauge(self, draw, element, font, font_small):
-        x, y = element.x, element.y
-        radius = element.radius
-        value = element.value
-
-        # Check for gradient fill
-        use_gradient = getattr(element, 'gradient_fill', False)
-        if use_gradient:
-            gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
-            color = self.interpolate_gradient_color(gradient_stops, value / 100.0)
-        else:
-            auto_color = getattr(element, 'auto_color_change', True)
-            if auto_color:
-                if "temp" in element.source:
-                    if value < 60:
-                        color = element.color
-                    elif value < 80:
-                        color = "#ffcc00"
-                    else:
-                        color = "#ff3232"
-                else:
-                    if value < 70:
-                        color = element.color
-                    elif value < 90:
-                        color = "#ffcc00"
-                    else:
-                        color = "#ff3232"
-            else:
-                color = element.color
-
-        arc_width = 18
-        for i in range(arc_width):
-            r = radius - i
-            draw.arc(
-                [x - r, y - r, x + r, y + r],
-                start=135, end=405,
-                fill=element.background_color, width=2
-            )
-
-        sweep = 270 * min(value, 100) / 100
-        end_angle = 135 + sweep
-
-        for i in range(arc_width):
-            r = radius - i
-            draw.arc(
-                [x - r, y - r, x + r, y + r],
-                start=135, end=end_angle,
-                fill=color, width=2
-            )
-
-        value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
-        bbox = draw.textbbox((0, 0), value_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        # Get value text color
-        value_text_color = getattr(element, 'text_color', element.color)
-        draw.text(
-            (x - text_width // 2, y - text_height // 2 - 10),
-            value_text, fill=value_text_color, font=font
-        )
-
-        # Get label text color
-        label_text_color = getattr(element, 'label_text_color', element.color)
-        bbox = draw.textbbox((0, 0), element.text, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(
-            (x - text_width // 2, y + radius // 3),
-            element.text, fill=label_text_color, font=font_small
-        )
-
-    def render_bar_gauge(self, draw, element, font):
-        x, y = element.x, element.y
-        value = element.value
-        width, height = element.width, element.height
-
-        use_gradient = getattr(element, 'gradient_fill', False)
-
-        if not use_gradient:
-            auto_color = getattr(element, 'auto_color_change', True)
-            if auto_color:
-                if value < 70:
-                    color = element.color
-                elif value < 90:
-                    color = "#ffcc00"
-                else:
-                    color = "#ff3232"
-            else:
-                color = element.color
-
-        rounded = getattr(element, 'rounded_corners', False)
-        corner_radius = height // 2 if rounded else 0
-
-        # Draw background
-        if rounded:
-            draw.rounded_rectangle(
-                [x, y, x + width, y + height],
-                radius=corner_radius,
-                fill=element.background_color
-            )
-        else:
-            draw.rectangle(
-                [x, y, x + width, y + height],
-                fill=element.background_color
-            )
-
-        # Draw fill
-        fill_width = int(width * min(value, 100) / 100)
-        if fill_width > 0:
-            if use_gradient:
-                # Use horizontal gradient from gradient stops - optimized with NumPy
-                gradient_stops = getattr(element, 'gradient_stops', [(0.0, "#00ff96"), (1.0, "#ff4444")])
-
-                # Create full-width gradient once and crop to fill_width
-                gradient_img = self.create_horizontal_gradient(width, height, gradient_stops, 100)
-                # Crop to fill_width and paste
-                if fill_width < width:
-                    gradient_img = gradient_img.crop((0, 0, int(fill_width), int(height)))
-                # Access underlying image from draw object
-                draw._image.paste(gradient_img, (int(x), int(y)), gradient_img)
-
-            else:
-                if rounded:
-                    draw.rounded_rectangle(
-                        [x, y, x + fill_width, y + height],
-                        radius=corner_radius,
-                        fill=color
-                    )
-                else:
-                    draw.rectangle(
-                        [x, y, x + fill_width, y + height],
-                        fill=color
-                    )
-
-        # Draw border if enabled
-        bar_border = getattr(element, 'bar_border', False)
-        if bar_border:
-            border_width = getattr(element, 'bar_border_width', 2)
-            border_color = getattr(element, 'bar_border_color', '#ffffff')
-            border_position = getattr(element, 'bar_border_position', 'center')
-
-            half_border = border_width / 2
-
-            # Calculate offset based on border position
-            # PIL draws stroke INSIDE the bounding box (not centered like Qt)
-            if border_position == "inside":
-                # Stroke entirely inside element - box at element boundary
-                bx1, by1 = int(x), int(y)
-                bx2, by2 = int(x + width), int(y + height)
-                bradius = corner_radius
-            elif border_position == "center":
-                # Stroke centered on element boundary - expand box by half_border
-                bx1, by1 = int(x - half_border), int(y - half_border)
-                bx2, by2 = int(x + width + half_border), int(y + height + half_border)
-                bradius = int(corner_radius + half_border)
-            else:  # outside
-                # Stroke entirely outside element - expand box by full border_width
-                bx1, by1 = int(x - border_width), int(y - border_width)
-                bx2, by2 = int(x + width + border_width), int(y + height + border_width)
-                bradius = int(corner_radius + border_width)
-
-            if rounded:
-                draw.rounded_rectangle(
-                    [bx1, by1, bx2, by2],
-                    radius=bradius,
-                    outline=border_color,
-                    width=border_width
-                )
-            else:
-                draw.rectangle(
-                    [bx1, by1, bx2, by2],
-                    outline=border_color,
-                    width=border_width
-                )
-
-        # Draw text based on bar_text_mode and bar_text_position
-        bar_text_mode = getattr(element, 'bar_text_mode', 'full')
-        bar_text_position = getattr(element, 'bar_text_position', 'inside')
-
-        if bar_text_mode != 'none':
-            value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
-
-            # Value font
-            value_font = self.get_pil_font(element, element.font_size)
-            # Label font (separate styling)
-            label_font = self.get_pil_font_custom(
-                getattr(element, 'label_font_family', element.font_family),
-                getattr(element, 'label_font_bold', element.font_bold),
-                getattr(element, 'label_font_italic', element.font_italic),
-                getattr(element, 'label_font_size', element.font_size)
-            )
-
-            # Text colors
-            value_text_color = getattr(element, 'text_color', element.color)
-            label_text_color = getattr(element, 'label_text_color', element.color)
-
-            if bar_text_position == 'inside':
-                if bar_text_mode == 'full':
-                    # Draw label and value separately, centered with bar
-                    label_text = f"{element.text} "
-                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
-                    label_width = bbox_label[2] - bbox_label[0]
-
-                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
-                    value_width = bbox_value[2] - bbox_value[0]
-
-                    total_width = label_width + value_width
-                    start_x = x + (width - total_width) // 2
-                    center_y = y + height // 2
-
-                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
-                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'value_only':
-                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_x = x + (width - text_width) // 2
-                    center_y = y + height // 2
-                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'label_only':
-                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_x = x + (width - text_width) // 2
-                    center_y = y + height // 2
-                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
-
-            elif bar_text_position == 'left':
-                if bar_text_mode == 'full':
-                    # Draw label and value separately, centered with bar
-                    label_text = f"{element.text} "
-                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
-                    label_width = bbox_label[2] - bbox_label[0]
-
-                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
-                    value_width = bbox_value[2] - bbox_value[0]
-
-                    total_width = label_width + value_width
-                    start_x = x - total_width - 10
-                    center_y = y + height // 2
-
-                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
-                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'value_only':
-                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_x = x - text_width - 10
-                    center_y = y + height // 2
-                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'label_only':
-                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_x = x - text_width - 10
-                    center_y = y + height // 2
-                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
-
-            elif bar_text_position == 'right':
-                if bar_text_mode == 'full':
-                    # Draw label and value separately, centered with bar
-                    label_text = f"{element.text} "
-                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
-                    label_width = bbox_label[2] - bbox_label[0]
-
-                    start_x = x + width + 10
-                    center_y = y + height // 2
-
-                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
-                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'value_only':
-                    text_x = x + width + 10
-                    center_y = y + height // 2
-                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'label_only':
-                    text_x = x + width + 10
-                    center_y = y + height // 2
-                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
-
-            elif bar_text_position == 'top':
-                if bar_text_mode == 'full':
-                    # Label and value inline above bar with 16px padding
-                    label_text = f"{element.text} "
-                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
-                    label_width = bbox_label[2] - bbox_label[0]
-                    label_height = bbox_label[3] - bbox_label[1]
-
-                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
-                    value_width = bbox_value[2] - bbox_value[0]
-                    value_height = bbox_value[3] - bbox_value[1]
-
-                    total_width = label_width + value_width
-                    max_height = max(label_height, value_height)
-                    start_x = x + (width - total_width) // 2
-                    center_y = y - 16 - max_height // 2
-
-                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
-                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'value_only':
-                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_height = bbox[3] - bbox[1]
-                    text_x = x + (width - text_width) // 2
-                    center_y = y - 16 - text_height // 2
-                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'label_only':
-                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_height = bbox[3] - bbox[1]
-                    text_x = x + (width - text_width) // 2
-                    center_y = y - 16 - text_height // 2
-                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
-
-            elif bar_text_position == 'bottom':
-                if bar_text_mode == 'full':
-                    # Label and value inline below bar with 16px padding
-                    label_text = f"{element.text} "
-                    bbox_label = draw.textbbox((0, 0), label_text, font=label_font)
-                    label_width = bbox_label[2] - bbox_label[0]
-                    label_height = bbox_label[3] - bbox_label[1]
-
-                    bbox_value = draw.textbbox((0, 0), value_text, font=value_font)
-                    value_width = bbox_value[2] - bbox_value[0]
-                    value_height = bbox_value[3] - bbox_value[1]
-
-                    total_width = label_width + value_width
-                    max_height = max(label_height, value_height)
-                    start_x = x + (width - total_width) // 2
-                    center_y = y + height + 16 + max_height // 2
-
-                    draw.text((start_x, center_y), label_text, fill=label_text_color, font=label_font, anchor="lm")
-                    draw.text((start_x + label_width, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'value_only':
-                    bbox = draw.textbbox((0, 0), value_text, font=value_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_height = bbox[3] - bbox[1]
-                    text_x = x + (width - text_width) // 2
-                    center_y = y + height + 16 + text_height // 2
-                    draw.text((text_x, center_y), value_text, fill=value_text_color, font=value_font, anchor="lm")
-                elif bar_text_mode == 'label_only':
-                    bbox = draw.textbbox((0, 0), element.text, font=label_font)
-                    text_width = bbox[2] - bbox[0]
-                    text_height = bbox[3] - bbox[1]
-                    text_x = x + (width - text_width) // 2
-                    center_y = y + height + 16 + text_height // 2
-                    draw.text((text_x, center_y), element.text, fill=label_text_color, font=label_font, anchor="lm")
-
     def image_to_jpeg(self, img, quality=80):
         """Convert image to JPEG bytes with optimized settings."""
         if self.display_brightness < 100:
@@ -4414,7 +4058,7 @@ class ThemeEditorWindow(QMainWindow):
     def send_jpeg_frame(self, jpeg_data):
         """Send JPEG frame to display via backend."""
         if not self.backend:
-            raise IOError("Device not connected")
+            raise DeviceIOError("Device not connected")
 
         # Build frame data according to protocol
         # For HID devices (Thermalright Trofeo): Use known protocol with header + chunks
@@ -4442,7 +4086,7 @@ class ThemeEditorWindow(QMainWindow):
             try:
                 # Send header
                 if not self.backend.send_frame(bytes(header)):
-                    raise IOError("Failed to send header")
+                    raise DeviceIOError("Failed to send header")
 
                 # Send remaining chunks
                 offset = first_chunk
@@ -4451,18 +4095,18 @@ class ThemeEditorWindow(QMainWindow):
                     if len(chunk) < 512:
                         chunk = chunk + bytes(512 - len(chunk))
                     if not self.backend.send_frame(chunk):
-                        raise IOError("Failed to send chunk")
+                        raise DeviceIOError("Failed to send chunk")
                     offset += 512
             except Exception as e:
-                raise IOError(f"Frame send failed: {e}")
+                raise DeviceIOError(f"Frame send failed: {e}")
 
         else:
             # USB devices (ChiZhu Tech USBDISPLAY) - send JPEG with protocol header
             try:
                 if not self.backend.send_frame(jpeg_data):
-                    raise IOError("Frame send returned False")
+                    raise DeviceIOError("Frame send returned False")
             except Exception as e:
-                raise IOError(f"Frame send failed: {e}") from e
+                raise DeviceIOError(f"Frame send failed: {e}") from e
 
     def show_settings(self):
         """Show the settings dialog."""
@@ -4484,7 +4128,7 @@ class ThemeEditorWindow(QMainWindow):
             self.launch_at_login_cb.setToolTip(
                 "Approve UAC once to create the elevated startup task; future logins are silent."
             )
-        self.launch_at_login_cb.setChecked(settings.get_setting("launch_at_login", True))
+        self.launch_at_login_cb.setChecked(settings.get_setting("launch_at_login", False))
         startup_layout.addWidget(self.launch_at_login_cb)
 
         self.launch_minimized_cb = QCheckBox("Start minimized to system tray")
@@ -4560,7 +4204,6 @@ class ThemeEditorWindow(QMainWindow):
             from src.utils.app_version import __version__
         except ImportError:
             __version__ = "0.0.0"
-        from PySide6.QtWidgets import QProgressDialog
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Update Available")
@@ -4593,8 +4236,8 @@ class ThemeEditorWindow(QMainWindow):
         download_label = "Download"
         if can_auto_install_asset(asset_name, expected_hash=expected_hash):
             download_label = "Download && Install"
-        download_btn = buttons.addButton(download_label, QDialogButtonBox.ButtonRole.AcceptRole)
-        cancel_btn = buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
+        buttons.addButton(download_label, QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.addButton("Later", QDialogButtonBox.ButtonRole.RejectRole)
 
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
@@ -4619,7 +4262,6 @@ class ThemeEditorWindow(QMainWindow):
 
     def _download_and_install_update(self, version, download_url, expected_hash="", asset_name=""):
         """Download installer and prompt for installation."""
-        from PySide6.QtWidgets import QProgressDialog
         import subprocess
         import os
 

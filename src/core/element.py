@@ -97,6 +97,9 @@ class ThemeElement:
         # Locking
         self.locked = kwargs.get("locked", False)  # Prevent editing/dragging when True
 
+        # Hidden elements are neither rendered nor clickable
+        self.visible = kwargs.get("visible", True)
+
         # Temperature display option
         self.temp_hide_unit = kwargs.get("temp_hide_unit", False)  # Show only ° instead of °C
 
@@ -104,76 +107,9 @@ class ThemeElement:
         self.page = kwargs.get("page", 1)  # Page number (1-based)
 
     def to_dict(self):
-        return {
-            "type": self.type,
-            "name": self.name,
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-            "radius": self.radius,
-            "border_radius": self.border_radius,
-            "glass_effect": self.glass_effect,
-            "glass_blur": self.glass_blur,
-            "glass_opacity": self.glass_opacity,
-            "color": self.color,
-            "color_opacity": self.color_opacity,
-            "background_color": self.background_color,
-            "background_color_opacity": self.background_color_opacity,
-            "use_custom_text_color": self.use_custom_text_color,
-            "text_color": self.text_color,
-            "text_color_opacity": self.text_color_opacity,
-            "text": self.text,
-            "font_size": self.font_size,
-            "font_family": self.font_family,
-            "font_bold": self.font_bold,
-            "font_italic": self.font_italic,
-            "text_align": self.text_align,
-            "clip": self.clip,
-            "source": self.source,
-            "value": self.value,
-            "image_path": self.image_path,
-            "scale_proportionally": self.scale_proportionally,
-            "aspect_ratio": self.aspect_ratio,
-            "show_background": self.show_background,
-            "show_label": self.show_label,
-            "show_gradient": self.show_gradient,
-            "line_thickness": self.line_thickness,
-            "smooth": self.smooth,
-            "rounded_corners": self.rounded_corners,
-            "gradient_fill": self.gradient_fill,
-            "gradient_stops": self.gradient_stops,
-            "bar_text_mode": self.bar_text_mode,
-            "bar_text_position": self.bar_text_position,
-            "bar_border": self.bar_border,
-            "bar_border_width": self.bar_border_width,
-            "bar_border_color": self.bar_border_color,
-            "bar_border_opacity": self.bar_border_opacity,
-            "bar_border_position": self.bar_border_position,
-            "auto_color_change": self.auto_color_change,
-            "animate_gauge": self.animate_gauge,
-            "animation_speed": self.animation_speed,
-            "gauge_rounded_ends": self.gauge_rounded_ends,
-            "label_font_size": self.label_font_size,
-            "label_font_family": self.label_font_family,
-            "label_font_bold": self.label_font_bold,
-            "label_font_italic": self.label_font_italic,
-            "label_text_color": self.label_text_color,
-            "gif_path": self.gif_path,
-            "scale_mode": self.scale_mode,
-            "time_format": self.time_format,
-            "show_am_pm": self.show_am_pm,
-            "show_seconds": self.show_seconds,
-            "show_leading_zero": self.show_leading_zero,
-            "show_seconds_hand": self.show_seconds_hand,
-            "show_clock_border": self.show_clock_border,
-            "clock_face_style": self.clock_face_style,
-            "smooth_animation": self.smooth_animation,
-            "group": self.group,
-            "locked": self.locked,
-            "temp_hide_unit": self.temp_hide_unit,
-            "page": self.page
-        }
+        # Every public attribute set in __init__ is a persisted field;
+        # "_"-prefixed attributes are runtime caches (e.g. canvas pixmaps).
+        return {k: v for k, v in vars(self).items() if not k.startswith("_")}
 
     @classmethod
     def from_dict(cls, data):

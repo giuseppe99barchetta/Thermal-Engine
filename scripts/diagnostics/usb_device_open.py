@@ -50,7 +50,7 @@ try:
     print("  OK: Configuration set successfully!")
 except Exception as e:
     print(f"  ERROR: {e}")
-    print(f"  This is the problem - set_configuration() is failing!")
+    print("  This is the problem - set_configuration() is failing!")
 
     # Try alternative approach
     print("\n[5] Trying alternative approach: get configuration first...")

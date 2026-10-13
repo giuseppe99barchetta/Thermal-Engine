@@ -5,8 +5,7 @@ A smooth line chart that shows current value on the right
 and history of values scrolling left.
 """
 
-from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QColor, QPen, QBrush, QPainterPath, QLinearGradient
+from PySide6.QtGui import QColor
 
 # Import SOURCE_UNITS for proper unit display
 try:
@@ -151,130 +150,6 @@ def catmull_rom_spline(points, num_interpolated=10):
     result.append(pts[-2])
 
     return result
-
-
-def draw_preview(painter, element, x, y, scale):
-    """Draw the chart in the Qt preview canvas."""
-    width = int(element.width * scale)
-    height = int(element.height * scale)
-
-    # Get opacity values
-    color_opacity = getattr(element, 'color_opacity', 100)
-    bg_opacity = getattr(element, 'background_color_opacity', 100)
-
-    color = apply_opacity(element.color, color_opacity)
-    bg_color = apply_opacity(element.background_color, bg_opacity)
-
-    # Get display options (default to True for backwards compatibility)
-    show_background = getattr(element, 'show_background', True)
-    show_label = getattr(element, 'show_label', True)
-    show_gradient = getattr(element, 'show_gradient', True)
-    line_thickness = getattr(element, 'line_thickness', 2)
-    smooth = getattr(element, 'smooth', False)
-
-    # Draw background
-    if show_background:
-        painter.fillRect(x, y, width, height, bg_color)
-        # Draw border
-        painter.setPen(QPen(QColor(60, 60, 80), 1))
-        painter.drawRect(x, y, width, height)
-
-    # Get history and add current value (rate-limited)
-    add_value(element, element.value)
-    history = get_history(element)
-
-    if len(history) < 2:
-        return
-
-    # Calculate points for the chart
-    num_points = min(len(history), int(width / 3))  # One point every 3 pixels
-    if num_points < 2:
-        return
-
-    points = []
-    history_slice = history[-num_points:]
-
-    for i, value in enumerate(history_slice):
-        px = x + (i / (num_points - 1)) * width
-        # Clamp value between 0-100 for percentage-based sources
-        clamped_value = max(0, min(100, value))
-        py = y + height - (clamped_value / 100) * height
-        points.append(QPointF(px, py))
-
-    # Create path for the line
-    if len(points) >= 2:
-        # Apply smoothing if enabled
-        if smooth and len(points) >= 3:
-            smooth_pts = catmull_rom_spline(points, num_interpolated=8)
-            draw_points = [QPointF(p[0], p[1]) for p in smooth_pts]
-        else:
-            draw_points = points
-
-        # Build the line path
-        line_path = QPainterPath()
-        line_path.moveTo(draw_points[0])
-
-        # Connect points
-        for i in range(1, len(draw_points)):
-            line_path.lineTo(draw_points[i])
-
-        # Create fill path (closed polygon under the line)
-        fill_path = QPainterPath()
-        fill_path.moveTo(draw_points[0].x(), y + height)  # Start at bottom-left
-        for point in draw_points:
-            fill_path.lineTo(point)  # Trace the line
-        fill_path.lineTo(draw_points[-1].x(), y + height)  # Go to bottom-right
-        fill_path.closeSubpath()  # Close back to start
-
-        # Draw gradient fill
-        if show_gradient:
-            gradient = QLinearGradient(x, y, x, y + height)
-            fill_color = QColor(color)
-            # Scale alpha based on color opacity
-            fill_color.setAlpha(int(100 * color_opacity / 100))
-            gradient.setColorAt(0, fill_color)
-            fill_color_bottom = QColor(color)
-            fill_color_bottom.setAlpha(int(20 * color_opacity / 100))
-            gradient.setColorAt(1, fill_color_bottom)
-
-            painter.setBrush(QBrush(gradient))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawPath(fill_path)
-
-        # Draw the line
-        pen = QPen(color, line_thickness * scale)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(line_path)
-
-        # Draw current value dot
-        if draw_points:
-            last_point = draw_points[-1]
-            dot_size = max(3, line_thickness + 1) * scale
-            painter.setBrush(QBrush(color))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(last_point, dot_size, dot_size)
-
-    # Draw label and value
-    if show_label:
-        from PySide6.QtGui import QFont
-        font = QFont("Arial")
-        font.setPixelSize(int(element.font_size * scale))
-        painter.setFont(font)
-
-        # Use custom text color if enabled
-        if getattr(element, 'use_custom_text_color', False):
-            text_color = getattr(element, 'text_color', element.color)
-            text_opacity = getattr(element, 'text_color_opacity', 100)
-            label_color = apply_opacity(text_color, text_opacity)
-        else:
-            label_color = color
-        painter.setPen(QPen(label_color))
-
-        label_text = f"{element.text}: {get_value_with_unit(element.value, element.source, getattr(element, 'temp_hide_unit', False))}"
-        painter.drawText(x + 5, y + int(element.font_size * scale) + 2, label_text)
 
 
 def hex_to_rgba(hex_color, opacity=100):

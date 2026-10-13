@@ -6,14 +6,17 @@ Each element file should define:
   - ELEMENT_TYPE: str - unique identifier for the element
   - ELEMENT_NAME: str - display name in the UI
   - DEFAULT_PROPS: dict - default properties for new elements
-  - draw_preview(painter, element, x, y, scale) - Qt preview rendering
-  - render_image(draw, img, element) - PIL rendering for display
+  - render_image(draw, img, element) - PIL rendering (used for both the editor
+    preview and the display, so they always match)
 """
 
+import logging
 import os
 import importlib.util
 import sys
 import re
+
+logger = logging.getLogger(__name__)
 
 # Store loaded custom elements
 CUSTOM_ELEMENTS = {}
@@ -49,7 +52,7 @@ def load_custom_elements():
 
         # Validate filename is safe (no path traversal)
         if not SAFE_FILENAME_PATTERN.match(filename):
-            print(f"[Elements] Skipping unsafe filename: {filename}")
+            logger.warning(f"Skipping unsafe filename: {filename}")
             continue
 
         module_name = filename[:-3]
@@ -59,7 +62,7 @@ def load_custom_elements():
         real_path = os.path.realpath(filepath)
         real_elements_dir = os.path.realpath(elements_dir)
         if not real_path.startswith(real_elements_dir + os.sep):
-            print(f"[Elements] Skipping file outside elements dir: {filename}")
+            logger.warning(f"Skipping file outside elements dir: {filename}")
             continue
 
         try:
@@ -71,14 +74,13 @@ def load_custom_elements():
                 CUSTOM_ELEMENTS[module.ELEMENT_TYPE] = {
                     'name': getattr(module, 'ELEMENT_NAME', module.ELEMENT_TYPE),
                     'defaults': getattr(module, 'DEFAULT_PROPS', {}),
-                    'draw_preview': getattr(module, 'draw_preview', None),
                     'render_image': getattr(module, 'render_image', None),
                     'module': module
                 }
-                print(f"[Elements] Loaded custom element: {module.ELEMENT_TYPE}")
+                logger.info(f"Loaded custom element: {module.ELEMENT_TYPE}")
 
         except Exception as e:
-            print(f"[Elements] Failed to load {filename}: {e}")
+            logger.warning(f"Failed to load {filename}: {e}")
 
     return CUSTOM_ELEMENTS
 

@@ -32,15 +32,15 @@ for name, backend in backends:
     try:
         dev = usb.core.find(idVendor=0x87AD, idProduct=0x70DB, backend=backend)
         if dev is None:
-            print(f"    Device not found")
+            print("    Device not found")
             continue
 
-        print(f"    Device found!")
+        print("    Device found!")
 
         # Try to set configuration
         try:
             dev.set_configuration()
-            print(f"    SUCCESS: Configuration set!")
+            print("    SUCCESS: Configuration set!")
             print(f"    *** {name} WORKS! ***")
 
             # Cleanup

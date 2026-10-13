@@ -2,22 +2,24 @@
 PresetsPanel - Theme preset management widget.
 """
 
+import logging
 import os
 import json
 import math
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QFrame, QGridLayout, QMessageBox, QInputDialog, QCheckBox
+    QGridLayout, QMessageBox, QInputDialog, QCheckBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QFont, QPixmap
 
 from src.core import constants
-from src.core.element import ThemeElement
-from src.utils.app_path import get_resource_path, get_user_data_path, get_bundled_resource_path
+from src.utils.app_path import get_user_data_path, get_bundled_resource_path, write_json_atomic
 from src.core.security import validate_preset_schema, is_safe_filename, sanitize_preset_name
 from src.utils.settings import get_setting, set_setting
+
+logger = logging.getLogger(__name__)
 
 # Thumbnail dimensions (maintain aspect ratio of display)
 THUMBNAIL_WIDTH = 150
@@ -327,18 +329,18 @@ class PresetsPanel(QWidget):
                 # Validate filename is safe
                 safe, err = is_safe_filename(filename)
                 if not safe:
-                    print(f"Skipping unsafe filename {filename}: {err}")
+                    logger.warning(f"Skipping unsafe filename {filename}: {err}")
                     continue
 
                 filepath = os.path.join(presets_dir, filename)
                 try:
-                    with open(filepath, 'r') as f:
+                    with open(filepath, 'r', encoding='utf-8') as f:
                         data = json.load(f)
 
                     # Validate preset schema before using
                     is_valid, errors = validate_preset_schema(data)
                     if not is_valid:
-                        print(f"Invalid preset {filename}: {errors}")
+                        logger.warning(f"Invalid preset {filename}: {errors}")
                         continue
                     resolve_preset_asset_paths(data, presets_dir)
 
@@ -357,7 +359,7 @@ class PresetsPanel(QWidget):
                         "thumbnail_path": thumbnail_path
                     }
                 except Exception as e:
-                    print(f"Failed to load preset {filename}: {e}")
+                    logger.warning(f"Failed to load preset {filename}: {e}")
 
     def load_presets(self):
         """Load all presets from both bundled and user directories."""
@@ -655,8 +657,7 @@ class PresetsPanel(QWidget):
                 return False
 
         try:
-            with open(filepath, 'w') as f:
-                json.dump(theme_data, f, indent=2)
+            write_json_atomic(filepath, theme_data)
 
             # Save thumbnail if provided
             if thumbnail_image is not None:
@@ -666,7 +667,7 @@ class PresetsPanel(QWidget):
                     thumbnail.thumbnail((THUMBNAIL_WIDTH * 2, THUMBNAIL_HEIGHT * 2))  # 2x for retina/sharp display
                     thumbnail.save(thumbnail_path, "PNG")
                 except Exception as e:
-                    print(f"[Presets] Failed to save thumbnail: {e}")
+                    logger.warning(f"Failed to save thumbnail: {e}")
                     thumbnail_path = None
             else:
                 thumbnail_path = None

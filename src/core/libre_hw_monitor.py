@@ -6,6 +6,7 @@ CPU/GPU temperature, clocks, power, and load. If that cannot initialize, it
 falls back to safe user-mode Windows counters and psutil usage metrics.
 """
 
+import logging
 import ctypes
 import os
 import subprocess
@@ -15,6 +16,8 @@ import time
 from pathlib import Path
 
 import psutil
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_SENSOR_DATA = {
@@ -765,7 +768,7 @@ class LibreHardwareMonitorReader:
         except Exception as exc:
             self.initialization_error = str(exc)
             self.reason = _classify_lhm_error(exc)
-            print(f"[Sensors] LibreHardwareMonitor unavailable: {exc}")
+            logger.warning(f"LibreHardwareMonitor unavailable: {exc}")
             if sys.platform.startswith("linux"):
                 self._reader = _LinuxReader()
                 self.source = "linux-fallback"

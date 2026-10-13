@@ -162,6 +162,10 @@ def _has_bulk_out_endpoint(device, usb_util) -> bool:
     return False
 
 
+class DeviceIOError(IOError):
+    """Frame could not reach the display: the device is gone or not responding."""
+
+
 # ============================================================================
 # Backend Base Class
 # ============================================================================
@@ -401,17 +405,17 @@ class USBBulkBackend(DisplayBackend):
         logger.info(f"Device Version: {self.device.bcdDevice:04X}")
 
         try:
-            logger.info(f"Manufacturer: {usb.util.get_string(self.device, self.device.iManufacturer)}")
+            logger.info(f"Manufacturer: {self.usb.util.get_string(self.device, self.device.iManufacturer)}")
         except Exception:
             logger.info("Manufacturer: (unavailable)")
 
         try:
-            logger.info(f"Product: {usb.util.get_string(self.device, self.device.iProduct)}")
+            logger.info(f"Product: {self.usb.util.get_string(self.device, self.device.iProduct)}")
         except Exception:
             logger.info("Product: (unavailable)")
 
         try:
-            logger.info(f"Serial: {usb.util.get_string(self.device, self.device.iSerialNumber)}")
+            logger.info(f"Serial: {self.usb.util.get_string(self.device, self.device.iSerialNumber)}")
         except Exception:
             logger.info("Serial: (unavailable)")
 
@@ -453,12 +457,12 @@ class USBBulkBackend(DisplayBackend):
                 if direction == "OUT":
                     if self.endpoint_out is None or ep_type == self.usb.util.ENDPOINT_TYPE_BULK:
                         self.endpoint_out = ep_addr
-                        logger.info(f"    >>> Will use this for frame output")
+                        logger.info("    >>> Will use this for frame output")
 
                 # Store first IN endpoint
                 if direction == "IN" and self.endpoint_in is None:
                     self.endpoint_in = ep_addr
-                    logger.info(f"    >>> Will use this for input (if needed)")
+                    logger.info("    >>> Will use this for input (if needed)")
 
         logger.info("-" * 60)
 
