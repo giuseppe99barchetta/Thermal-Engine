@@ -108,7 +108,7 @@ def validate_preset_schema(data):
     # Validate top-level fields
     allowed_keys = {
         'name', 'background_color', 'display_width', 'display_height',
-        'elements', 'video_background'
+        'elements', 'video_background', 'pages', 'current_page'
     }
     for key in data.keys():
         if key not in allowed_keys:
@@ -140,6 +140,14 @@ def validate_preset_schema(data):
             for i, element in enumerate(data['elements']):
                 elem_errors = validate_element_schema(element, i)
                 errors.extend(elem_errors)
+
+    if 'pages' in data:
+        pages = data['pages']
+        if (not isinstance(pages, list) or not pages or len(pages) > 1000
+                or any(type(page) is not int or not 1 <= page <= 10000 for page in pages)):
+            errors.append("'pages' must contain 1 to 1000 positive page numbers")
+    if 'current_page' in data and (type(data['current_page']) is not int or not 1 <= data['current_page'] <= 10000):
+        errors.append("Invalid 'current_page' value")
 
     # Validate video_background
     if 'video_background' in data:

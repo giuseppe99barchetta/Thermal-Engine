@@ -62,3 +62,15 @@ def test_rpm_gauge_uses_configured_scale_and_round_trips():
     assert ThemeElement.from_dict({"type": "bar_gauge"}).max_value == 100
     assert gauge_fraction(-5, 100) == 0
     assert gauge_fraction(6000, 5000) == 1
+
+
+def test_date_source_renders_todays_date(monkeypatch):
+    import datetime
+    from src.core.renderer import ThemeRenderer
+    rendered = []
+    renderer = ThemeRenderer()
+    monkeypatch.setattr(renderer, "render_element_with_opacity", lambda img, element, cache_key=None: rendered.append(element.text))
+    element = ThemeElement("text", source="date", text="Monday, January 1")
+    renderer.render({"background_color": "#000000", "elements": [(1, element.to_dict())]}, (100, 50))
+    now = datetime.datetime.now()
+    assert rendered == [f"{now:%A, %B} {now.day}"]

@@ -1,0 +1,3 @@
+module ThermalEngine
+depends QtQuick auto
+typeinfo plugins.qmltypes

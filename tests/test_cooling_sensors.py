@@ -6,6 +6,22 @@ from src.core.constants import DATA_SOURCES, SOURCE_UNITS, get_value_with_unit
 from src.core.libre_hw_monitor import _LibreHardwareMonitorReader
 
 
+def test_missing_cpu_temperature_is_not_a_zero_reading(monkeypatch):
+    from src.core import sensors
+    monkeypatch.setattr(sensors, "_latest_sensor_data", {"cpu_temp": 0, "gpu_temp": 45, "cpu_percent": 0})
+    monkeypatch.setattr(sensors, "_sensor_status", {"cpu_thermal_available": False, "gpu_thermal_available": True})
+    monkeypatch.setattr(sensors, "_network_manager", None)
+    readings = sensors.get_cached_sensors()
+    assert readings == {"cpu_temp": None, "gpu_temp": 45, "cpu_percent": 0}
+    from src.core.renderer import ThemeRenderer
+    renderer = ThemeRenderer()
+    rendered = []
+    monkeypatch.setattr(renderer, "render_element_with_opacity", lambda image, element, **kwargs: rendered.append(element))
+    renderer.render({"background_color": "#000000", "sensor_data": readings,
+                     "elements": [(1, {"type": "circle_gauge", "source": "cpu_temp", "value": 0})]}, (480, 480))
+    assert rendered[0].type == "text" and rendered[0].text == "--"
+
+
 def sensor(name, kind, value, hardware="Cooler"):
     return SimpleNamespace(Name=name, SensorType=kind, Value=value,
                            Hardware=SimpleNamespace(HardwareType=hardware)), name.lower()
@@ -42,9 +58,7 @@ def test_storage_and_controller_discovery_are_enabled():
 
 def test_specific_hardware_keeps_same_names_separate_and_stable():
     from src.core.constants import register_hardware_sources, format_sensor_template
-    from src.core import sensors
-    from src.ui.properties import PropertiesPanel
-    from PySide6.QtWidgets import QApplication
+    from src.core import constants
     types = SimpleNamespace(Fan="Fan", Temperature="Temperature", Load="Load", Clock="Clock", Power="Power")
     first, _ = sensor("Fan", "Fan", 800)
     second, _ = sensor("Fan", "Fan", 1600)
@@ -69,14 +83,10 @@ def test_specific_hardware_keeps_same_names_separate_and_stable():
         reader.invalidate_cache()
         reader.get_thermal_sensors()
         assert reader.get_sensor_catalog() == catalog
-    app = QApplication.instance() or QApplication([])
     try:
-        with patch.object(sensors, "_hardware_catalog", catalog):
-            panel = PropertiesPanel()
-            panel.set_source_by_id(catalog[0]["id"])
-            assert panel.get_selected_source() == catalog[0]["id"]
-            assert format_sensor_template("{" + catalog[0]["id"] + "}", readings) == "800 RPM"
-            panel.deleteLater()
+        # Both fans become separate, selectable sources
+        register_hardware_sources(catalog)
+        assert {s["id"] for s in catalog} <= set(constants.SOURCE_UNITS)
+        assert format_sensor_template("{" + catalog[0]["id"] + "}", readings) == "800 RPM"
     finally:
         register_hardware_sources([])
-        app.processEvents()

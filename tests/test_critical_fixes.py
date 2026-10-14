@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from PIL import Image, ImageFont
 
+from src.core.frame_pipeline import FramePipeline
 from src.core import sensors
 from src.core.device_backends import (
     DeviceDefinition,
@@ -29,8 +30,7 @@ from src.core.element import ThemeElement
 from src.core.libre_hw_monitor import _classify_lhm_error
 from src.core.security import validate_preset_schema
 from src.core.renderer import ThemeRenderer
-from src.ui.main_window import ThemeEditorWindow
-from src.ui.presets import resolve_preset_asset_paths
+from src.core.preset_repository import resolve_assets
 from src.ui.video_background import VideoBackground
 from src.utils import theme_package, updater
 
@@ -41,26 +41,8 @@ def test_usage_metrics_do_not_claim_thermal_support():
 
 
 def test_sensor_setup_requires_cpu_temperature():
-    source = Path("main.py").read_text(encoding="utf-8")
-    assert 'if not sensors.get_sensor_status()["cpu_thermal_available"]' in source
-
-
-def test_admin_restart_waits_for_current_process():
-    from main import SensorSetupDialog
-
-    dialog = SimpleNamespace(restart_requested=False, accept=MagicMock())
-    execute = MagicMock(return_value=33)
-    with (
-        patch("main.os.getpid", return_value=1234),
-        patch("main.sys.argv", ["ThermalEngine.exe"]),
-        patch("main.ctypes.windll", SimpleNamespace(shell32=SimpleNamespace(ShellExecuteW=execute)), create=True),
-    ):
-        SensorSetupDialog.restart_as_admin(dialog)
-
-    assert "--wait-for-pid" in execute.call_args.args[3]
-    assert "1234" in execute.call_args.args[3]
-    assert dialog.restart_requested
-    dialog.accept.assert_called_once()
+    controller_source = Path("src/ui/quick_controller.py").read_text(encoding="utf-8")
+    assert 'if not sensors.get_sensor_status()["cpu_thermal_available"]' in controller_source
 
 
 def test_lhm_runtime_mismatch_has_stable_reason():
@@ -83,7 +65,7 @@ def test_hid_backend_owns_report_id_prefix():
 
 def test_display_brightness_dims_sent_frame():
     window = SimpleNamespace(display_brightness=50, display_orientation="normal")
-    window.image_to_jpeg = MethodType(ThemeEditorWindow.image_to_jpeg, window)
+    window.image_to_jpeg = MethodType(FramePipeline.image_to_jpeg, window)
 
     jpeg = window.image_to_jpeg(Image.new("RGB", (8, 8), "white"), quality=100)
     decoded = Image.open(io.BytesIO(jpeg))
@@ -110,7 +92,7 @@ def test_gui_frame_tick_only_sets_latest_frame_request():
     window._capture_render_snapshot = lambda: {"elements": [], "background_color": "#000"}
     window.get_current_page_elements = lambda: []
     window.send_frame_with_sensors = MethodType(
-        ThemeEditorWindow.send_frame_with_sensors, window
+        FramePipeline.send_frame_with_sensors, window
     )
 
     window.send_frame_with_sensors()
@@ -136,11 +118,11 @@ def test_frame_requests_are_limited_to_selected_fps():
     window._capture_render_snapshot = lambda: {"elements": [], "background_color": "#000"}
     window.get_current_page_elements = lambda: []
     window.send_frame_with_sensors = MethodType(
-        ThemeEditorWindow.send_frame_with_sensors, window
+        FramePipeline.send_frame_with_sensors, window
     )
 
     with patch(
-        "src.ui.main_window.time.perf_counter",
+        "src.core.frame_pipeline.time.perf_counter",
         side_effect=[1.0, 1.01, 1.10],
     ):
         window.send_frame_with_sensors()
@@ -178,9 +160,9 @@ def test_slow_backend_does_not_block_gui_frame_tick():
     window.image_to_jpeg = lambda image: b"jpeg"
     window.record_frame_time = lambda: None
     window.send_jpeg_frame = lambda data: (entered.set(), release.wait(1))
-    window._render_thread_loop = MethodType(ThemeEditorWindow._render_thread_loop, window)
+    window._render_thread_loop = MethodType(FramePipeline._render_thread_loop, window)
     window.send_frame_with_sensors = MethodType(
-        ThemeEditorWindow.send_frame_with_sensors, window
+        FramePipeline.send_frame_with_sensors, window
     )
 
     worker = threading.Thread(target=window._render_thread_loop)
@@ -215,11 +197,11 @@ def test_render_snapshot_is_independent_from_gui_elements():
         background_color="#123456",
     )
     window.get_current_page_elements = MethodType(
-        ThemeEditorWindow.get_current_page_elements, window
+        FramePipeline.get_current_page_elements, window
     )
     window.get_sensor_data = lambda: {"cpu_temp": 64}
     window._capture_render_snapshot = MethodType(
-        ThemeEditorWindow._capture_render_snapshot, window
+        FramePipeline._capture_render_snapshot, window
     )
 
     snapshot = window._capture_render_snapshot()
@@ -228,11 +210,6 @@ def test_render_snapshot_is_independent_from_gui_elements():
 
     assert snapshot["elements"][0][1]["value"] == 64
     assert snapshot["background_color"] == "#123456"
-
-
-def test_gauge_animation_does_not_delay_numeric_value():
-    source = Path("src/ui/canvas.py").read_text(encoding="utf-8")
-    assert "get_value_with_unit(display_value" not in source
 
 
 def test_display_text_ink_is_centered_in_editor_box():
@@ -359,49 +336,14 @@ def test_sensor_status_reports_cpu_and_gpu_separately():
         sensors.HAS_LHM = original_lhm
 
 
-def test_main_window_has_no_duplicate_methods():
-    source = Path("src/ui/main_window.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    window_class = next(
-        node for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "ThemeEditorWindow"
-    )
-    names = [
-        node.name for node in window_class.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-    assert len(names) == len(set(names))
-
-
-def test_diagnostic_report_is_ready_to_copy():
-    window = SimpleNamespace(
-        selected_device_def=DeviceDefinition("Test Display", 1, 2, "hid"),
-        target_fps=30,
-        _frame_error=None,
-        get_sensor_data=lambda: {"cpu_temp": 61, "gpu_temp": 0},
-    )
-    window.build_diagnostic_report = MethodType(
-        ThemeEditorWindow.build_diagnostic_report, window
-    )
-    status = {
-        "platform": "win32",
-        "backend": "LibreHardwareMonitor",
-        "thermal_available": True,
-        "cpu_thermal_available": True,
-        "gpu_thermal_available": False,
-        "gpu_thermal_reason": "no_supported_sensor",
-        "degraded": False,
-    }
-    with (
-        patch.object(sensors, "get_sensor_source_display", return_value="LibreHardwareMonitor"),
-        patch.object(sensors, "get_sensor_diagnostics", return_value=status),
-    ):
-        report = window.build_diagnostic_report()
-
-    assert "Test Display (hid)" in report
-    assert "Output size: 1280x480" in report
-    assert "CPU temperature: available" in report
-    assert "GPU temperature: unavailable (no_supported_sensor)" in report
+def test_large_classes_have_no_duplicate_methods():
+    # A second definition silently replaces the first one
+    for path, class_name in (("src/ui/quick_controller.py", "EditorController"),
+                             ("src/core/renderer.py", "ThemeRenderer")):
+        tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+        cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name)
+        names = [node.name for node in cls.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        assert len(names) == len(set(names)), class_name
 
 
 def test_pawnio_runs_inside_installer_and_is_verified():
@@ -428,7 +370,7 @@ def test_bundled_presets_have_valid_local_assets():
         data = json.loads(path.read_text(encoding="utf-8"))
         valid, errors = validate_preset_schema(data)
         assert valid, f"{path.name}: {errors}"
-        resolve_preset_asset_paths(data, preset_dir)
+        resolve_assets(data, preset_dir)
         loaded.add(data["name"])
         for element in data.get("elements", []):
             for field in ("image_path", "gif_path"):

@@ -2,8 +2,8 @@ import unittest
 from types import MethodType, SimpleNamespace
 from unittest.mock import MagicMock
 
+from src.core.frame_pipeline import FramePipeline
 from src.core.device_backends import DeviceIOError
-from src.ui.main_window import ThemeEditorWindow
 
 
 def _window_with_pending_error(error):
@@ -12,9 +12,9 @@ def _window_with_pending_error(error):
         _frame_error=error,
         disconnect_display=MagicMock(),
         _start_reconnect_timer=MagicMock(),
-        status_bar=MagicMock(),
+        notify=MagicMock(),
     )
-    window.send = MethodType(ThemeEditorWindow.send_frame_with_sensors, window)
+    window.send = MethodType(FramePipeline.send_frame_with_sensors, window)
     return window
 
 

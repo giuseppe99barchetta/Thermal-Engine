@@ -20,6 +20,22 @@ class TestLinuxAppPath(unittest.TestCase):
 
 
 class TestLinuxAutostart(unittest.TestCase):
+    def setUp(self):
+        # Platform probes import a fresh settings module; restore both import references afterwards.
+        original = sys.modules.get("src.utils.settings")
+        package = importlib.import_module("src.utils")
+        attribute = getattr(package, "settings", None)
+        def restore():
+            if original is not None:
+                sys.modules["src.utils.settings"] = original
+            else:
+                sys.modules.pop("src.utils.settings", None)
+            if attribute is not None:
+                package.settings = attribute
+            elif hasattr(package, "settings"):
+                del package.settings
+        self.addCleanup(restore)
+
     def test_linux_autostart_writes_desktop_entry(self):
         if "src.utils.settings" in sys.modules:
             del sys.modules["src.utils.settings"]

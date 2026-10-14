@@ -6,7 +6,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 ![Preview](https://img.shields.io/badge/Display-Multiple%20Sizes-blue) ![Python](https://img.shields.io/badge/Python-3.10+-green) ![License](https://img.shields.io/badge/License-MIT-yellow) ![Auto%20Release](https://img.shields.io/badge/Auto%20Release-Enabled-success)
 
-<img width="1306" height="732" alt="image" src="/assets/thermal-engine.png" />
+<img width="1440" height="900" alt="Qt Quick Display Studio with simulated readings" src="/assets/display-studio.png" />
 
 
 ## Features
@@ -16,7 +16,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Shared PIL renderer** for the editor and display, with zoom (`Ctrl+wheel`),
   pan (middle mouse), rulers, smart alignment guides and page thumbnails
 - **First-run setup**: choose a device, native resolution and starting preset;
-  reopen from **Help → Setup Wizard** or use the editor offline
+  reopen from **⋯ → Setup wizard** or use the editor offline
 - **Universal display support**:
   - HID and USB bulk transfer protocols
   - Device defaults plus per-device screen-size profiles and custom resolutions
@@ -33,7 +33,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
   - Bar gauges with rounded corners and gradient fill
   - Text elements (static or sensor-linked)
     - Sensor templates: `CPU {cpu_temp} · {cpu_percent}`, `Pump {pump_rpm}`
-    - Source IDs are shown in the Data Source menu tooltips
+    - Choose sources by category in Properties → Data source
   - Digital and analog clocks
   - Images and GIFs
   - Line charts for historical data
@@ -44,11 +44,11 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
   Event Horizon, Cosmic Cliffs, Aurora, and Blue Marble themes
 - **Multi-select** with alignment tools (align left/right/top/bottom/center, distribute evenly)
 - **Copy / Paste elements** (`Ctrl+C` / `Ctrl+V`) with automatic offset
-- **Z-order controls**: Bring to Front, Bring Forward, Send Backward, Send to Back via Edit menu or keyboard shortcuts
+- **Z-order controls**: Bring to Front, Bring Forward, Send Backward, Send to Back via the layer context menu or keyboard shortcuts
 - **Auto Profiles**: automatically switch presets based on the foreground app or system load state (idle / gaming)
 - **Theme packages**: export and import themes as `.thermal` or `.zip` archives with embedded images
 - **Element grouping** for organizing complex themes
-- **Conditional rules**: General > Conditional rule lets an element change color/text or visibility based on a numeric, text or boolean sensor. One rule per element; missing data never matches and manual hiding is preserved.
+- **Conditional rules**: Properties > Data source > Add conditional rule changes color/text or visibility based on a numeric, text or boolean sensor. Shapes and media expose Conditional visibility. Missing data never matches and manual hiding is preserved.
 - **Undo/Redo** support
 - **Property controls**: collapsible sections and numeric labels you can drag
   horizontally (hold `Shift` for steps of ten)
@@ -91,12 +91,12 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 
 The Windows installer offers the official PawnIO component for low-level sensor
 access. It is optional and can be deselected. Some hardware additionally requires
-starting ThermalEngine as administrator; unsupported sensors remain at zero while
+starting ThermalEngine as administrator; unavailable temperatures show `--` while
 usage metrics continue to work.
 
 Cooling and disk readings use the highest valid matching sensor. Unnamed fan
 headers are shown as fans; a pump must be identified as such by the hardware.
-To choose a particular fan, pump or disk, select an entry under **Specific Hardware** in Data Source. Temperature, fan, load, clock and power readings exposed by LibreHardwareMonitor have individual source IDs. **Settings > Refresh hardware sensors** rediscovers them after a hardware change. Missing individual readings show `--`; aggregate sources keep their existing behavior.
+To choose a particular fan, pump or disk, pick it from the **Hardware** list in the **Sensors** tab. Temperature, fan, load, clock and power readings exposed by LibreHardwareMonitor have individual source IDs. **Refresh hardware sensors** rediscovers them after a hardware change. Missing individual readings and unavailable CPU/GPU temperatures show `--`; valid zero usage readings remain zero. If CPU temperature is unavailable on non-elevated Windows, the app offers **Restart as Administrator** once per session, after the setup wizard.
 For RPM gauges and charts, set **Data → Scale maximum** to the full-scale RPM
 (for example, 5000). Existing themes retain their default scale of 100.
 Text templates include units automatically and retain unknown placeholders as
@@ -194,7 +194,7 @@ chmod +x scripts/build-linux.sh
 Some Thermalright WinUSB panels share the same USB identifier, so their native
 resolution cannot always be inferred from VID/PID alone.
 
-1. Go to **Display > Screen Size...**
+1. Open the **⋯** menu (top right) > **Display resolution…**
 2. Select **Thermalright Stream Vision 360 (640 × 480)** for the official panel
 3. If you specifically need a 16:9 canvas, select **16:9 compact (640 × 360)**
 4. For another hardware revision, choose **Custom** and enter its native pixels
@@ -208,7 +208,7 @@ non-square frames are no longer announced as 480x480.
 
 If your display appears upside-down or rotated, adjust the orientation:
 
-1. Go to **Display > Display Orientation**
+1. Open the **Display** tab in the right panel > **Rotation & mirroring**
 2. Choose from available options:
    - **Normal** - Default orientation
    - **Flip Vertical** - Mirror vertically
@@ -224,7 +224,7 @@ The setting is saved automatically and applied to all frames.
 Auto Profiles automatically switch the active preset based on context:
 
 **App-based switching** — loads a preset when a specific application becomes the foreground window:
-1. Go to **Settings > Auto Profiles...**
+1. Open the **⋯** menu > **Auto profiles…**
 2. Enable **"Enable auto profile switching"**
 3. Add rules: enter the process name (e.g. `chrome.exe`) and choose the preset to load
 4. Optionally set a **default preset** to revert to when no rule matches
@@ -233,23 +233,40 @@ Auto Profiles automatically switch the active preset based on context:
 - **Idle preset**: loaded after the CPU stays below the idle threshold for the configured duration (default: ≤15% for 60 s)
 - **Gaming preset**: loaded after the CPU exceeds the gaming threshold for the configured duration (default: ≥60% for 10 s)
 - Thresholds and delays are configurable inside the same dialog
+- Automatic switching waits while the open theme has unsaved changes, so it never discards your edits
 
 ### Creating a Theme
 
-1. **Add elements** from the Elements panel (left side)
+1. **Add elements** using **Layers > + Add** on the left
 2. **Drag elements** on the canvas to position them
 3. **Resize** using corner handles
 4. **Configure properties** in the Properties panel (right side)
-5. **Save as preset** via File > Save as Preset
+5. **Save theme** (top right, Ctrl+S). Bundled themes are saved as a copy under a new name
+
+**Save theme** stores a personal preset. Named personal presets also autosave
+after editing pauses. **⋯ > Save JSON as…** writes a standalone JSON file with
+local media references; use **Export theme package…** to include media for sharing.
+Empty pages and the current page are retained when reopening a saved theme.
+Closing normally keeps the app in the tray; quitting or replacing an unsaved
+document offers **Save / Discard changes / Cancel**. A failed or cancelled save
+keeps the current document open.
 
 ### Canvas Features
 
 - **Full-screen editing area**: Canvas expands to fill available space for comfortable work
 - **Visible margins**: Dark background around canvas shows elements extending beyond boundaries
 - **Image cropping**: Drag images/GIFs outside canvas edges to crop and position precisely
-- **Auto-scaling**: Canvas automatically scales based on connected display size
-  - 480x480 displays: 1.5x scale (720x720 editing area)
-  - 1280x480 displays: 0.5x scale (640x240 editing area)
+- **Zoom and pan**: the canvas fits the window by default; Ctrl+wheel or the ± buttons zoom, middle-drag pans, Ctrl+0 fits again
+- **Smart guides**: dragged elements snap to other elements' edges and centers and to the display's; hold Alt to place freely
+- **Simulated readings**: the *Live data* menu above the canvas previews gauges, colors and conditional rules at 25/50/90% without real sensors; the display keeps live data
+- **Drag & drop**: drop images or GIFs on the canvas to add them where you release, or a video to set the background
+- **Layers**: drag rows to reorder; groups are folders you can collapse, hide or lock as a whole
+- **Color swatches**: recent colors and the theme's palette sit under every color field
+- **Shortcuts**: press `?` or F1 for the full list
+- **Workspace**: drag the dividers beside the canvas to resize panels; their widths are remembered. Use **⋯ > Reset workspace layout** to restore defaults
+- **Inspector**: position and size come first; numeric fields have units, bounds and arrow-key stepping. Invalid input stays beside the field
+- **Status**: the bottom badges open display, hardware or network actions; Diagnostics shows readable checks and a collapsible technical report
+- **Network setup**: Connection, Authentication, Value mapping and Advanced separate the essentials from optional fields; tests use unsaved values
 
 ### Keyboard Shortcuts
 
@@ -258,13 +275,16 @@ Auto Profiles automatically switch the active preset based on context:
 | Ctrl+N | New theme |
 | Ctrl+O | Open theme |
 | Ctrl+S | Save theme |
-| Ctrl+Shift+S | Save as preset |
+| Ctrl+Shift+S | Save JSON as… |
 | Ctrl+Z | Undo |
 | Ctrl+Y | Redo |
 | Ctrl+G | Group selected elements |
 | Ctrl+Shift+G | Ungroup |
-| Delete | Delete selected |
+| Delete / Backspace | Delete selected (outside text editors) |
 | Ctrl+Click | Multi-select elements |
+| Ctrl+A | Select all elements on the page |
+| Ctrl+0 | Fit canvas to window |
+| F5 | Send the current frame to the display |
 | Ctrl+C | Copy selected elements |
 | Ctrl+V | Paste elements (+20px offset) |
 | Ctrl+Shift+] | Bring to Front |
@@ -296,8 +316,8 @@ Auto Profiles automatically switch the active preset based on context:
 - Check USB connection
 - Restart the editor
 
-### Sensors showing 0 or not working
-1. Go to **Display > Diagnose Sensors** to check connection status
+### Sensors showing -- or not working
+1. Open **⋯ > Diagnostics…** (or **⋯ > Hardware setup...**) to check connection status
 2. Install PawnIO 2.2.0 from the installer or the official PawnIO release
 3. Restart ThermalEngine as administrator if diagnostics report a permission problem
 4. Verify the backend/reason fields; `usage-only` intentionally has no temperatures
@@ -323,10 +343,10 @@ If your USB-based AIO display isn't detected:
 
 **Note:** ThermalEngine detects the transport. If a Thermalright model shares
 its VID/PID with a different-sized panel, select its native dimensions from
-**Display > Screen Size...**.
+**⋯ > Display resolution…**.
 
 ### Display appears upside-down or rotated
-Use **Display > Display Orientation** to adjust for your mounting position:
+Use **Orientation** in the right panel's **Display** tab to adjust for your mounting position:
 - **Rotate 180°** - Common fix for upside-down displays
 - **Flip Vertical/Horizontal** - For mirrored displays
 - **Rotate 90°** - For rotated mounting
@@ -335,31 +355,28 @@ Use **Display > Display Orientation** to adjust for your mounting position:
 
 ```
 Thermal-Engine/
-├── main.py              # Entry point
-├── main_window.py       # Main application window
-├── canvas.py            # Visual preview widget with expandable editing area
-├── device_backends.py   # Multi-device backend system (HID, USB bulk)
-├── properties.py        # Properties panel
-├── element_list.py      # Element list panel
-├── presets.py           # Preset management
-├── element.py           # Theme element data model
-├── sensors.py           # Sensor polling and smoothing
-├── libre_hw_monitor.py  # Safe user-mode hardware monitor compatibility layer
-├── video_background.py  # Video background support
-├── constants.py         # Configuration constants (dynamic dimensions)
-├── scripts/             # Build and utility scripts
-│   ├── build-local.ps1  # Local build script
-│   └── clean-local.ps1  # Clean up build artifacts
-├── assets/              # Icons and images
-│   ├── icon.ico
-│   └── icon.png
-├── elements/            # Custom element plugins
-│   ├── line_chart.py
-│   └── gif.py
-├── presets/             # Saved presets
-└── .github/workflows/   # CI/CD workflows
-    ├── auto-tag.yml     # Automatic semantic versioning
-    └── release.yml      # Automated build and release
+├── main.py                    # Entry point: logging, tray, single instance
+├── src/
+│   ├── core/
+│   │   ├── document.py        # Editor state, pages and undo transactions (no UI)
+│   │   ├── renderer.py        # PIL renderer: the same frame for preview and display
+│   │   ├── frame_pipeline.py  # Latest-frame render/encode/send worker
+│   │   ├── preset_repository.py
+│   │   ├── device_backends.py # HID and USB bulk display backends
+│   │   ├── sensors.py         # Hardware, usage and network sensor sampling
+│   │   ├── network_sensors.py # MQTT, HTTP, TCP and UDP sources
+│   │   ├── conditions.py      # Conditional rules
+│   │   └── element.py         # Theme element data model
+│   ├── ui/
+│   │   ├── quick_window.py    # Qt Quick window and power events
+│   │   ├── quick_controller.py# Commands and state exposed to QML
+│   │   ├── canvas_behavior.py # Canvas geometry, zoom, guides, drag/resize
+│   │   └── qml/               # Interface screens and components
+│   └── utils/                 # Settings, profiles, updater, theme packages
+├── elements/                  # Custom element plugins (line chart, GIF)
+├── presets/                   # Bundled themes
+├── scripts/                   # Build, packaging and diagnostics scripts
+└── tests/
 ```
 
 ## Development
@@ -401,4 +418,4 @@ The **Checks** workflow runs lint and tests on Windows and Linux for pushes and 
 
 ## Network sensor sources
 
-Display numeric, text and boolean MQTT, HTTP, TCP and UDP readings alongside hardware metrics. Configure **Settings > Network Sensors...**, then select the source under **External Sensors**. Text and boolean values work in labels and conditional rules; numeric values also drive gauges and charts. See [setup examples and payload formats](docs/NETWORK-SENSORS.md) for Home Assistant and telemetry integrations.
+Display numeric, text and boolean MQTT, HTTP, TCP and UDP readings alongside hardware metrics. Configure **⋯ > Network sensors…**, then select the source under **External** in the Sensors tab. Text and boolean values work in labels and conditional rules; numeric values also drive gauges and charts. See [setup examples and payload formats](docs/NETWORK-SENSORS.md) for Home Assistant and telemetry integrations.

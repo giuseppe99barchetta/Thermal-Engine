@@ -214,6 +214,9 @@ def init_sensors(app_dir=None):
 def get_cached_sensors():
     with _sensor_data_lock:
         data = _latest_sensor_data.copy()
+        for source, status in (("cpu_temp", "cpu_thermal_available"), ("gpu_temp", "gpu_thermal_available")):
+            if source in data and not _sensor_status.get(status, False) and (data[source] is None or data[source] <= 0):
+                data[source] = None
     manager = _network_manager
     if manager:
         data.update(manager.snapshot())
@@ -239,6 +242,11 @@ def configure_network_sensors(sources):
 def get_network_sensor_statuses():
     manager = _network_manager
     return manager.statuses() if manager else {}
+
+
+def get_network_sensor_details():
+    manager = _network_manager
+    return manager.details() if manager else []
 
 
 def get_sensors_sync():

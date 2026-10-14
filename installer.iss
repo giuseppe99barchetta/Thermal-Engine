@@ -4,6 +4,9 @@
 #define MyAppName "ThermalEngine"
 #define MyAppPublisher "Thermal Engine"
 #define MyAppExeName "ThermalEngine.exe"
+#ifndef MyAppSource
+  #define MyAppSource "dist\ThermalEngine"
+#endif
 #define MyAppURL "https://github.com/giuseppe99barchetta/Thermal-Engine"
 #define MyAppId "{{8B5F3F3E-8C4D-4F3E-8B5F-3F3E8C4D4F3E}"
 
@@ -23,7 +26,7 @@ OutputBaseFilename=ThermalEngine-{#MyAppVersion}-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
-LZMADictionarySize=1048576
+LZMADictionarySize=65536
 LZMANumFastBytes=273
 WizardStyle=modern
 PrivilegesRequired=admin
@@ -49,7 +52,7 @@ Name: "pawnio"; Description: "Install PawnIO 2.2.0 for hardware temperature acce
 
 [Files]
 ; Main application files
-Source: "dist\ThermalEngine\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "third_party\PawnIO_setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Tasks: pawnio
 
 [Icons]

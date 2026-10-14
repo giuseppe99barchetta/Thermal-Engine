@@ -53,6 +53,8 @@ DEFAULT_SETTINGS = {
     "profiles_enabled": False,  # Whether auto-switching is active
     "profiles_default_preset": None,  # Preset when no profile matches
     "collapsed_sections": [],  # Properties panel sections the user folded
+    "layers_panel_width": 244,
+    "inspector_panel_width": 296,
     "network_sensors": [],  # Local connections; never included in exported themes
     "onboarding_completed": False,
 }

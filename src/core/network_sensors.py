@@ -176,6 +176,14 @@ class NetworkSensorManager:
             return {s["id"]: ("Stale" if s["id"] in self._values and f"network_{s['id']}" not in values
                               else self._status[s["id"]]) for s in self.sources}
 
+    def details(self):
+        now = time.monotonic()
+        statuses = self.statuses()
+        with self._lock:
+            return [{"id": source["id"], "name": source["name"], "status": statuses[source["id"]],
+                     "age": round(now - self._values[source["id"]][1], 1) if source["id"] in self._values else None}
+                    for source in self.sources]
+
     def _error(self, sources, message):
         with self._lock:
             for source in sources:

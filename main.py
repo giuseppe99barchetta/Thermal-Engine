@@ -15,19 +15,16 @@ import argparse
 import atexit
 import logging
 import signal
-import webbrowser
 from logging.handlers import RotatingFileHandler
 
 from PySide6.QtWidgets import (
-    QApplication, QMessageBox, QSystemTrayIcon, QMenu,
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+    QApplication, QMessageBox, QSystemTrayIcon, QMenu
 )
-from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QBrush, QFont
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QBrush
 from PySide6.QtCore import Qt, QSharedMemory
 
-from src.core import sensors
 from src.core.sensors import init_sensors
-from src.ui.main_window import ThemeEditorWindow
+from src.ui.quick_window import QuickEditorWindow
 from src.utils.app_path import get_bundled_resource_path, get_user_data_path
 from src.utils import settings
 
@@ -48,109 +45,6 @@ def configure_logging():
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(handler)
     return log_path
-
-
-class SensorSetupDialog(QDialog):
-    """Explain degraded monitoring and offer the two Windows remedies."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.restart_requested = False
-        self.setWindowTitle("Sensor Setup Required")
-        self.setMinimumWidth(500)
-        self.setup_ui()
-
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-
-        # Title
-        title = QLabel("CPU Temperature Unavailable")
-        title_font = QFont()
-        title_font.setPointSize(14)
-        title_font.setBold(True)
-        title.setFont(title_font)
-        layout.addWidget(title)
-
-        # Explanation
-        explanation = QLabel(
-            "ThermalEngine can read other metrics, but the CPU temperature\n"
-            "is unavailable. On Windows, LibreHardwareMonitor may require\n"
-            "the official PawnIO driver and administrator privileges."
-        )
-        explanation.setWordWrap(True)
-        layout.addWidget(explanation)
-
-        instructions_title = QLabel("Available data:")
-        instructions_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(instructions_title)
-
-        instructions = QLabel(
-            "1. CPU utilization, RAM, and network via psutil\n"
-            "2. GPU utilization via Windows Performance Counters when available\n"
-            "3. CPU temperature remains 0 until the hardware backend is available"
-        )
-        instructions.setStyleSheet("margin-left: 20px;")
-        layout.addWidget(instructions)
-
-        # Tip
-        tip = QLabel("PawnIO is optional. Some unsupported hardware may still expose no temperature.")
-        tip.setStyleSheet("color: #888; font-style: italic; margin-top: 10px;")
-        tip.setWordWrap(True)
-        layout.addWidget(tip)
-
-        # Buttons
-        button_layout = QHBoxLayout()
-
-        check_again_btn = QPushButton("Check Again")
-        check_again_btn.clicked.connect(self.check_again)
-        button_layout.addWidget(check_again_btn)
-
-        pawnio_btn = QPushButton("Install PawnIO")
-        pawnio_btn.clicked.connect(
-            lambda: webbrowser.open("https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0")
-        )
-        button_layout.addWidget(pawnio_btn)
-
-        if sys.platform == "win32":
-            admin_btn = QPushButton("Restart as Administrator")
-            admin_btn.clicked.connect(self.restart_as_admin)
-            button_layout.addWidget(admin_btn)
-
-        continue_btn = QPushButton("Continue Without Sensors")
-        continue_btn.clicked.connect(self.accept)
-        button_layout.addWidget(continue_btn)
-
-        layout.addLayout(button_layout)
-
-    def restart_as_admin(self):
-        executable = sys.executable
-        arguments = sys.argv[1:] + ["--wait-for-pid", str(os.getpid())]
-        parameters = " ".join(f'"{arg}"' for arg in arguments)
-        if not getattr(sys, "frozen", False):
-            parameters = f'"{os.path.abspath(__file__)}" {parameters}'.strip()
-        if ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", executable, parameters, None, 1
-        ) > 32:
-            self.restart_requested = True
-            self.accept()
-
-    def check_again(self):
-        """Re-check if safe sensors are now available."""
-        init_sensors()
-        if sensors.get_sensor_status()["cpu_thermal_available"]:
-            QMessageBox.information(
-                self,
-                "Sensors Detected",
-                "CPU temperature is now available."
-            )
-            self.accept()
-        else:
-            QMessageBox.warning(
-                self,
-                "Sensors Not Available",
-                "CPU temperature is still unavailable. Try Restart as Administrator."
-            )
 
 
 def create_tray_icon():
@@ -183,7 +77,19 @@ def main():
     parser.add_argument('--minimized', action='store_true', help='Start minimized to system tray')
     parser.add_argument('--wait-for-pid', type=int, help=argparse.SUPPRESS)
     parser.add_argument('--configure-autostart', choices=('enable', 'disable'), help=argparse.SUPPRESS)
+    parser.add_argument('--ui-smoke-test', help=argparse.SUPPRESS)
+    parser.add_argument('--ui-smoke-size', default='1440x900', help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.ui_smoke_test:
+        from src.ui.quick_smoke import run_smoke
+        try:
+            width, height = map(int, args.ui_smoke_size.split('x'))
+            if not 600 <= width <= 3840 or not 340 <= height <= 2160:
+                raise ValueError()
+        except ValueError:
+            parser.error('UI verification size must be WIDTHxHEIGHT, from 600x340 to 3840x2160.')
+        sys.exit(run_smoke(args.ui_smoke_test, (width, height)))
 
     if args.configure_autostart:
         sys.exit(0 if settings.set_autostart(args.configure_autostart == 'enable') else 1)
@@ -245,18 +151,8 @@ def main():
     # Initialize safe user-mode sensors.
     init_sensors()
 
-    # Show sensor dialog if not connected (skip if minimized/auto-start)
-    if not sensors.get_sensor_status()["cpu_thermal_available"] and not args.minimized:
-        dialog = SensorSetupDialog()
-        dialog.exec()
-        if dialog.restart_requested:
-            sensors.stop_sensors()
-            return
-        # Re-initialize sensors in case counters became available
-        init_sensors()
-
     # Create main window
-    window = ThemeEditorWindow()
+    window = QuickEditorWindow()
 
     # Register cleanup handlers to ensure HID device is released on any exit
     def cleanup_on_exit():
@@ -286,7 +182,7 @@ def main():
     show_action.triggered.connect(lambda: (window.showNormal(), window.activateWindow()))
     tray_menu.addSeparator()
     quit_action = tray_menu.addAction("Quit")
-    quit_action.triggered.connect(window.force_quit)
+    quit_action.triggered.connect(window.request_quit)
     tray_icon.setContextMenu(tray_menu)
 
     # Double-click tray to show window

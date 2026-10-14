@@ -20,15 +20,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
+        python: ['3.11', '3.14']
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
           cache: pip
       - name: Install Linux Qt dependencies
         if: runner.os == 'Linux'
@@ -41,3 +43,51 @@ jobs:
         run: ruff check --isolated --select F --exclude build,dist,third_party .
       - name: Test
         run: python -m pytest -q -p no:cacheprovider
+      - name: Check QML
+        run: python scripts/check_qml.py
+      - name: UI size and DPI checks
+        if: matrix.python == '3.14'
+        run: python scripts/check_ui_visual.py --output build/visual-checks
+      - name: Save UI verification evidence
+        if: always() && matrix.python == '3.14'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-${{ matrix.os }}-${{ matrix.python }}
+          path: build/visual-checks
+
+  packaged-windows:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements-build-windows.txt
+      - name: Install verified build dependencies
+        run: python -m pip install -r requirements-build-windows.txt
+      - name: Package application from tracked spec
+        shell: pwsh
+        run: ./scripts/build-local.ps1 -Python python -SkipDependencies -OutputDirectory build/ci-package
+      - name: Verify frozen application outside the project
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path build/ci-package/ThermalEngine/ThermalEngine.exe).Path
+          $reportDirectory = Join-Path $pwd 'build/ci-smoke'
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $env:PYTHONPATH = ''
+          $env:PYTHONHOME = ''
+          $process = Start-Process -FilePath $exe -ArgumentList @('--ui-smoke-test', $reportDirectory) -WorkingDirectory $env:TEMP -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(60000)) { Stop-Process -Id $process.Id; throw 'Frozen UI verification timed out' }
+          if ($process.ExitCode -ne 0) { throw 'Frozen UI verification failed' }
+          $report = Get-Content (Join-Path $reportDirectory 'report.json') -Raw | ConvertFrom-Json
+          if (-not $report.passed -or -not $report.frozen -or $report.qml_errors.Count) { throw 'Invalid frozen UI report' }
+      - name: Save packaged UI verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-packaged-windows
+          path: build/ci-smoke

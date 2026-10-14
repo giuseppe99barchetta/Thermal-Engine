@@ -1,5 +1,4 @@
 import os
-from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -53,25 +52,3 @@ def test_visibility_preserves_manual_hidden_and_missing_state():
     apply_condition(element, {"door": True})
     assert element.text == "Door open" and element.source == "static"
 
-
-def test_rule_edit_uses_undo_and_respects_lock():
-    from PySide6.QtWidgets import QApplication, QDialog
-    from src.ui.properties import PropertiesPanel
-    from src.ui.conditions import ConditionDialog
-    app = QApplication.instance() or QApplication([])
-    panel = PropertiesPanel()
-    element = ThemeElement("text")
-    panel.set_element(element)
-    events = []
-    panel.property_will_change.connect(lambda: events.append("undo"))
-    panel.property_changed.connect(lambda: events.append("changed"))
-    rule = {"source": "cpu_temp", "operator": ">", "value": "80", "action": "hide"}
-    with patch.object(ConditionDialog, "exec", return_value=QDialog.DialogCode.Accepted), patch.object(ConditionDialog, "rule", return_value=rule):
-        panel.edit_condition()
-        assert events == ["undo", "changed"]
-        assert element.condition == rule
-        element.locked = True
-        panel.edit_condition()
-        assert events == ["undo", "changed"]
-    panel.deleteLater()
-    app.processEvents()

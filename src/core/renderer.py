@@ -4,6 +4,7 @@ import functools
 import json
 import logging
 import os
+import datetime
 import sys
 import threading
 import time
@@ -269,34 +270,39 @@ class ThemeRenderer:
 
     def render(self, snapshot, size, background_frame=None):
         """Render a copied theme snapshot without accessing GUI-owned state."""
-        with self._render_cache_lock:
-            img = (background_frame.copy().convert("RGBA") if background_frame is not None
-                   else Image.new("RGBA", size, color=snapshot["background_color"]))
-            for cache_key, data in reversed(snapshot["elements"]):
-                element = ThemeElement.from_dict(data)
-                apply_condition(element, snapshot.get("sensor_data", {}))
-                live_value = snapshot.get("sensor_data", {}).get(element.source)
-                if element.source.startswith(("network_", "hardware_")):
-                    if element.type == "text":
-                        element.value = live_value
-                    elif live_value is None or isinstance(live_value, str):
-                        if element.type == "circle_gauge":
-                            element.x -= element.radius
-                            element.y -= element.radius
-                            element.width = element.height = element.radius * 2
-                        element.type = "text"
-                        element.source = "static"
-                        element.text = "--"
+        # No lock around the whole frame: cache reads/writes lock individually, so the
+        # device worker and the editor preview can render at the same time.
+        img = (background_frame.copy().convert("RGBA") if background_frame is not None
+               else Image.new("RGBA", size, color=snapshot["background_color"]))
+        for cache_key, data in reversed(snapshot["elements"]):
+            element = ThemeElement.from_dict(data)
+            apply_condition(element, snapshot.get("sensor_data", {}))
+            live_value = snapshot.get("sensor_data", {}).get(element.source)
+            if element.source.startswith(("network_", "hardware_")) or (element.source in ("cpu_temp", "gpu_temp") and live_value is None):
                 if element.type == "text":
-                    if element.source != "static" and element.source in snapshot.get("sensor_data", {}):
-                        element.value = snapshot["sensor_data"][element.source]
-                    text = format_sensor_template(element.text, snapshot.get("sensor_data", {}))
-                    if text != element.text:
-                        element.text = text
-                        element.source = "static"
-                if element.visible:
-                    self.render_element_with_opacity(img, element, cache_key=cache_key)
-            return img.convert("RGB")
+                    element.value = live_value
+                elif live_value is None or isinstance(live_value, str):
+                    if element.type == "circle_gauge":
+                        element.x -= element.radius
+                        element.y -= element.radius
+                        element.width = element.height = element.radius * 2
+                    element.type = "text"
+                    element.source = "static"
+                    element.text = "--"
+            if element.type == "text" and element.source == "date":
+                # Bundled presets show today's date, e.g. "Monday, January 1"
+                now = datetime.datetime.now()
+                element.text, element.source = f"{now:%A, %B} {now.day}", "static"
+            if element.type == "text":
+                if element.source != "static" and element.source in snapshot.get("sensor_data", {}):
+                    element.value = snapshot["sensor_data"][element.source]
+                text = format_sensor_template(element.text, snapshot.get("sensor_data", {}))
+                if text != element.text:
+                    element.text = text
+                    element.source = "static"
+            if element.visible:
+                self.render_element_with_opacity(img, element, cache_key=cache_key)
+        return img.convert("RGB")
 
     def render_element_with_opacity(self, img, element, cache_key=None):
         """Render an element with opacity support using alpha compositing.
@@ -339,7 +345,7 @@ class ThemeRenderer:
             self.render_text_rgba(overlay, element, font, color_opacity)
         elif element.type == "rectangle":
             self.render_rectangle_rgba(overlay, element, color_opacity, blur_source=img)
-        elif element.type == "clock":
+        elif element.type in ("clock", "digital_clock"):
             # Build time format string based on element settings
             time_format = getattr(element, 'time_format', '24h')
             show_seconds = getattr(element, 'show_seconds', True)
@@ -572,7 +578,7 @@ class ThemeRenderer:
             return Image.new('RGBA', (max(1, width), max(1, height)), (0, 0, 0, 0))
 
         # Check cache first - use tuple of stops for hashable key
-        cache_key = (width, height, tuple(gradient_stops) if gradient_stops else (), opacity)
+        cache_key = (width, height, tuple(tuple(stop) for stop in gradient_stops) if gradient_stops else (), opacity)
         if cache_key in _gradient_cache:
             return _gradient_cache[cache_key].copy()
 
@@ -1189,7 +1195,6 @@ class ThemeRenderer:
         """Render analog clock with opacity support and per-second caching.
         Caches static clock face, only updates hands per frame."""
         import math
-        import datetime
 
         x, y = element.x, element.y
         radius = element.radius

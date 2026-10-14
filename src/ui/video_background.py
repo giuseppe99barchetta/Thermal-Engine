@@ -410,12 +410,12 @@ class VideoBackground:
             "enabled": self.enabled
         }
 
-    def from_dict(self, data):
+    def from_dict(self, data, callback=None):
         """Load video background settings from dict."""
         self.fit_mode = data.get("fit_mode", self.FIT_HEIGHT)
         path = data.get("video_path", "")
         if path and data.get("enabled", False):
-            self.load_video(path)
+            self.load_video(path, callback=callback)
         else:
             self.clear_video()
 

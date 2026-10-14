@@ -8,8 +8,23 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+
+def test_network_health_reports_reading_age_and_staleness(monkeypatch):
+    from src.core.network_sensors import NetworkSensorManager
+    import src.core.network_sensors as module
+    now = [100.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+    manager = NetworkSensorManager([{"id": "room", "protocol": "udp", "port": 9000, "stale_after": 5}])
+    assert manager.details()[0]["age"] is None
+    manager._receive(manager.sources, b"23.5")
+    now[0] = 103.0
+    assert manager.details()[0]["age"] == 3.0 and manager.details()[0]["status"] == "Receiving"
+    now[0] = 106.0
+    assert manager.details()[0]["status"] == "Stale" and not manager.snapshot()
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from src.core.frame_pipeline import FramePipeline
 from src.core.constants import (
     DATA_SOURCES_CATEGORIZED, SOURCE_UNITS, format_sensor_template,
     get_value_with_unit, register_network_sources,
@@ -55,7 +70,6 @@ def test_typed_payload_validation(payload, kind):
 def test_text_and_boolean_render_without_mutating_persisted_value():
     from src.core.element import ThemeElement
     from src.core.renderer import ThemeRenderer
-    from src.ui.main_window import ThemeEditorWindow
     sources = validate_sources([
         {"id": "status", "protocol": "udp", "value_type": "text"},
         {"id": "door", "protocol": "udp", "value_type": "boolean"},
@@ -67,12 +81,12 @@ def test_text_and_boolean_render_without_mutating_persisted_value():
     try:
         register_network_sources(sources)
         assert format_sensor_template("{network_status}: {network_door}", values) == "Occupied: OFF"
-        snapshot = ThemeEditorWindow._capture_render_snapshot(window)
+        snapshot = FramePipeline._capture_render_snapshot(window)
         assert isinstance(element.to_dict()["value"], (int, float))
         renderer = ThemeRenderer()
         first = renderer.render(snapshot, (400, 200))
         values["network_status"] = "Playing"
-        second = renderer.render(ThemeEditorWindow._capture_render_snapshot(window), (400, 200))
+        second = renderer.render(FramePipeline._capture_render_snapshot(window), (400, 200))
         assert first.tobytes() != second.tobytes()
     finally:
         register_network_sources([])
@@ -348,118 +362,6 @@ def test_mqtt_real_client_receives_retained_value():
         assert not thread.is_alive()
 
 
-def test_dialog_save_preserves_fields_and_does_not_export_credentials(monkeypatch):
-    from PySide6.QtWidgets import QApplication, QDialog
-    from src.core import sensors
-    from src.core.element import ThemeElement
-    from src.ui.network_sensors import NetworkSensorsDialog
-    from src.ui.properties import PropertiesPanel
-    from src.utils import settings
-
-    app = QApplication.instance() or QApplication([])
-    stored = []
-    monkeypatch.setattr(settings, "get_setting", lambda key, default=None: default)
-    monkeypatch.setattr(settings, "set_setting", lambda key, value: stored.append((key, value)))
-    monkeypatch.setattr(sensors, "configure_network_sensors", lambda sources: register_network_sources(sources))
-    dialog = NetworkSensorsDialog()
-    try:
-        dialog._add()
-        dialog.fields["id"].setText("room_2")
-        dialog.fields["name"].setText("Living room")
-        dialog.fields["token"].setText("test-secret")
-        dialog.fields["path"].setText("state")
-        dialog.fields["unit"].setText(" C")
-        dialog._add()
-        dialog.fields["protocol"].setCurrentIndex(3)
-        dialog.fields["path"].setText("rpm")
-        dialog.source_list.setCurrentRow(0)
-        assert dialog.fields["token"].text() == "test-secret"
-        assert dialog.fields["path"].text() == "state"
-        dialog._save()
-        assert dialog.result() == QDialog.DialogCode.Accepted
-        assert stored[0][0] == "network_sensors"
-        assert stored[0][1][0]["unit"] == " C"
-        assert stored[0][1][1]["protocol"] == "udp"
-        assert stored[0][1][1]["port"] == 9000
-        panel = PropertiesPanel()
-        element = ThemeElement("text", source="network_room_2")
-        panel.set_element(element)
-        assert panel.get_selected_source() == "network_room_2"
-        assert "test-secret" not in str(element.to_dict())
-        register_network_sources([])
-        panel.source_combo.blockSignals(True)
-        panel.setup_source_combo()
-        panel.set_source_by_id("network_room_2")
-        panel.source_combo.blockSignals(False)
-        assert panel.get_selected_source() == "network_room_2"
-        assert element.source == "network_room_2"
-        panel.deleteLater()
-    finally:
-        dialog.close()
-        register_network_sources([])
-        app.processEvents()
-
-
-def test_dialog_only_shows_fields_for_selected_protocol_and_type(monkeypatch):
-    from PySide6.QtWidgets import QApplication
-    from src.ui.network_sensors import NetworkSensorsDialog
-    from src.utils import settings
-
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings, "get_setting", lambda key, default=None: default)
-    dialog = NetworkSensorsDialog()
-    try:
-        dialog._add()
-        keys = {"url", "token", "host", "port", "topic", "username", "password", "tls"}
-        expected = ({"url", "token"}, {"host", "port", "topic", "username", "password", "tls"},
-                    {"host", "port"}, {"host", "port"})
-        for index, visible in enumerate(expected):
-            dialog.fields["protocol"].setCurrentIndex(index)
-            assert {key for key in keys if not dialog.fields[key].isHidden()} == visible
-        for index in (1, 2):
-            dialog.fields["value_type"].setCurrentIndex(index)
-            assert all(dialog.fields[key].isHidden() for key in ("unit", "scale", "offset", "decimals"))
-        dialog.fields["value_type"].setCurrentIndex(0)
-        assert all(not dialog.fields[key].isHidden() for key in ("unit", "scale", "offset", "decimals"))
-    finally:
-        dialog.close()
-        app.processEvents()
-
-
-def test_dialog_missing_credentials_preserves_settings_until_reentered(monkeypatch):
-    from PySide6.QtWidgets import QApplication, QMessageBox
-    from src.core import sensors
-    from src.ui.network_sensors import NetworkSensorsDialog
-    from src.utils import settings
-
-    app = QApplication.instance() or QApplication([])
-    source = {"id": "room", "protocol": "mqtt", "topic": "home/room", "password_ref": "missing"}
-
-    def get_setting(key, default=None, resolve_secrets=True):
-        if resolve_secrets:
-            raise RuntimeError("A saved sensor credential is missing.")
-        return [source]
-
-    monkeypatch.setattr(settings, "get_setting", get_setting)
-    save, warning, configure = MagicMock(), MagicMock(), MagicMock()
-    monkeypatch.setattr(settings, "set_setting", save)
-    monkeypatch.setattr(QMessageBox, "warning", warning)
-    monkeypatch.setattr(sensors, "configure_network_sensors", configure)
-    dialog = NetworkSensorsDialog()
-    try:
-        dialog._save()
-        save.assert_not_called()
-        configure.assert_not_called()
-        warning.assert_called_once()
-        dialog.fields["password"].setText("replacement")
-        dialog._save()
-        assert save.call_args.args[1][0]["password"] == "replacement"
-        configure.assert_called_once()
-    finally:
-        dialog.close()
-        app.processEvents()
-
-
 def test_cache_merges_network_without_overwriting_hardware(monkeypatch):
     from src.core import sensors
     manager = NetworkSensorManager([{"id": "cpu_temp", "protocol": "udp"}])
@@ -479,7 +381,6 @@ def test_cache_merges_network_without_overwriting_hardware(monkeypatch):
 def test_render_snapshot_uses_network_values_then_clears_expired_reading():
     from src.core.element import ThemeElement
     from src.core.renderer import ThemeRenderer
-    from src.ui.main_window import ThemeEditorWindow
 
     element = ThemeElement("text", source="network_room", animate_gauge=False)
     data = {"network_room": 22.5}
@@ -488,11 +389,11 @@ def test_render_snapshot_uses_network_values_then_clears_expired_reading():
     source = validate_sources([{"id": "room", "protocol": "udp", "unit": " C"}])
     try:
         register_network_sources(source)
-        snapshot = ThemeEditorWindow._capture_render_snapshot(window)
+        snapshot = FramePipeline._capture_render_snapshot(window)
         assert snapshot["elements"][0][1]["value"] == 22.5
         assert ThemeRenderer().render(snapshot, (200, 100)).size == (200, 100)
         data.clear()
-        snapshot = ThemeEditorWindow._capture_render_snapshot(window)
+        snapshot = FramePipeline._capture_render_snapshot(window)
         assert snapshot["elements"][0][1]["value"] == 0
         assert element.value == 0
     finally:
@@ -526,55 +427,3 @@ def test_offline_reading_is_visible_and_zero_remains_valid(kind):
     assert element.type == kind
     assert element.source == "network_room"
 
-
-def test_dialog_probe_uses_unsaved_fields_and_leaves_running_connections(monkeypatch):
-    from PySide6.QtWidgets import QApplication
-    from src.core import sensors
-    from src.ui.network_sensors import NetworkSensorsDialog
-    from src.utils import settings
-
-    app = QApplication.instance() or QApplication([])
-    monkeypatch.setattr(settings, "get_setting", lambda key, default=None: default)
-    save = MagicMock()
-    monkeypatch.setattr(settings, "set_setting", save)
-    active = NetworkSensorManager([{"id": "active", "protocol": "udp"}])
-    active._receive(active.sources, b"123")
-    monkeypatch.setattr(sensors, "_network_manager", active)
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
-        sender.bind(("127.0.0.1", 0))
-        port = sender.getsockname()[1]
-    dialog = NetworkSensorsDialog()
-    try:
-        dialog._add()
-        dialog.fields["protocol"].setCurrentIndex(3)
-        dialog.fields["port"].setValue(port)
-        dialog.fields["path"].setText("temperature")
-        dialog._test_connection()
-        probe = dialog._probe
-        assert not dialog.test_button.isEnabled()
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
-            def received():
-                sender.sendto(b'{"temperature":23.5}', ("127.0.0.1", port))
-                app.processEvents()
-                dialog._update_status()
-                return dialog._probe_result is not None
-            wait_for(received)
-        assert "23.5" in dialog.status_label.text()
-        wait_for(lambda: not any(t.is_alive() for t in probe._threads))
-        assert sensors._network_manager is active
-        assert active.snapshot() == {"network_active": 123}
-        save.assert_not_called()
-        dialog._test_connection()
-        probe = dialog._probe
-        dialog._probe_deadline = 0
-        dialog._update_status()
-        assert "without a valid reading" in dialog.status_label.text()
-        wait_for(lambda: not any(t.is_alive() for t in probe._threads))
-        dialog._test_connection()
-        probe = dialog._probe
-        dialog.reject()
-        assert dialog._probe is None
-        wait_for(lambda: not any(t.is_alive() for t in probe._threads))
-    finally:
-        dialog.reject()
-        app.processEvents()
