@@ -55,6 +55,14 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Connection status**: click the device/FPS indicator to connect or disconnect
 - **System tray** support with minimize-to-tray
 
+## Interface Themes
+
+Choose the editor look in **Settings → Appearance**. The choice is saved and applied immediately.
+
+| Obsidian (dark) | Studio (light) | HUD (amber) |
+| --- | --- | --- |
+| ![Obsidian](docs/screenshots/obsidian.png) | ![Studio](docs/screenshots/studio.png) | ![HUD](docs/screenshots/hud.png) |
+
 ## Supported Displays
 
 ### Communication Protocols

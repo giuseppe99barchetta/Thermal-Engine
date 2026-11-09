@@ -31,10 +31,12 @@ UI.TDialog {
             primary: true
             onClicked: {
                 let changes = {};
-                for (let key of ["launch_at_login", "launch_minimized", "minimize_to_tray", "close_to_tray", "check_for_updates"])
+                for (let key of ["launch_at_login", "launch_minimized", "minimize_to_tray", "close_to_tray", "check_for_updates", "ui_theme"])
                     changes[key] = dialog.draft[key];
-                if (controller.saveSettings(changes))
+                if (controller.saveSettings(changes)) {
+                    UI.Theme.variant = dialog.draft.ui_theme || "obsidian";
                     dialog.close();
+                }
             }
         }
     }
@@ -79,6 +81,22 @@ UI.TDialog {
                     checked: Boolean(dialog.draft[modelData.key])
                     onClicked: dialog.setValue(modelData.key, checked)
                 }
+            }
+            Label {
+                text: "APPEARANCE"
+                color: UI.Theme.muted
+                font.pixelSize: 10
+                topPadding: 12
+                bottomPadding: 8
+            }
+            UI.TCombo {
+                id: themeCombo
+                objectName: "themeCombo"
+                Layout.fillWidth: true
+                model: UI.Theme.names
+                textRole: "label"
+                currentIndex: Math.max(0, UI.Theme.names.findIndex(n => n.id === (dialog.draft.ui_theme || "obsidian")))
+                onActivated: dialog.setValue("ui_theme", UI.Theme.names[currentIndex].id)
             }
             Label {
                 text: "Frame rate, brightness and orientation of the display are in the Display tab of the right panel."

@@ -57,6 +57,7 @@ DEFAULT_SETTINGS = {
     "inspector_panel_width": 296,
     "network_sensors": [],  # Local connections; never included in exported themes
     "onboarding_completed": False,
+    "ui_theme": "obsidian",  # Editor look: obsidian | studio | hud
 }
 
 _settings = None

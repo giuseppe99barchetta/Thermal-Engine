@@ -1,5 +1,6 @@
 """Explicit, isolated verification of the installed Qt Quick runtime."""
 import json
+import os
 import sys
 from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, QMetaObject, qVersion
@@ -13,7 +14,7 @@ def run_smoke(destination, size=(1440, 900)):
     target = Path(destination).resolve()
     target.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
-    settings._settings = {**settings.DEFAULT_SETTINGS, "onboarding_completed": True}
+    settings._settings = {**settings.DEFAULT_SETTINGS, "onboarding_completed": True, "ui_theme": os.environ.get("TE_UI_THEME", "obsidian")}
     window = QuickEditorWindow(start_services=False)
     window.root.setWidth(size[0])
     window.root.setHeight(size[1])

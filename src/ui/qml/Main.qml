@@ -25,6 +25,7 @@ ApplicationWindow {
     palette.highlight: UI.Theme.accentDark
     palette.dark: UI.Theme.border
     palette.mid: UI.Theme.border
+    Component.onCompleted: UI.Theme.variant = editor.settingsData().ui_theme || "obsidian"
     property int leftTab: 0
     property bool allResolutions: false
     property string searchText: ""
@@ -464,7 +465,7 @@ ApplicationWindow {
                                 visible: row.name.toLowerCase().indexOf(root.searchText) >= 0
                                 radius: 6
                                 color: row.selected ? UI.Theme.accentDark : layerMouse.containsMouse ? UI.Theme.raised : "transparent"
-                                border.color: row.selected ? "#316776" : "transparent"
+                                border.color: row.selected ? UI.Theme.accentBorder : "transparent"
                                 opacity: layerMouse.dragging ? 0.5 : 1
                                 ToolButton {
                                     id: groupToggle
@@ -661,7 +662,7 @@ ApplicationWindow {
                                 height: presetList.cellHeight - 10
                                 radius: 8
                                 color: presetMouse.containsMouse ? UI.Theme.raised : UI.Theme.input
-                                border.color: row.name === editor.state.name ? "#316776" : UI.Theme.border
+                                border.color: row.name === editor.state.name ? UI.Theme.accentBorder : UI.Theme.border
                                 Image {
                                     anchors.top: parent.top
                                     anchors.topMargin: 10
@@ -826,6 +827,7 @@ ApplicationWindow {
                     id: canvas
                     objectName: "quickCanvas"
                     controller: editor
+                    chromeColors: ({stage: UI.Theme.background, border: UI.Theme.border, ruler: UI.Theme.surface, rulerText: UI.Theme.secondary, accent: UI.Theme.accent})
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
@@ -848,7 +850,7 @@ ApplicationWindow {
                         anchors.fill: parent
                         anchors.margins: 12
                         radius: 12
-                        color: "#2257d4ef"
+                        color: UI.Theme.selection
                         border.color: UI.Theme.accent
                         border.width: 2
                         Label {

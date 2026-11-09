@@ -32,6 +32,7 @@ class CanvasBehavior:
         self.guides = []
         self.scale = 1.0
         self.background_color = QColor(15, 15, 25)
+        self.chrome = {}  # Theme colours pushed from QML; defaults keep the original dark look
         self.handle_size = 10
         self.group_selection_mode = False
         self.frame_renderer = None
@@ -142,6 +143,10 @@ class CanvasBehavior:
         margin_y = (int(self.height()) - self.canvas_height) // 2 + int(self.pan.y())
         return (margin_x, margin_y)
 
+    def chrome_color(self, key, default):
+        value = self.chrome.get(key)
+        return QColor(value) if value is not None else default
+
     def draw_grid(self, painter):
         """Draw grid lines on canvas."""
         grid_color = QColor(60, 60, 80, 100)
@@ -164,7 +169,7 @@ class CanvasBehavior:
     def paint(self, painter):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.fillRect(self.rect(), QColor(16, 20, 25))
+        painter.fillRect(self.rect(), self.chrome_color("stage", QColor(16, 20, 25)))
         margin_x, margin_y = self.get_canvas_margins()
         painter.translate(margin_x, margin_y)
         canvas_rect = QRectF(0, 0, self.canvas_width, self.canvas_height)
@@ -176,7 +181,7 @@ class CanvasBehavior:
             painter.drawImage(canvas_rect, image)
         else:
             painter.fillRect(canvas_rect, self.background_color)
-        painter.setPen(QPen(QColor(43, 54, 67), 1))
+        painter.setPen(QPen(self.chrome_color("border", QColor(43, 54, 67)), 1))
         painter.drawRect(canvas_rect)
         if self.show_grid:
             self.draw_grid(painter)
@@ -195,9 +200,9 @@ class CanvasBehavior:
     def draw_rulers(self, painter):
         """Pixel coordinates stay anchored to the display while zooming and panning."""
         thickness = 18
-        painter.fillRect(0, 0, int(self.width()), thickness, QColor(23, 29, 36))
-        painter.fillRect(0, 0, thickness, int(self.height()), QColor(23, 29, 36))
-        painter.setPen(QColor(160, 160, 180))
+        painter.fillRect(0, 0, int(self.width()), thickness, self.chrome_color("ruler", QColor(23, 29, 36)))
+        painter.fillRect(0, 0, thickness, int(self.height()), self.chrome_color("ruler", QColor(23, 29, 36)))
+        painter.setPen(self.chrome_color("rulerText", QColor(160, 160, 180)))
         font = painter.font()
         font.setPixelSize(10)
         painter.setFont(font)
@@ -254,7 +259,7 @@ class CanvasBehavior:
 
     def draw_selection_box(self, painter, element, x, y):
         bounds = self.get_element_bounds(element)
-        pen = QPen(QColor(87, 212, 239), 2, Qt.PenStyle.DashLine)
+        pen = QPen(self.chrome_color("accent", QColor(87, 212, 239)), 2, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(bounds)
@@ -262,7 +267,7 @@ class CanvasBehavior:
         handles = [(bounds.left(), bounds.top()), (bounds.right(), bounds.top()), (bounds.left(), bounds.bottom()), (bounds.right(), bounds.bottom())]
         painter.setPen(Qt.PenStyle.NoPen)
         for hx, hy in handles:
-            painter.setBrush(QBrush(QColor(87, 212, 239)))
+            painter.setBrush(QBrush(self.chrome_color("accent", QColor(87, 212, 239))))
             painter.drawRect(int(hx - hs / 2), int(hy - hs / 2), hs, hs)
 
     def get_multi_selection_bounds(self):
@@ -289,7 +294,7 @@ class CanvasBehavior:
         bounds = self.get_multi_selection_bounds()
         if bounds is None:
             return
-        pen = QPen(QColor(87, 212, 239), 2, Qt.PenStyle.DashLine)
+        pen = QPen(self.chrome_color("accent", QColor(87, 212, 239)), 2, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(bounds)
@@ -297,7 +302,7 @@ class CanvasBehavior:
         handles = [(bounds.left(), bounds.top()), (bounds.right(), bounds.top()), (bounds.left(), bounds.bottom()), (bounds.right(), bounds.bottom())]
         painter.setPen(Qt.PenStyle.NoPen)
         for hx, hy in handles:
-            painter.setBrush(QBrush(QColor(87, 212, 239)))
+            painter.setBrush(QBrush(self.chrome_color("accent", QColor(87, 212, 239))))
             painter.drawRect(int(hx - hs / 2), int(hy - hs / 2), hs, hs)
 
     def get_handle_at(self, pos, element):
@@ -615,7 +620,7 @@ class CanvasBehavior:
         return (dx, dy, guides)
 
     def draw_guides(self, painter):
-        painter.setPen(QPen(QColor(87, 212, 239), 1))
+        painter.setPen(QPen(self.chrome_color("accent", QColor(87, 212, 239)), 1))
         for axis, value in self.guides:
             p = value * self.scale
             if axis == 'v':

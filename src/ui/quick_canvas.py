@@ -12,6 +12,7 @@ class QuickCanvas(CanvasBehavior, QQuickPaintedItem):
     drag_started = Signal()
     zoom_changed = Signal()
     controllerChanged = Signal()
+    chromeChanged = Signal()
 
     def __init__(self, parent=None):
         QQuickPaintedItem.__init__(self, parent)
@@ -27,6 +28,16 @@ class QuickCanvas(CanvasBehavior, QQuickPaintedItem):
         self.element_moved.connect(self._edited)
         self.element_resized.connect(self._edited)
         self.zoom_changed.connect(self._zoomed)
+
+    @Property('QVariantMap', notify=chromeChanged)
+    def chromeColors(self):
+        return self.chrome
+
+    @chromeColors.setter
+    def chromeColors(self, value):
+        self.chrome = dict(value)
+        self.update()
+        self.chromeChanged.emit()
 
     @Property(QObject, notify=controllerChanged)
     def controller(self):

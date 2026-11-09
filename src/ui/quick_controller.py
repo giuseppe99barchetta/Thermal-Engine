@@ -1221,6 +1221,7 @@ class EditorController(QObject, FramePipeline):
             if "target_fps" in data and int(data["target_fps"]) not in (10, 20, 30, 60): raise ValueError("Choose 10, 20, 30 or 60 FPS")
             if "display_brightness" in data and not 0 <= int(data["display_brightness"]) <= 100: raise ValueError("Brightness must be between 0 and 100")
             if "display_orientation" in data and data["display_orientation"] not in ("normal", "flip_v", "flip_h", "rotate_180", "rotate_90_cw", "rotate_90_ccw"): raise ValueError("Invalid orientation")
+            if "ui_theme" in data and data["ui_theme"] not in ("obsidian", "studio", "hud"): raise ValueError("Invalid interface theme")
             for key, lower, upper in (("layers_panel_width", 220, 440), ("inspector_panel_width", 280, 520)):
                 if key in data and (type(data[key]) not in (int, float) or not lower <= data[key] <= upper):
                     raise ValueError("Invalid workspace panel width")

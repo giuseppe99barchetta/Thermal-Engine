@@ -55,6 +55,6 @@ Dialog {
         bottomPadding: 16
     }
     Overlay.modal: Rectangle {
-        color: "#b0101419"
+        color: Theme.scrim
     }
 }
