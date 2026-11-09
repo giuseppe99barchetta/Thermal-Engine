@@ -6,6 +6,7 @@ Module {
         exports: ["ThermalEngine/QuickCanvas 1.0"]
         exportMetaObjectRevisions: [256]
         Property { name: "controller"; type: "QObject"; isPointer: true }
+        Property { name: "chromeColors"; type: "QVariantMap" }
         Method { name: "fit" }
         Method { name: "zoomBy"; Parameter { name: "factor"; type: "double" } }
     }
