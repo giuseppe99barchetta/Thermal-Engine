@@ -102,35 +102,7 @@ jobs:
 
     - name: Update app_version.py with release version
       if: steps.version_bump.outputs.should_release == 'true'
-      shell: python
-      run: |
-        version = "${{ steps.version_bump.outputs.new_version }}".lstrip("v")
-        parts = version.split(".")
-        lines = [
-            '"""',
-            'Version information for Thermal Engine.',
-            'This file is automatically updated by the build process.',
-            '"""',
-            '',
-            f'__version__ = "{version}"',
-            f'__version_info__ = ({parts[0]}, {parts[1]}, {parts[2]})',
-            '',
-            'def get_version():',
-            '    """Get the current version string."""',
-            '    return __version__',
-            '',
-            'def get_version_tuple():',
-            '    """Get the current version as a tuple."""',
-            '    return __version_info__',
-            '',
-        ]
-        import os
-        os.makedirs("src/utils", exist_ok=True)
-        with open("src/utils/app_version.py", "w") as f:
-            f.write("\n".join(lines))
-        print(f"Updated src/utils/app_version.py to {version}")
-        with open("src/utils/app_version.py") as f:
-            print(f.read())
+      run: python scripts/set_version.py "${{ steps.version_bump.outputs.new_version }}"
 
     - name: Download libusb DLLs
       if: steps.version_bump.outputs.should_release == 'true'
@@ -304,6 +276,9 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+
+    - name: Update app_version.py with release version
+      run: python scripts/set_version.py "${{ needs.build-and-release.outputs.new_version }}"
 
     - name: Install system dependencies
       run: |
