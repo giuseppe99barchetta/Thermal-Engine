@@ -72,3 +72,12 @@ def test_import_theme_zip_slip_prevention(temp_zip_slip_theme, tmp_path, monkeyp
 
     # Malicious asset should NOT be extracted outside of the import dir
     # Also verify it didn't crash
+
+
+def test_non_string_paths_are_rejected_not_crashed():
+    from src.core.security import validate_preset_schema
+    for bad in (5, ["a"], {"x": 1}):
+        ok, errors = validate_preset_schema({"elements": [{"type": "image", "image_path": bad}]})
+        assert not ok and errors
+        ok, errors = validate_preset_schema({"elements": [], "video_background": {"video_path": bad}})
+        assert not ok and errors

@@ -157,6 +157,9 @@ def validate_preset_schema(data):
         else:
             if 'video_path' in vb and vb['video_path']:
                 vp = vb['video_path']
+                if not isinstance(vp, str):
+                    errors.append("video_background path must be a string")
+                    return False, errors
                 # Allow relative asset paths from .thermal packages
                 if not (vp.startswith("assets/") and ".." not in vp):
                     safe, _, err = is_safe_path(vp, allow_absolute=True)
@@ -206,6 +209,9 @@ def validate_element_schema(element, index):
     for field in path_fields:
         if field in element and element[field]:
             path = element[field]
+            if not isinstance(path, str):
+                errors.append(f"{prefix}: '{field}' must be a string")
+                continue
             # Allow relative asset paths from .thermal packages
             if path.startswith("assets/") and ".." not in path:
                 continue
