@@ -564,11 +564,12 @@ class _LibreHardwareMonitorReader:
         self._cache_initialized = True
         return sensors
 
-    def _find_sensor(self, names, sensor_type, sensors=None):
+    def _find_sensor(self, names, sensor_type, sensors=None, suffix=False):
+        """First sensor of this type whose label contains a name (or, with suffix=True, ends with one)."""
         if sensors is None:
             sensors = self._get_sensors()
 
-        cache_key = (tuple(names), sensor_type)
+        cache_key = (tuple(names), sensor_type, suffix)
         if cache_key in self._sensor_mapping_cache:
             sensor = self._sensor_mapping_cache[cache_key]
             if sensor is not None and sensor.Value is not None:
@@ -581,7 +582,7 @@ class _LibreHardwareMonitorReader:
                 continue
 
             for name in names_lower:
-                if name in label:
+                if (label.endswith(name) if suffix else name in label):
                     self._sensor_mapping_cache[cache_key] = sensor
                     if sensor.Value is not None:
                         return float(sensor.Value)
@@ -690,11 +691,13 @@ class _LibreHardwareMonitorReader:
 
     def get_gpu_clock(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return self._find_sensor(["gpu core clock", "gpu clock"], SensorType.Clock, sensors)
+        return (self._find_sensor(["gpu core clock", "gpu clock"], SensorType.Clock, sensors)
+                or self._find_sensor(["gpu core"], SensorType.Clock, sensors, suffix=True))
 
     def get_gpu_memory_clock(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return self._find_sensor(["memory clock"], SensorType.Clock, sensors)
+        return (self._find_sensor(["memory clock"], SensorType.Clock, sensors)
+                or self._find_sensor(["gpu memory"], SensorType.Clock, sensors, suffix=True))
 
     def get_gpu_usage(self, sensors=None):
         _, SensorType = _load_lhm_types()
@@ -734,11 +737,14 @@ class _LibreHardwareMonitorReader:
 
     def get_gpu_memory_usage(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return self._find_sensor(["memory load", "memory usage"], SensorType.Load, sensors)
+        # suffix: "GPU Memory Controller" is a different load and must not match
+        return (self._find_sensor(["memory load", "memory usage"], SensorType.Load, sensors)
+                or self._find_sensor(["gpu memory"], SensorType.Load, sensors, suffix=True))
 
     def get_gpu_power(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return self._find_sensor(["gpu power", "board power"], SensorType.Power, sensors)
+        return (self._find_sensor(["gpu power", "board power"], SensorType.Power, sensors)
+                or self._find_sensor(["gpu package"], SensorType.Power, sensors, suffix=True))
 
     def get_cooling_storage_sensors(self, sensors):
         """Use explicit sensor names; never guess that an unnamed fan is a pump."""

@@ -104,3 +104,21 @@ def test_nvidia_smi_timeout_returns_no_data(monkeypatch):
     reader = _LinuxReader.__new__(_LinuxReader)
     assert reader._read_nvidia_smi() == {}
     assert reader._last_nvidia_smi_error == "nvidia-smi timed out"
+
+
+def test_gpu_metrics_match_the_names_libre_hardware_monitor_gives_nvidia_gpus():
+    # hw.Name + sensor.Name, the way _get_sensors builds labels; sensor names per LHM's NvidiaGpu (not dumped from real hardware)
+    gpu = "NVIDIA GeForce RTX 4070 "
+    types = SimpleNamespace(Temperature="Temperature", Load="Load", Clock="Clock", Power="Power")
+    sensors = [(sensor(gpu + name, kind, value)[0], (gpu + name).lower()) for name, kind, value in [
+        ("GPU Core", "Temperature", 61), ("GPU Core", "Clock", 2475), ("GPU Memory", "Clock", 10500),
+        ("GPU Core", "Load", 33), ("GPU Memory Controller", "Load", 12), ("GPU Memory", "Load", 40),
+        ("GPU Package", "Power", 150)]]
+    reader = _LibreHardwareMonitorReader.__new__(_LibreHardwareMonitorReader)
+    reader._sensor_mapping_cache = {}
+    reader._gpu_usage_sensors = None
+    with patch("src.core.libre_hw_monitor._load_lhm_types", return_value=(None, types)):
+        assert reader.get_gpu_clock(sensors) == 2475
+        assert reader.get_gpu_memory_clock(sensors) == 10500
+        assert reader.get_gpu_memory_usage(sensors) == 40  # not the memory controller (12)
+        assert reader.get_gpu_power(sensors) == 150
