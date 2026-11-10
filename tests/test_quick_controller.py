@@ -409,3 +409,12 @@ def test_saving_over_a_name_that_differs_only_by_case_asks_first(controller, mon
     controller.document.theme_name = "foo"
     controller.save()
     assert asked == ["Replace Foo with this theme?"] and saved == []
+
+
+def test_setup_wizard_asks_before_replacing_unsaved_edits(controller):
+    dialogs = []
+    controller.requestDialog.connect(lambda kind, payload: dialogs.append(kind))
+    controller.document.theme_name = "Mine"
+    controller.dirty = True
+    controller.finishOnboarding(-1, controller.document.width, controller.document.height, "")
+    assert dialogs == ["unsaved"] and controller.document.theme_name == "Mine"

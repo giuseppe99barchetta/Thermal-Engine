@@ -1433,12 +1433,15 @@ class EditorController(QObject, FramePipeline):
 
     @Slot(int, int, int, str)
     def finishOnboarding(self, device, width, height, preset):
+        self.guard_changes(lambda: self._finish_onboarding(device, width, height, preset))  # re-run from the menu: unsaved edits
+
+    def _finish_onboarding(self, device, width, height, preset):
         if 0 <= device < len(getattr(self, "_device_defs", [])):
             overrides = dict(settings.get_setting("display_size_overrides", {}))
             overrides[device_size_key(self._device_defs[device])] = [width, height]
             settings.set_setting("display_size_overrides", overrides)
         self.resizeDisplay(width, height, False)
-        if preset: self._load_preset(preset)  # The wizard chose it: no "discard changes?" prompt
+        if preset: self._load_preset(preset)
         else: self._new()
         settings.set_setting("default_preset", preset or None)
         settings.set_setting("onboarding_completed", True)
