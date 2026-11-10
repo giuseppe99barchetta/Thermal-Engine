@@ -133,6 +133,7 @@ class EditorController(QObject, FramePipeline):
         self.display_brightness = settings.get_setting("display_brightness", 100)
         self.display_orientation = settings.get_setting("display_orientation", "normal")
         self.theme_path = None
+        self._autosave_name = None  # the only user preset autosave may overwrite
         self.status = ""
         self._status_until = 0.0  # Notifications show until then; afterwards the context summary returns
         self._status_timer = QTimer(self)
@@ -440,7 +441,7 @@ class EditorController(QObject, FramePipeline):
         self.revision += 1
         if mark_dirty:
             self.dirty = True
-            if not self._needs_new_name(self.document.theme_name):
+            if self._autosave_name == self.document.theme_name:
                 self.autosave.start(3000)
         self.selectionChanged.emit()
         self.changed.emit()
@@ -793,6 +794,7 @@ class EditorController(QObject, FramePipeline):
         if name not in self.repository.presets: return
         if not manual and (self.document.theme_name == name or self.dirty): return  # Never replace unsaved edits
         self.document.load(copy.deepcopy(self.repository.presets[name]["data"]))
+        self._set_autosave_target(None if self.repository.is_read_only(name) else name)
         settings.set_setting("last_preset", name)
         self._restore_video()
         if manual and self._profile_manager: self._profile_manager.suppress_auto_switch()
@@ -834,7 +836,12 @@ class EditorController(QObject, FramePipeline):
         self.document.selection = []
         self.document.commit(); self.refresh()
 
+    def _set_autosave_target(self, name):
+        self.autosave.stop()
+        self._autosave_name = name
+
     def _new(self):
+        self._set_autosave_target(None)
         self.document.begin()
         self.document.elements = []
         self.document.pages = [1]
@@ -929,10 +936,12 @@ class EditorController(QObject, FramePipeline):
             initial = "My theme" if name == "Untitled Theme" else f"{name} copy"
             self.prompt("Save theme", "Theme name", initial, self._save_named)
             return
-        if name in self.repository.presets and not force:
-            self.confirm("Overwrite preset", f"Replace {name} with this theme?", lambda: self.save(force=True))
+        existing = self.repository.find_conflict(name)
+        if existing and not force:
+            self.confirm("Overwrite preset", f"Replace {existing} with this theme?", lambda: self.save(force=True))
             return
         self.repository.save(name, self.document.export(), self.render_theme_image())
+        self._set_autosave_target(name)
         settings.set_setting("default_preset", name)
         self.reload_presets()
         self.dirty = False
@@ -950,6 +959,8 @@ class EditorController(QObject, FramePipeline):
         self.save()
 
     def _autosave(self):
+        if self._autosave_name != self.document.theme_name:
+            return
         try:
             self.repository.save(self.document.theme_name, self.document.export(), self.render_theme_image())
             self.dirty = False
@@ -969,6 +980,7 @@ class EditorController(QObject, FramePipeline):
         try:
             if action == "open":
                 data = resolve_assets(json.loads(Path(path).read_text(encoding="utf-8")), Path(path).parent)
+                self._set_autosave_target(None)
                 self.document.load(data)
                 self.theme_path = path
                 self._restore_video(); self.refresh()
@@ -985,6 +997,7 @@ class EditorController(QObject, FramePipeline):
                 from src.utils.theme_package import import_theme
                 success, error, data = import_theme(path)
                 if not success: raise ValueError(error)
+                self._set_autosave_target(None)
                 self.document.load(data); self._restore_video(); self.refresh()
             elif action in ("image", "gif"):
                 self.edit(action + "_path", path)

@@ -377,3 +377,35 @@ def test_inspector_hides_properties_the_renderer_ignores(controller):
     controller.select_indices([0])
     keys = {row["key"] for row in controller.propertyRows}
     assert "radius" in keys and "border_radius" not in keys and "clip" not in keys
+
+
+def test_autosave_never_overwrites_a_preset_the_user_did_not_load(controller, monkeypatch):
+    saved = []
+    monkeypatch.setattr(controller.repository, "presets", {"Foo": {"builtin": False, "data": {}}})
+    monkeypatch.setattr(controller.repository, "save", lambda *args: saved.append(args))
+    controller.document.theme_name = "Foo"  # e.g. a JSON opened from disk or an imported package
+    controller.refresh()
+    assert not controller.autosave.isActive()
+    controller._autosave()
+    assert saved == []
+
+
+def test_autosave_runs_for_a_loaded_preset_and_stops_on_new(controller, monkeypatch):
+    data = copy.deepcopy(controller.document.export())
+    data["name"] = "Foo"
+    monkeypatch.setattr(controller.repository, "presets", {"Foo": {"builtin": False, "data": data}})
+    controller._load_preset("Foo")
+    controller.refresh()
+    assert controller.autosave.isActive()
+    controller._new()
+    assert not controller.autosave.isActive()
+
+
+def test_saving_over_a_name_that_differs_only_by_case_asks_first(controller, monkeypatch):
+    monkeypatch.setattr(controller.repository, "presets", {"Foo": {"builtin": False, "data": {}}})
+    asked, saved = [], []
+    monkeypatch.setattr(controller, "confirm", lambda title, message, callback: asked.append(message))
+    monkeypatch.setattr(controller.repository, "save", lambda *args: saved.append(args))
+    controller.document.theme_name = "foo"
+    controller.save()
+    assert asked == ["Replace Foo with this theme?"] and saved == []

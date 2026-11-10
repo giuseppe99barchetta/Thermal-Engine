@@ -90,6 +90,11 @@ class PresetRepository:
         preset = self.presets.get(name)
         return name in PROTECTED_PRESETS or bool(preset and preset["builtin"])
 
+    def find_conflict(self, name):
+        """Existing preset that would share this file: names differing only by case or length collide on disk."""
+        key = sanitize_preset_name(name).casefold()
+        return next((n for n in self.presets if sanitize_preset_name(n).casefold() == key), None)
+
     def save(self, name, data, frame=None):
         if name in PROTECTED_PRESETS:
             raise ValueError("Choose a new name to save a copy of this built-in theme.")
@@ -107,6 +112,8 @@ class PresetRepository:
                 frame.save(path.with_suffix(".png"))
             except OSError:
                 logger.warning("Could not save preset thumbnail")
+        for other in [n for n, p in self.presets.items() if n != name and p.get("path") == str(path)]:
+            del self.presets[other]  # same file: don't keep two entries that delete each other's data
         self.presets[name] = {"data": copy.deepcopy(data), "builtin": False, "path": str(path),
                               "thumbnail": str(path.with_suffix(".png"))}
 
