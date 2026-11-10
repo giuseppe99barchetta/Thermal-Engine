@@ -81,3 +81,23 @@ def test_non_string_paths_are_rejected_not_crashed():
         assert not ok and errors
         ok, errors = validate_preset_schema({"elements": [], "video_background": {"video_path": bad}})
         assert not ok and errors
+
+
+def test_import_drops_external_paths_and_unsupported_assets(tmp_path, monkeypatch):
+    import src.utils.app_path
+    import src.utils.theme_package
+    monkeypatch.setattr(src.utils.theme_package, "get_user_data_path", lambda *a: str(tmp_path.joinpath(*a)))
+    monkeypatch.setattr(src.utils.app_path, "get_user_data_path", lambda *a: str(tmp_path.joinpath(*a)))
+    theme = {"name": "t", "display_width": 1280, "display_height": 480, "elements": [
+        {"type": "image", "image_path": r"\attacker\share\x.png"},
+        {"type": "image", "image_path": "assets/ok.png"}]}
+    package = tmp_path / "t.thermal"
+    with zipfile.ZipFile(package, "w") as zf:
+        zf.writestr("theme.json", json.dumps(theme))
+        zf.writestr("assets/ok.png", b"png")
+        zf.writestr("assets/evil.exe", b"MZ")
+    success, err, data = import_theme(str(package))
+    assert success, err
+    assert data["elements"][0]["image_path"] == ""  # UNC would trigger an SMB connection when rendered
+    assert data["elements"][1]["image_path"].endswith("ok.png")
+    assert not list(tmp_path.rglob("evil.exe"))

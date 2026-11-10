@@ -223,6 +223,9 @@ def import_theme(zip_path):
                     if not safe:
                         logger.warning(f"Skipping unsafe asset: {name} ({err})")
                         continue
+                    if os.path.splitext(asset_filename)[1].lower() not in ALLOWED_ASSET_EXTENSIONS:
+                        logger.warning(f"Skipping unsupported asset: {name}")
+                        continue
 
                     target_path = os.path.join(import_dir, asset_filename)
 
@@ -243,12 +246,16 @@ def import_theme(zip_path):
                 if path and path.startswith(f"{ASSETS_DIR_NAME}/"):
                     filename = os.path.basename(path)
                     elem[field] = os.path.join(import_dir, filename)
+                elif path:
+                    elem[field] = ""  # absolute/UNC paths from a package are never trusted (SMB/NTLM leak)
 
         vb = theme_data.get("video_background", {})
         vb_path = vb.get("video_path", "")
         if vb_path and vb_path.startswith(f"{ASSETS_DIR_NAME}/"):
             filename = os.path.basename(vb_path)
             vb["video_path"] = os.path.join(import_dir, filename)
+        elif vb_path:
+            vb["video_path"] = ""
 
         return True, "", theme_data
 
