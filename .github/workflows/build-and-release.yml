@@ -6,9 +6,14 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-release:
     runs-on: windows-latest
+    permissions:
+      contents: write  # tag + release
     outputs:
       should_release: ${{ steps.version_bump.outputs.should_release }}
       new_version: ${{ steps.version_bump.outputs.new_version }}
@@ -32,7 +37,8 @@ jobs:
     - name: Determine version bump
       id: version_bump
       run: |
-        $commitMsg = git log -1 --pretty=%B
+        # Subject line only: %B is an array in PowerShell, so any body line starting with feat:/fix: would match
+        $commitMsg = git log -1 --pretty=%s
         echo "Commit message: $commitMsg"
 
         $currentTag = "${{ steps.get_tag.outputs.current_tag }}"
@@ -285,6 +291,8 @@ jobs:
     needs: build-and-release
     if: needs.build-and-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # attach the AppImage to the release
 
     steps:
     - name: Checkout code
