@@ -336,3 +336,17 @@ def test_clicking_the_canvas_takes_keyboard_focus(monkeypatch):
     canvas.mousePressEvent(QMouseEvent(QEvent.Type.MouseButtonPress, point, point, Qt.MouseButton.LeftButton,
                                        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
     assert calls == [1]
+
+
+def test_nudging_cannot_leave_the_range_the_schema_accepts():
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from src.core.security import validate_element_schema
+    canvas = QuickCanvas()
+    element = ThemeElement("rectangle", x=10000, y=-10000, width=10000)
+    canvas.set_elements([element])
+    canvas.selected_indices = [0]
+    for key in (Qt.Key.Key_Right, Qt.Key.Key_Up):
+        canvas.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.ShiftModifier))
+    assert (element.x, element.y) == (10000, -10000)
+    assert validate_element_schema(element.to_dict(), 0) == []

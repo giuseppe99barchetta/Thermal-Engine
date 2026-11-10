@@ -3,6 +3,14 @@ from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QColor, QPen, QBrush, QImage, QPainter
 from src.core import constants
 
+SCHEMA_LIMIT = 10000  # validate_element_schema rejects anything beyond +-10000 on load
+
+
+def clamp_geometry(element):
+    for field in ("x", "y", "width", "height", "radius"):
+        setattr(element, field, max(-SCHEMA_LIMIT, min(SCHEMA_LIMIT, getattr(element, field))))
+
+
 class CanvasBehavior:
     FIT_PADDING = 24
     GUIDE_SNAP_PX = 6
@@ -486,6 +494,7 @@ class CanvasBehavior:
                     el.height = max(20, int(oh * scale_y))
                     el.x = int(anchor_x + (ox - anchor_x) * scale_x)
                     el.y = int(anchor_y + (oy - anchor_y) * scale_y)
+                clamp_geometry(el)
             self.element_resized.emit(-1)
             self.update()
             return
@@ -527,6 +536,7 @@ class CanvasBehavior:
                         element.x = int(self.resize_start_pos_element[0] + self.resize_start_size[0] - new_width)
                 element.width = new_width
                 element.height = new_height
+            clamp_geometry(element)
             self.element_resized.emit(self.selected_indices[0])
             self.update()
             return
@@ -665,5 +675,6 @@ class CanvasBehavior:
             element = self.elements[idx]
             element.x = int(element.x + dx)
             element.y = int(element.y + dy)
+            clamp_geometry(element)
             self.element_moved.emit(idx, element.x, element.y)
         self.update()
