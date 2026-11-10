@@ -82,3 +82,13 @@ def test_one_broken_element_does_not_abort_the_frame():
     good = ThemeElement("rectangle", x=0, y=0, width=10, height=10, color="#00ff00")
     snapshot = {"background_color": "#000000", "elements": [(1, bad.to_dict()), (2, good.to_dict())]}
     assert renderer.render(snapshot, (40, 40)).getpixel((5, 5)) == (0, 255, 0)
+
+
+def test_semi_transparent_image_alpha_is_not_squared(tmp_path):
+    from PIL import Image
+    path = tmp_path / "half.png"
+    Image.new("RGBA", (10, 10), (255, 255, 255, 128)).save(path)
+    element = ThemeElement("image", x=0, y=0, width=10, height=10, image_path=str(path))
+    snapshot = {"background_color": "#000000", "elements": [(1, element.to_dict())]}
+    # 50% white over black is ~128; squared alpha would give ~64
+    assert 120 <= ThemeRenderer().render(snapshot, (20, 20)).getpixel((5, 5))[0] <= 136

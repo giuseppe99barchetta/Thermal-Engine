@@ -192,7 +192,7 @@ def get_scaled_frame(frame, element_width, element_height, scale_mode):
         result = PILImage.new('RGBA', (element_width, element_height), (0, 0, 0, 0))
         x_offset = (element_width - new_width) // 2
         y_offset = (element_height - new_height) // 2
-        result.paste(scaled, (x_offset, y_offset), scaled)
+        result.paste(scaled, (x_offset, y_offset))
         return result
 
 
@@ -241,13 +241,13 @@ def render_image(draw, img, element):
     if img.mode == 'RGBA':
         # Create a temporary image for compositing
         temp = PILImage.new('RGBA', img.size, (0, 0, 0, 0))
-        temp.paste(scaled_frame, (x, y), scaled_frame)
+        temp.paste(scaled_frame, (x, y))
         img.alpha_composite(temp)
     else:
         # Convert to RGBA for compositing
         img_rgba = img.convert('RGBA')
         temp = PILImage.new('RGBA', img.size, (0, 0, 0, 0))
-        temp.paste(scaled_frame, (x, y), scaled_frame)
+        temp.paste(scaled_frame, (x, y))
         result = PILImage.alpha_composite(img_rgba, temp)
         img.paste(result.convert('RGB'))
 

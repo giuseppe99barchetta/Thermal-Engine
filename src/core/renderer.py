@@ -404,7 +404,7 @@ class ThemeRenderer:
                         element.scale_proportionally,
                         color_opacity
                     )
-                    overlay.paste(img_overlay, (element.x, element.y), img_overlay)
+                    overlay.paste(img_overlay, (element.x, element.y))
                 except Exception as e:
                     logger.warning(f"Image load error: {e}")
         else:
@@ -922,7 +922,7 @@ class ThemeRenderer:
                     gradient_layer.putalpha(ImageChops.multiply(gradient_layer.split()[3], mask))
 
                     # Paste onto fill layer
-                    fill_layer.paste(gradient_layer, (x, y), gradient_layer)
+                    fill_layer.paste(gradient_layer, (x, y))
                 else:
                     # No rounded corners, draw lines directly
                     for i in range(fill_width):
