@@ -1012,8 +1012,13 @@ ApplicationWindow {
                 Layout.preferredWidth: root.narrow ? root.width : Math.min(root.inspectorWidth, Math.max(280, (root.width - 416) * 0.55))
                 Layout.fillHeight: true
                 color: UI.Theme.surface
+                Binding {  // a plain binding is lost the first time the tab buttons assign activeTab
+                    target: inspectorPanel
+                    property: "activeTab"
+                    value: root.inspectorTab
+                }
                 Inspector {
-                    activeTab: root.inspectorTab
+                    id: inspectorPanel
                     onActiveTabChanged: root.inspectorTab = activeTab
                     anchors.fill: parent
                     controller: editor
