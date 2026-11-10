@@ -90,3 +90,17 @@ def test_specific_hardware_keeps_same_names_separate_and_stable():
         assert format_sensor_template("{" + catalog[0]["id"] + "}", readings) == "800 RPM"
     finally:
         register_hardware_sources([])
+
+
+def test_nvidia_smi_timeout_returns_no_data(monkeypatch):
+    import subprocess
+    from src.core.libre_hw_monitor import _LinuxReader
+
+    def hang(*args, **kwargs):
+        assert kwargs.get("timeout")
+        raise subprocess.TimeoutExpired("nvidia-smi", kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", hang)
+    reader = _LinuxReader.__new__(_LinuxReader)
+    assert reader._read_nvidia_smi() == {}
+    assert reader._last_nvidia_smi_error == "nvidia-smi timed out"

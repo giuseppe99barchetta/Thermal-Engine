@@ -394,7 +394,11 @@ class _LinuxReader:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=3,  # a hung driver must not hold the sensor lock (UI freeze on refresh/quit)
             )
+        except subprocess.TimeoutExpired:
+            self._last_nvidia_smi_error = "nvidia-smi timed out"
+            return {}
         except (FileNotFoundError, OSError):
             self._last_nvidia_smi_error = "nvidia-smi not found"
             return {}
