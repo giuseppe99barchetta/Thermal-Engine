@@ -108,3 +108,13 @@ def test_reorder_skips_layers_of_other_pages():
     assert doc.elements == [other, b, a] or doc.elements == [b, other, a]
     assert doc.elements.index(a) == 2
 
+
+def test_paste_and_generated_names_stay_unique():
+    doc = EditorDocument()
+    doc.elements = [ThemeElement("rectangle", name="Box")]
+    doc.selection = [0]
+    doc.copy()
+    doc.paste()
+    doc.paste()
+    assert len({e.name for e in doc.elements}) == 3
+    assert doc.unique_name("Box") not in {e.name for e in doc.elements}

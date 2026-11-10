@@ -108,6 +108,14 @@ class EditorDocument:
         return [self.elements[i] for i in self.selection if 0 <= i < len(self.elements)
                 and self.elements[i].page == self.current_page and (not editable or not self.elements[i].locked)]
 
+    def unique_name(self, base, taken=None):
+        """Element state (line charts, GIFs) is keyed by name, so names must not repeat."""
+        taken = {e.name for e in self.elements} if taken is None else taken
+        name, n = base, 2
+        while name in taken:
+            name, n = f"{base} {n}", n + 1
+        return name
+
     def copy(self):
         self._clipboard = [copy.deepcopy(e.to_dict()) for e in self.selected()]
 
@@ -117,7 +125,10 @@ class EditorDocument:
         self.begin()
         pasted = [ThemeElement.from_dict(data) for data in self._clipboard]
         groups = {}
+        taken = {e.name for e in self.elements}
         for element in pasted:
+            element.name = self.unique_name(element.name, taken)
+            taken.add(element.name)
             element.x += 20
             element.y += 20
             element.page = self.current_page

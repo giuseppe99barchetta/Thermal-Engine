@@ -593,7 +593,7 @@ class EditorController(QObject, FramePipeline):
             doc.begin()
             custom = get_custom_element(value) or {}
             props = copy.deepcopy(custom.get("defaults", {}))
-            props.update(page=doc.current_page, name=f"{value.replace('_', ' ').title()} {len(doc.elements) + 1}")
+            props.update(page=doc.current_page, name=doc.unique_name(f"{value.replace('_', ' ').title()} {len(doc.elements) + 1}"))
             element = ThemeElement(value, **props)
             self._place_at_view_center(element)
             doc.elements.insert(0, element)
@@ -743,7 +743,7 @@ class EditorController(QObject, FramePipeline):
         doc = self.document
         fit = min(1.0, 0.6 * doc.width / width, 0.6 * doc.height / height)  # at most 60% of the display
         props = copy.deepcopy((get_custom_element(kind) or {}).get("defaults", {}))
-        props.update(page=doc.current_page, name=f"{Path(path).stem} {len(doc.elements) + 1}",
+        props.update(page=doc.current_page, name=doc.unique_name(f"{Path(path).stem} {len(doc.elements) + 1}"),
                      width=max(1, round(width * fit)), height=max(1, round(height * fit)))
         props["gif_path" if kind == "gif" else "image_path"] = path
         if kind == "image":
