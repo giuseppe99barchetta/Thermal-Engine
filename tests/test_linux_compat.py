@@ -110,7 +110,9 @@ class TestUpdaterAssetSelection(unittest.TestCase):
 
     def test_linux_appimage_can_auto_install(self):
         updater = importlib.import_module("src.utils.updater")
-        self.assertTrue(updater.can_auto_install_asset("ThermalEngine-1.0.0.AppImage", platform="linux"))
+        self.assertTrue(updater.can_auto_install_asset("ThermalEngine-1.0.0.AppImage", platform="linux", expected_hash="abc"))
+        # an executable replaced without an integrity check would run unverified
+        self.assertFalse(updater.can_auto_install_asset("ThermalEngine-1.0.0.AppImage", platform="linux"))
 
     def test_linux_install_downloaded_update_moves_appimage(self):
         updater = importlib.import_module("src.utils.updater")

@@ -99,7 +99,7 @@ def can_auto_install_asset(asset_name, platform=None, expected_hash=None):
     if platform == "win32":
         return asset_name.endswith(".exe") and bool(expected_hash)
     if platform.startswith("linux"):
-        return asset_name.endswith(".appimage")
+        return asset_name.endswith(".appimage") and bool(expected_hash)
     return False
 
 
@@ -251,7 +251,8 @@ class UpdateDownloader(QThread):
                         os.remove(installer_path)
                     return
 
-                if sys.platform == "win32" and self.asset_name.lower().endswith(".exe") and not self.expected_hash:
+                if self.asset_name.lower().endswith((".exe", ".appimage")) and not self.expected_hash:
+                    os.remove(installer_path)
                     self.error.emit("Security error: the release does not provide a SHA-256 digest.")
                     return
 
