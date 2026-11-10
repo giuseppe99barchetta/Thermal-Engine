@@ -23,8 +23,9 @@ Button {
     background: Rectangle {
         radius: Theme.radius
         color: control.primary ? (control.down ? Theme.accentPressed : Theme.accent) : control.down ? Theme.border : control.selected ? Theme.accentDark : control.hovered ? Theme.raised : "transparent"
-        border.width: 1
-        border.color: control.activeFocus ? Theme.accent : control.primary ? "transparent" : control.selected ? Theme.accentBorder : Theme.border
+        border.width: control.activeFocus ? 2 : 1
+        // accent on an accent fill is invisible: primary buttons use the text color for the focus ring
+        border.color: control.activeFocus ? (control.primary ? Theme.text : Theme.accent) : control.primary ? "transparent" : control.selected ? Theme.accentBorder : Theme.border
         opacity: control.enabled ? 1 : 0.45
     }
     ToolTip.visible: hovered && ToolTip.text.length > 0
