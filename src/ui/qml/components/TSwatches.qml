@@ -15,7 +15,7 @@ Flow {
             height: 18
             radius: 4
             color: modelData
-            border.color: swatchMouse.containsMouse ? Theme.accent : Theme.border
+            border.color: swatchMouse.containsMouse ? Theme.accent : Theme.borderStrong
             border.width: swatchMouse.containsMouse ? 2 : 1
             Accessible.role: Accessible.Button
             Accessible.name: "Use color " + modelData

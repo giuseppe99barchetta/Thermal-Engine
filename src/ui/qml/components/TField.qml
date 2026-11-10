@@ -17,7 +17,7 @@ TextField {
         color: Theme.input
         radius: Theme.radius
         border.width: 1
-        border.color: control.errorText.length ? Theme.danger : control.activeFocus ? Theme.accent : Theme.border
+        border.color: control.errorText.length ? Theme.danger : control.activeFocus ? Theme.accent : Theme.borderStrong
     }
     opacity: enabled ? 1 : 0.45
 }

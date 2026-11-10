@@ -26,7 +26,7 @@ ComboBox {
     background: Rectangle {
         color: Theme.input
         radius: Theme.radius
-        border.color: control.activeFocus ? Theme.accent : Theme.border
+        border.color: control.activeFocus ? Theme.accent : Theme.borderStrong
     }
     delegate: ItemDelegate {
         id: option

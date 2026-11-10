@@ -14,7 +14,7 @@ CheckBox {
         height: 18
         radius: 4
         color: control.checked ? Theme.accent : Theme.input
-        border.color: control.activeFocus ? Theme.accent : Theme.border
+        border.color: control.activeFocus ? Theme.accent : Theme.borderStrong
         TIcon {
             anchors.centerIn: parent
             name: "check"

@@ -135,3 +135,26 @@ def test_pages_not_clipped_and_logo_available(monkeypatch):
         assert not window.qml_errors, window.qml_errors
     finally:
         window.dispose()
+
+
+def test_control_outlines_and_selection_meet_3_to_1_contrast_in_every_theme():
+    import re
+    from pathlib import Path
+
+    def luminance(color):
+        channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    def contrast(a, b):
+        hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+        return (hi + 0.05) / (lo + 0.05)
+
+    source = (Path(__file__).resolve().parents[1] / "src/ui/qml/components/Theme.qml").read_text(encoding="utf-8")
+    themes = re.findall(r"(\w+): \{\s*(background:.*?radius: \d+)", source, re.S)
+    assert len(themes) == 3
+    for name, body in themes:
+        token = dict(re.findall(r'(\w+): "(#[0-9a-fA-F]{6})"', body))
+        for outline in ("borderStrong", "accentBorder"):
+            for ground in ("surface", "input"):
+                assert contrast(token[outline], token[ground]) >= 3, (name, outline, ground)

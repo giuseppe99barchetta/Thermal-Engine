@@ -75,7 +75,7 @@ ColumnLayout {
                 height: 20
                 radius: 4
                 color: visible ? String(control.spec.value) : "transparent"
-                border.color: Theme.border
+                border.color: Theme.borderStrong
                 MouseArea {
                     anchors.fill: parent
                     onClicked: control.controller.command("color", control.spec.key)
