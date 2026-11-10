@@ -146,10 +146,12 @@ class EditorDocument:
         else:
             indices = sorted((self.elements.index(e) for e in chosen), reverse=direction == "down")
             for index in indices:
-                neighbor = index + (1 if direction == "down" else -1)
+                step = 1 if direction == "down" else -1
+                neighbor = index + step
+                while 0 <= neighbor < len(self.elements) and self.elements[neighbor].page != self.current_page:
+                    neighbor += step  # skip layers of other pages: they are not visible in the list
                 # A selected neighbor is blocked at the edge too: don't swap selected elements among themselves
-                if (0 <= neighbor < len(self.elements) and self.elements[neighbor].page == self.current_page
-                        and self.elements[neighbor] not in chosen):
+                if 0 <= neighbor < len(self.elements) and self.elements[neighbor] not in chosen:
                     self.elements[index], self.elements[neighbor] = self.elements[neighbor], self.elements[index]
         self.selection = [self.elements.index(e) for e in chosen]
         self.commit()

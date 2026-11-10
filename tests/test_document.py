@@ -97,3 +97,14 @@ def test_invalid_pages_preserve_document(pages):
     with pytest.raises(ValueError):
         doc.load({"pages": pages, "elements": []})
     assert doc.snapshot() == previous
+
+
+def test_reorder_skips_layers_of_other_pages():
+    doc = EditorDocument()
+    a, other, b = ThemeElement("rectangle", page=1), ThemeElement("text", page=2), ThemeElement("rectangle", page=1)
+    doc.elements = [a, other, b]
+    doc.selection = [0]
+    doc.reorder("down")
+    assert doc.elements == [other, b, a] or doc.elements == [b, other, a]
+    assert doc.elements.index(a) == 2
+
