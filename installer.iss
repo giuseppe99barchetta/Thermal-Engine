@@ -29,8 +29,8 @@ LZMAUseSeparateProcess=yes
 LZMADictionarySize=65536
 LZMANumFastBytes=273
 WizardStyle=modern
+; Always a machine-wide install: a per-user folder would let an unprivileged process swap the exe that the elevated autostart task launches
 PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=dialog
 SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 MinVersion=10.0

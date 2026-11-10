@@ -24,3 +24,8 @@ def test_set_version_writes_an_importable_module(tmp_path):
 def test_set_version_rejects_garbage(tmp_path):
     with pytest.raises(ValueError):
         _load().write_version('1.2.3"; import os', tmp_path / "x.py")
+
+
+def test_installer_is_always_machine_wide():
+    iss = (SCRIPT.parents[1] / "installer.iss").read_text(encoding="utf-8")
+    assert "PrivilegesRequired=admin" in iss and "PrivilegesRequiredOverridesAllowed" not in iss
