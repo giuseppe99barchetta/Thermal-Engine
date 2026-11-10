@@ -19,3 +19,9 @@
   applicable [NASA media usage guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/).
   Per-file sources and credits are listed in
   [`presets/ASSET-CREDITS.md`](presets/ASSET-CREDITS.md).
+- Instrument Sans (Copyright 2022 The Instrument Sans Project Authors) and
+  JetBrains Mono 2.304 (Copyright 2020 The JetBrains Mono Project Authors) are
+  bundled unchanged in `src/ui/qml/fonts/` under the SIL Open Font License 1.1.
+  The license texts sit next to the fonts; sources:
+  [Instrument Sans](https://github.com/Instrument/instrument-sans) and
+  [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono).

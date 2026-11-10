@@ -12,12 +12,17 @@ ColumnLayout {
     Layout.fillWidth: true
     Label {
         text: control.spec.label
-        color: Theme.secondary
-        font.pixelSize: 11
+        color: scrub.containsMouse || scrub.pressed ? Theme.text : Theme.secondary
+        font.family: Theme.uiFont
+        font.hintingPreference: Font.PreferNoHinting
+        font.pixelSize: 12
         Layout.fillWidth: true
+        elide: Text.ElideRight
         MouseArea {
+            id: scrub
             anchors.fill: parent
             enabled: control.spec.kind === "number"
+            hoverEnabled: true
             cursorShape: Qt.SizeHorCursor
             onPressed: function (mouse) {
                 control.startValue = Number(control.spec.value);
@@ -63,21 +68,24 @@ ColumnLayout {
         TField {
             text: String(control.spec.value)
             selectByMouse: true
+            font.family: control.spec.kind === "color" ? Theme.monoFont : Theme.uiFont
+            font.hintingPreference: Font.PreferNoHinting
             Accessible.name: control.spec.label
             onEditingFinished: control.controller.edit(control.spec.key, text)
             rightPadding: control.spec.kind === "color" ? 42 : 10
             Rectangle {
                 visible: control.spec.kind === "color"
                 anchors.right: parent.right
-                anchors.rightMargin: 9
+                anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                width: 20
-                height: 20
-                radius: 4
+                width: 18
+                height: 18
+                radius: 5
                 color: visible ? String(control.spec.value) : "transparent"
                 border.color: Theme.borderStrong
                 MouseArea {
                     anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
                     onClicked: control.controller.command("color", control.spec.key)
                 }
             }
@@ -116,7 +124,9 @@ ColumnLayout {
             }
             TButton {
                 text: "…"
-                implicitWidth: 36
+                implicitWidth: Theme.fieldHeight
+                implicitHeight: Theme.fieldHeight
+                Accessible.name: "Browse"
                 onClicked: control.controller.command(control.spec.key === "gif_path" ? "gif" : "image", null)
             }
         }

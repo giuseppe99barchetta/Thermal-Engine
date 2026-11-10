@@ -3,7 +3,8 @@ import QtQuick.Controls
 
 Menu {
     padding: 4
-    font.family: Theme.font
+    font.family: Theme.uiFont
+    font.hintingPreference: Font.PreferNoHinting
     font.pixelSize: 13
     delegate: TMenuItem {}
     background: Rectangle {

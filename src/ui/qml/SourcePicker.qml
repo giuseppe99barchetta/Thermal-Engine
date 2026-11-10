@@ -2,13 +2,14 @@ import QtQuick
 import QtQuick.Layouts
 import "components" as UI
 
+// Two linked combos: sensor group, then the reading inside it
 ColumnLayout {
     id: picker
     property var controller
     property string lastSource: ""
     property string category: "Static"
     Layout.fillWidth: true
-    spacing: 8
+    spacing: 6
     function groupFor(id) {
         for (let row of controller.sources)
             if (row.id === id)
@@ -38,11 +39,20 @@ ColumnLayout {
         }
     }
     Component.onCompleted: category = groupFor(controller.selected.source || "static")
+    UI.TCaption {
+        text: "Group"
+        font.hintingPreference: Font.PreferNoHinting
+    }
     UI.TCombo {
         Layout.fillWidth: true
         model: picker.groups()
         currentIndex: Math.max(0, model.indexOf(picker.category))
         onActivated: picker.category = currentText
+    }
+    UI.TCaption {
+        Layout.topMargin: 4
+        text: "Reading"
+        font.hintingPreference: Font.PreferNoHinting
     }
     UI.TCombo {
         Layout.fillWidth: true

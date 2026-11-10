@@ -3,36 +3,36 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "components" as UI
 
+// Display tab of the inspector: physical output settings (the layout itself is untouched)
 ColumnLayout {
     id: display
     property var controller
     Layout.fillWidth: true
-    spacing: 16
-    Label {
-        text: "Display output"
-        color: UI.Theme.text
-        font.pixelSize: 17
-        font.weight: Font.DemiBold
-    }
+    spacing: 14
     Label {
         Layout.fillWidth: true
         text: "These controls affect the physical display. The editor keeps the original layout."
         wrapMode: Text.WordWrap
         color: UI.Theme.secondary
         font.pixelSize: 12
+        font.hintingPreference: Font.PreferNoHinting
     }
     UI.TSection {
         title: "Device & resolution"
         Label {
             Layout.fillWidth: true
             text: controller.state.device
-            color: UI.Theme.secondary
+            color: UI.Theme.text
+            font.pixelSize: 13
+            font.hintingPreference: Font.PreferNoHinting
             wrapMode: Text.WordWrap
         }
         Label {
             text: controller.state.width + " × " + controller.state.height
             color: UI.Theme.text
+            font.family: UI.Theme.monoFont
             font.pixelSize: 20
+            font.hintingPreference: Font.PreferNoHinting
         }
         UI.TButton {
             text: controller.state.connected ? "Disconnect display" : "Connect a display..."
@@ -47,10 +47,9 @@ ColumnLayout {
     }
     UI.TSection {
         title: "Rotation & mirroring"
-        Label {
+        UI.TCaption {
             text: "Rotate image"
-            color: UI.Theme.secondary
-            font.pixelSize: 11
+            font.hintingPreference: Font.PreferNoHinting
         }
         UI.TCombo {
             objectName: "displayOrientation"
@@ -66,13 +65,18 @@ ColumnLayout {
     UI.TSection {
         title: "Brightness & performance"
         RowLayout {
-            Label {
+            Layout.fillWidth: true
+            spacing: 10
+            UI.TCaption {
                 text: "Brightness (%)"
-                color: UI.Theme.secondary
                 Layout.fillWidth: true
+                font.hintingPreference: Font.PreferNoHinting
             }
             UI.TField {
                 Layout.preferredWidth: 72
+                font.family: UI.Theme.monoFont
+                font.hintingPreference: Font.PreferNoHinting
+                Accessible.name: "Brightness (%)"
                 text: controller.state.brightness
                 validator: IntValidator {
                     bottom: 0
@@ -86,6 +90,7 @@ ColumnLayout {
         }
         UI.TCaption {
             text: "Frame rate"
+            font.hintingPreference: Font.PreferNoHinting
         }
         UI.TCombo {
             Layout.fillWidth: true
@@ -101,7 +106,8 @@ ColumnLayout {
             text: "60 FPS uses more CPU and USB bandwidth."
             wrapMode: Text.WordWrap
             color: UI.Theme.warning
-            font.pixelSize: 11
+            font.pixelSize: 12
+            font.hintingPreference: Font.PreferNoHinting
         }
         UI.TButton {
             Layout.fillWidth: true

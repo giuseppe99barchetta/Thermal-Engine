@@ -11,17 +11,18 @@ Dialog {
     default property alias body: bodyItem.data
     property alias footerContent: actionsBody.data
     closePolicy: Popup.CloseOnEscape
-    font.family: Theme.font
+    font.family: Theme.uiFont
+    font.hintingPreference: Font.PreferNoHinting
     palette.text: Theme.text
     palette.windowText: Theme.text
     palette.buttonText: Theme.text
     palette.base: Theme.input
     palette.window: Theme.surface
     palette.button: Theme.raised
-    palette.highlight: Theme.accentDark
+    palette.highlight: Theme.selected
     background: Rectangle {
         color: Theme.surface
-        radius: 12
+        radius: Theme.radius + 4
         border.color: Theme.border
     }
     contentItem: ScrollView {
@@ -48,7 +49,9 @@ Dialog {
     header: Label {
         text: control.title
         color: Theme.text
-        font.pixelSize: 20
+        font.family: Theme.uiFont
+        font.hintingPreference: Font.PreferNoHinting
+        font.pixelSize: 18
         font.weight: Font.DemiBold
         leftPadding: 24
         topPadding: 20

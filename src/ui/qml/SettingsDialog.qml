@@ -17,13 +17,24 @@ UI.TDialog {
         copy[key] = value;
         draft = copy;
     }
+    component SectionLabel: Label {
+        color: UI.Theme.muted
+        font.family: UI.Theme.uiFont
+        font.pixelSize: 11
+        font.weight: Font.DemiBold
+        font.letterSpacing: 0.9
+        font.capitalization: Font.AllUppercase
+        font.hintingPreference: Font.PreferNoHinting
+    }
     footerContent: RowLayout {
         width: parent.width
+        spacing: 8
         Item {
             Layout.fillWidth: true
         }
         UI.TButton {
             text: "Cancel"
+            flat: true
             onClicked: dialog.close()
         }
         UI.TButton {
@@ -42,16 +53,16 @@ UI.TDialog {
     }
     ColumnLayout {
         width: parent.width
-        spacing: 16
-        ColumnLayout {
+        spacing: 8
+        SectionLabel {
+            text: "Startup & window"
+        }
+        // Two columns keep the whole dialog inside a 480px-high window without scrolling.
+        GridLayout {
             Layout.fillWidth: true
-            spacing: 6
-            Label {
-                text: "STARTUP & WINDOW"
-                color: UI.Theme.muted
-                font.pixelSize: 10
-                bottomPadding: 8
-            }
+            columns: dialog.width > 560 ? 2 : 1
+            columnSpacing: 24
+            rowSpacing: 0
             Repeater {
                 model: [
                     {
@@ -77,35 +88,36 @@ UI.TDialog {
                 ]
                 UI.TCheck {
                     required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
                     text: modelData.label
                     checked: Boolean(dialog.draft[modelData.key])
                     onClicked: dialog.setValue(modelData.key, checked)
                 }
             }
-            Label {
-                text: "APPEARANCE"
-                color: UI.Theme.muted
-                font.pixelSize: 10
-                topPadding: 12
-                bottomPadding: 8
-            }
-            UI.TCombo {
-                id: themeCombo
-                objectName: "themeCombo"
-                Layout.fillWidth: true
-                model: UI.Theme.names
-                textRole: "label"
-                currentIndex: Math.max(0, UI.Theme.names.findIndex(n => n.id === (dialog.draft.ui_theme || "obsidian")))
-                onActivated: dialog.setValue("ui_theme", UI.Theme.names[currentIndex].id)
-            }
-            Label {
-                text: "Frame rate, brightness and orientation of the display are in the Display tab of the right panel."
-                color: UI.Theme.muted
-                font.pixelSize: 11
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-                topPadding: 12
-            }
+        }
+        SectionLabel {
+            text: "Appearance"
+            Layout.topMargin: 12
+        }
+        UI.TCombo {
+            id: themeCombo
+            objectName: "themeCombo"
+            Layout.fillWidth: true
+            model: UI.Theme.names
+            textRole: "label"
+            currentIndex: Math.max(0, UI.Theme.names.findIndex(n => n.id === (dialog.draft.ui_theme || "obsidian")))
+            onActivated: dialog.setValue("ui_theme", UI.Theme.names[currentIndex].id)
+        }
+        Label {
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            text: "Frame rate, brightness and orientation of the display are in the Display tab of the right panel."
+            color: UI.Theme.muted
+            wrapMode: Text.WordWrap
+            font.family: UI.Theme.uiFont
+            font.pixelSize: 12
+            font.hintingPreference: Font.PreferNoHinting
         }
     }
 }

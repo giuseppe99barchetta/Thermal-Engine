@@ -22,8 +22,10 @@ ColumnLayout {
         objectName: "numberInput"
         Layout.fillWidth: true
         text: String(control.value)
+        font.family: Theme.monoFont
+        font.hintingPreference: Font.PreferNoHinting
         selectByMouse: true
-        rightPadding: 28 + suffix.implicitWidth
+        rightPadding: 24 + suffix.implicitWidth
         Accessible.name: control.label
         validator: DoubleValidator {
             bottom: control.minimum
@@ -43,15 +45,31 @@ ColumnLayout {
             anchors.verticalCenter: parent.verticalCenter
             text: control.unit
             color: Theme.muted
-            font.pixelSize: 10
+            font.family: Theme.monoFont
+            font.hintingPreference: Font.PreferNoHinting
+            font.pixelSize: 12
         }
         Column {
             id: arrows
             anchors.right: parent.right
-            anchors.rightMargin: 2
+            anchors.rightMargin: 3
             anchors.verticalCenter: parent.verticalCenter
-            TButton { text: "+"; width: 20; height: 16; font.pixelSize: 10; Accessible.name: "Increase " + control.label; onClicked: control.increment(1) }
-            TButton { text: "−"; width: 20; height: 16; font.pixelSize: 10; Accessible.name: "Decrease " + control.label; onClicked: control.increment(-1) }
+            TButton {
+                flat: true
+                width: 18
+                height: 12
+                Accessible.name: "Increase " + control.label
+                contentItem: TIcon { name: "chevron"; rotation: 180; implicitWidth: 10; implicitHeight: 10 }
+                onClicked: control.increment(1)
+            }
+            TButton {
+                flat: true
+                width: 18
+                height: 12
+                Accessible.name: "Decrease " + control.label
+                contentItem: TIcon { name: "chevron"; implicitWidth: 10; implicitHeight: 10 }
+                onClicked: control.increment(-1)
+            }
         }
     }
     Label {
@@ -59,7 +77,9 @@ ColumnLayout {
         Layout.fillWidth: true
         text: field.errorText
         color: Theme.danger
-        font.pixelSize: 10
+        font.family: Theme.uiFont
+        font.hintingPreference: Font.PreferNoHinting
+        font.pixelSize: 12
         wrapMode: Text.WordWrap
     }
 }

@@ -28,7 +28,7 @@ Item {
     }
     Rectangle {
         anchors.centerIn: parent
-        width: 1
+        width: splitter.activeFocus ? 2 : 1
         height: parent.height
         color: mouse.containsMouse || mouse.pressed || splitter.activeFocus ? Theme.accent : Theme.border
     }

@@ -6,14 +6,14 @@ Flow {
     id: swatches
     property var colors: []
     signal picked(string color)
-    spacing: 4
+    spacing: 6
     Repeater {
         model: swatches.colors
         Rectangle {
             required property string modelData
-            width: 18
-            height: 18
-            radius: 4
+            width: 22
+            height: 22
+            radius: 6
             color: modelData
             border.color: swatchMouse.containsMouse ? Theme.accent : Theme.borderStrong
             border.width: swatchMouse.containsMouse ? 2 : 1

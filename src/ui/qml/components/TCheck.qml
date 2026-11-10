@@ -3,9 +3,10 @@ import QtQuick.Controls
 
 CheckBox {
     id: control
-    font.family: Theme.font
+    font.family: Theme.uiFont
+    font.hintingPreference: Font.PreferNoHinting
     font.pixelSize: 13
-    implicitHeight: 36
+    implicitHeight: Theme.controlHeight
     spacing: 10
     indicator: Rectangle {
         x: control.leftPadding
@@ -14,14 +15,24 @@ CheckBox {
         height: 18
         radius: 4
         color: control.checked ? Theme.accent : Theme.input
-        border.color: control.activeFocus ? Theme.accent : Theme.borderStrong
+        border.width: 1
+        border.color: control.checked ? Theme.accent : Theme.borderStrong
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -3
+            radius: 7
+            color: "transparent"
+            border.width: 2
+            border.color: Theme.accent
+            visible: control.visualFocus
+        }
         TIcon {
             anchors.centerIn: parent
             name: "check"
             visible: control.checked
-            stroke: Theme.background
-            width: 16
-            height: 16
+            color: Theme.onAccent
+            width: 14
+            height: 14
         }
     }
     contentItem: Text {

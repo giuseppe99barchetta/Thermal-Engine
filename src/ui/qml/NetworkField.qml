@@ -9,9 +9,13 @@ ColumnLayout {
     property var spec
     Layout.fillWidth: true
     Layout.preferredWidth: 1
-    spacing: 4
-    UI.TCaption {
+    spacing: 6
+    Label {
         text: field.spec.label
+        color: UI.Theme.secondary
+        font.family: UI.Theme.uiFont
+        font.pixelSize: 12
+        font.hintingPreference: Font.PreferNoHinting
     }
     Loader {
         Layout.fillWidth: true
@@ -22,8 +26,10 @@ ColumnLayout {
         Layout.fillWidth: true
         text: field.form.errorFor(field.spec.key)
         color: UI.Theme.danger
-        font.pixelSize: 11
         wrapMode: Text.WordWrap
+        font.family: UI.Theme.uiFont
+        font.pixelSize: 12
+        font.hintingPreference: Font.PreferNoHinting
     }
     Component {
         id: textual

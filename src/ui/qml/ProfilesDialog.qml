@@ -30,6 +30,24 @@ UI.TDialog {
             names.push(controller.presets.get(i).name);
         return names;
     }
+    component SectionLabel: Label {
+        color: UI.Theme.muted
+        font.family: UI.Theme.uiFont
+        font.pixelSize: 11
+        font.weight: Font.DemiBold
+        font.letterSpacing: 0.9
+        font.capitalization: Font.AllUppercase
+        font.hintingPreference: Font.PreferNoHinting
+    }
+    component Body: Label {
+        Layout.fillWidth: true
+        color: UI.Theme.secondary
+        wrapMode: Text.WordWrap
+        lineHeight: 1.25
+        font.family: UI.Theme.uiFont
+        font.pixelSize: 13
+        font.hintingPreference: Font.PreferNoHinting
+    }
     Timer {
         id: detectTimer
         interval: 5000
@@ -49,11 +67,13 @@ UI.TDialog {
     onClosed: detectTimer.stop()
     footerContent: RowLayout {
         width: parent.width
+        spacing: 8
         Item {
             Layout.fillWidth: true
         }
         UI.TButton {
             text: "Cancel"
+            flat: true
             onClicked: dialog.close()
         }
         UI.TButton {
@@ -78,31 +98,29 @@ UI.TDialog {
     ColumnLayout {
         width: parent.width
         spacing: 12
+        SectionLabel {
+            text: "Application rules"
+        }
         UI.TCheck {
             text: "Automatically switch themes for applications"
             checked: Boolean(dialog.draft.profiles_enabled)
             onClicked: dialog.setValue("profiles_enabled", checked)
         }
-        Label {
+        Body {
             text: "Match a process name or window title. Manual theme changes pause automatic switching briefly."
-            color: UI.Theme.secondary
-            wrapMode: Text.WordWrap
-            Layout.fillWidth: true
         }
-        Label {
+        Body {
             visible: dialog.rules.length === 0
-            Layout.fillWidth: true
             text: "No application rules yet. Add one, or let the app detect the program you switch to."
             color: UI.Theme.muted
             font.pixelSize: 12
-            wrapMode: Text.WordWrap
         }
         ListView {
             id: rulesList
             visible: dialog.rules.length > 0
             Layout.fillWidth: true
-            // Grows with the rules (44px each) up to four rows, then scrolls
-            Layout.preferredHeight: Math.min(4, dialog.rules.length) * 44
+            // Grows with the rules (38px each plus 8px gaps) up to four rows, then scrolls
+            Layout.preferredHeight: Math.min(4, dialog.rules.length) * 46 - 8
             clip: true
             spacing: 8
             model: dialog.rules
@@ -110,11 +128,14 @@ UI.TDialog {
                 required property var modelData
                 required property int index
                 width: rulesList.width
+                height: 38
                 spacing: 8
                 UI.TField {
                     Layout.fillWidth: true
                     text: modelData.app_name
                     placeholderText: "simhub.exe"
+                    font.family: UI.Theme.monoFont
+                    Accessible.name: "Application name"
                     onEditingFinished: dialog.setRule(index, "app_name", text.toLowerCase())
                 }
                 UI.TCombo {
@@ -129,8 +150,9 @@ UI.TDialog {
                     currentIndex: Math.max(0, model.indexOf(modelData.preset_name))
                     onActivated: dialog.setRule(index, "preset_name", currentText)
                 }
-                UI.TButton {
-                    text: "×"
+                UI.TIconButton {
+                    iconName: "close"
+                    ToolTip.text: "Remove rule"
                     onClicked: {
                         let copy = dialog.rules.slice();
                         copy.splice(index, 1);
@@ -140,6 +162,7 @@ UI.TDialog {
             }
         }
         RowLayout {
+            spacing: 8
             UI.TButton {
                 text: "+ Add application rule"
                 onClicked: {
@@ -154,15 +177,22 @@ UI.TDialog {
             }
             UI.TButton {
                 text: detectTimer.running ? "Switch to the target app..." : "Detect application in 5 seconds"
+                flat: true
                 enabled: !detectTimer.running
                 onClicked: detectTimer.start()
             }
         }
         RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 4
+            spacing: 12
             Label {
                 text: "Fallback theme"
                 color: UI.Theme.secondary
-                Layout.preferredWidth: 140
+                Layout.preferredWidth: 160
+                font.family: UI.Theme.uiFont
+                font.pixelSize: 13
+                font.hintingPreference: Font.PreferNoHinting
             }
             UI.TCombo {
                 Layout.fillWidth: true
@@ -175,8 +205,11 @@ UI.TDialog {
             Layout.fillWidth: true
             height: 1
             color: UI.Theme.border
-            Layout.topMargin: 8
-            Layout.bottomMargin: 8
+            Layout.topMargin: 6
+            Layout.bottomMargin: 2
+        }
+        SectionLabel {
+            text: "System activity"
         }
         UI.TCheck {
             text: "Switch themes by system activity"
@@ -197,11 +230,16 @@ UI.TDialog {
             RowLayout {
                 required property var modelData
                 Layout.fillWidth: true
+                spacing: 12
                 enabled: Boolean(dialog.draft.system_profile_enabled)
+                opacity: enabled ? 1 : 0.5
                 Label {
                     text: modelData.label
                     color: UI.Theme.secondary
-                    Layout.preferredWidth: 140
+                    Layout.preferredWidth: 160
+                    font.family: UI.Theme.uiFont
+                    font.pixelSize: 13
+                    font.hintingPreference: Font.PreferNoHinting
                 }
                 UI.TCombo {
                     Layout.fillWidth: true
@@ -215,8 +253,9 @@ UI.TDialog {
             Layout.fillWidth: true
             columns: 2
             columnSpacing: 24
-            rowSpacing: 8
+            rowSpacing: 10
             enabled: Boolean(dialog.draft.system_profile_enabled)
+            opacity: enabled ? 1 : 0.5
             Repeater {
                 model: [
                     {
@@ -247,14 +286,24 @@ UI.TDialog {
                 RowLayout {
                     required property var modelData
                     Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    spacing: 12
                     Label {
                         text: modelData.label
                         color: UI.Theme.secondary
                         Layout.fillWidth: true
+                        elide: Text.ElideRight
+                        font.family: UI.Theme.uiFont
+                        font.pixelSize: 13
+                        font.hintingPreference: Font.PreferNoHinting
                     }
                     UI.TField {
-                        Layout.preferredWidth: 100
+                        Layout.preferredWidth: 88
                         text: String(dialog.draft[modelData.key] ?? "")
+                        font.family: UI.Theme.monoFont
+                        horizontalAlignment: TextInput.AlignRight
+                        Accessible.name: modelData.label
+                        errorText: text.length > 0 && !acceptableInput ? modelData.lower + " to " + modelData.upper : ""
                         validator: IntValidator {
                             bottom: modelData.lower
                             top: modelData.upper

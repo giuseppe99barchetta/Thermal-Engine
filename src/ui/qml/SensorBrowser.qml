@@ -9,26 +9,41 @@ ColumnLayout {
     property string query: ""
     property string scope: "Summary"
     property string category: "All groups"
+    readonly property var scopes: ["Summary", "Hardware", "External"]
     spacing: 10
     function refreshFilter() {
         controller.filterSensors(scope, category, query, unavailable.checked);
     }
     onQueryChanged: refreshFilter()
-    RowLayout {
+    // Own segment strip: TSegmented's button padding elides "Summary" / "Hardware" at the panel width
+    Rectangle {
         Layout.fillWidth: true
-        spacing: 4
-        Repeater {
-            model: ["Summary", "Hardware", "External"]
-            UI.TButton {
-                required property string modelData
-                text: modelData
-                Layout.fillWidth: true
-                font.pixelSize: 11
-                selected: browser.scope === modelData
-                onClicked: {
-                    browser.scope = modelData;
-                    browser.category = "All groups";
-                    browser.refreshFilter();
+        implicitHeight: 32
+        radius: UI.Theme.radius + 1
+        color: UI.Theme.input
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 3
+            spacing: 2
+            Repeater {
+                model: browser.scopes
+                UI.TButton {
+                    required property string modelData
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    implicitHeight: 26
+                    flat: true
+                    leftPadding: 2
+                    rightPadding: 2
+                    text: modelData
+                    selected: browser.scope === modelData
+                    Accessible.role: Accessible.PageTab
+                    Accessible.selected: selected
+                    onClicked: {
+                        browser.scope = modelData;
+                        browser.category = "All groups";
+                        browser.refreshFilter();
+                    }
                 }
             }
         }
@@ -52,7 +67,8 @@ ColumnLayout {
         wrapMode: Text.WordWrap
         text: controller.state.selectionCount === 1 ? "Double-click a reading to use it in the selected element." : "Select an element to assign a reading."
         color: UI.Theme.muted
-        font.pixelSize: 11
+        font.pixelSize: 12
+        font.hintingPreference: Font.PreferNoHinting
     }
     ListView {
         id: list
@@ -60,45 +76,59 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         clip: true
-        spacing: 4
+        spacing: 1
         model: controller.sensorBrowser
         ScrollBar.vertical: ScrollBar {}
         delegate: Column {
+            id: entry
             required property var row
             width: list.width
-            spacing: 4
+            spacing: 1
             Label {
-                visible: row.heading
-                height: visible ? 28 : 0
-                text: row.category.toUpperCase()
+                visible: entry.row.heading
+                height: visible ? 30 : 0
+                text: entry.row.category
                 color: UI.Theme.muted
-                font.pixelSize: 10
-                topPadding: 8
-                font.letterSpacing: 0.5
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                font.letterSpacing: 0.9
+                font.capitalization: Font.AllUppercase
+                font.hintingPreference: Font.PreferNoHinting
+                verticalAlignment: Text.AlignBottom
+                bottomPadding: 6
+                leftPadding: 10
             }
             Rectangle {
                 width: parent.width
-                height: 66
-                radius: 8
-                color: mouse.containsMouse ? UI.Theme.raised : UI.Theme.input
-                Column {
-                    x: 10
-                    y: 10
-                    width: parent.width - 20
-                    spacing: 5
+                height: 36
+                radius: UI.Theme.radius
+                color: mouse.containsMouse ? UI.Theme.hover : "transparent"
+                Accessible.name: entry.row.name + ", " + (entry.row.available ? entry.row.value : "unavailable")
+                Row {
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    spacing: 8
                     Text {
-                        width: parent.width
-                        text: row.name
-                        color: UI.Theme.secondary
-                        font.pixelSize: 11
+                        width: parent.width - valueText.implicitWidth - 8
+                        height: parent.height
+                        text: entry.row.name
+                        color: entry.row.available ? UI.Theme.text : UI.Theme.muted
+                        font.family: UI.Theme.uiFont
+                        font.pixelSize: 13
+                        font.hintingPreference: Font.PreferNoHinting
+                        verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
                     }
                     Text {
-                        width: parent.width
-                        text: row.available ? row.value : "Unavailable"
-                        color: row.available ? UI.Theme.text : UI.Theme.muted
-                        font.pixelSize: row.available ? 18 : 12
-                        elide: Text.ElideRight
+                        id: valueText
+                        height: parent.height
+                        text: entry.row.available ? entry.row.value : "Unavailable"
+                        color: entry.row.available ? UI.Theme.warning : UI.Theme.muted
+                        font.family: UI.Theme.monoFont
+                        font.pixelSize: 12
+                        font.hintingPreference: Font.PreferNoHinting
+                        verticalAlignment: Text.AlignVCenter
                     }
                 }
                 MouseArea {
@@ -106,11 +136,11 @@ ColumnLayout {
                     anchors.fill: parent
                     hoverEnabled: true
                     onDoubleClicked: if (browser.controller.state.selectionCount === 1)
-                        browser.controller.edit("source", row.id)
+                        browser.controller.edit("source", entry.row.id)
                 }
                 ToolTip.visible: mouse.containsMouse
                 ToolTip.delay: 700
-                ToolTip.text: row.name + "\n" + row.id
+                ToolTip.text: entry.row.name + "\n" + entry.row.id
             }
         }
         Label {
@@ -121,6 +151,8 @@ ColumnLayout {
             color: UI.Theme.secondary
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
+            font.pixelSize: 13
+            font.hintingPreference: Font.PreferNoHinting
         }
     }
     UI.TButton {

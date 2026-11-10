@@ -78,6 +78,19 @@ UI.TDialog {
         return true;
     }
     onClosed: controller.stopProbe()
+
+    component SmallLabel: Label {
+        color: UI.Theme.secondary
+        font.family: UI.Theme.uiFont
+        font.pixelSize: 12
+        font.hintingPreference: Font.PreferNoHinting
+    }
+    component Note: SmallLabel {
+        Layout.fillWidth: true
+        color: UI.Theme.muted
+        wrapMode: Text.WordWrap
+    }
+
     footerContent: ColumnLayout {
         width: parent.width
         spacing: 10
@@ -88,10 +101,13 @@ UI.TDialog {
             color: dialog.validation.message ? UI.Theme.danger : controller.state.networkError ? UI.Theme.warning : text.indexOf("Test successful:") === 0 ? UI.Theme.success : text.indexOf("No valid reading:") === 0 ? UI.Theme.warning : UI.Theme.secondary
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
+            font.family: UI.Theme.uiFont
             font.pixelSize: 12
+            font.hintingPreference: Font.PreferNoHinting
         }
         RowLayout {
             Layout.fillWidth: true
+            spacing: 8
             UI.TButton {
                 text: "Test connection"
                 visible: dialog.current >= 0
@@ -105,6 +121,7 @@ UI.TDialog {
             }
             UI.TButton {
                 text: "Cancel"
+                flat: true
                 onClicked: dialog.close()
             }
             UI.TButton {
@@ -117,58 +134,103 @@ UI.TDialog {
     }
     ColumnLayout {
         width: parent.width
-        spacing: 12
-        Label {
-            text: "Bring external readings to your display. Connections stay local; themes contain only source IDs."
-            color: UI.Theme.secondary
-            wrapMode: Text.WordWrap
+        spacing: 14
+        SmallLabel {
             Layout.fillWidth: true
+            text: "Bring external readings to your display. Connections stay local; themes contain only source IDs."
+            wrapMode: Text.WordWrap
+            font.pixelSize: 13
         }
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: dialog.current < 0 ? 160 : Math.max(180, Math.min(520, dialog.parent.height - 300))
+            Layout.preferredHeight: dialog.current < 0 ? 180 : Math.max(180, Math.min(520, dialog.parent.height - 300))
             spacing: 20
-            ColumnLayout {
+            Rectangle {
                 visible: dialog.current >= 0
-                Layout.preferredWidth: 180
-                Layout.minimumWidth: 180
-                Layout.maximumWidth: 180
+                Layout.preferredWidth: 200
+                Layout.minimumWidth: 200
+                Layout.maximumWidth: 200
                 Layout.fillHeight: true
-                ListView {
-                    id: list
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: 6
-                    model: dialog.draft
-                    delegate: UI.TButton {
-                        required property var modelData
-                        required property int index
-                        width: list.width
-                        text: modelData.name || modelData.id
-                        selected: dialog.current === index
-                        onClicked: dialog.select(index)
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    UI.TButton {
-                        text: "+ Add"
+                color: UI.Theme.raised
+                radius: UI.Theme.radius
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 8
+                    ListView {
+                        id: list
                         Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        enabled: dialog.draft.length < 64
-                        onClicked: dialog.add()
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 2
+                        model: dialog.draft
+                        delegate: Button {
+                            id: item
+                            required property var modelData
+                            required property int index
+                            width: list.width
+                            implicitHeight: 40
+                            hoverEnabled: true
+                            text: modelData.name || modelData.id
+                            Accessible.name: text
+                            onClicked: dialog.select(index)
+                            contentItem: RowLayout {
+                                spacing: 8
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: item.text
+                                    elide: Text.ElideRight
+                                    color: dialog.current === item.index || item.hovered ? UI.Theme.text : UI.Theme.secondary
+                                    font.family: UI.Theme.uiFont
+                                    font.pixelSize: 13
+                                    font.weight: Font.Medium
+                                    font.hintingPreference: Font.PreferNoHinting
+                                }
+                                Text {
+                                    text: String(item.modelData.protocol || "").toUpperCase()
+                                    color: UI.Theme.muted
+                                    font.family: UI.Theme.monoFont
+                                    font.pixelSize: 11
+                                    font.hintingPreference: Font.PreferNoHinting
+                                }
+                            }
+                            background: Rectangle {
+                                radius: UI.Theme.radiusSmall
+                                color: dialog.current === item.index ? UI.Theme.selected : item.hovered ? UI.Theme.hover : "transparent"
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: -2
+                                    radius: parent.radius + 2
+                                    color: "transparent"
+                                    border.width: 2
+                                    border.color: UI.Theme.accent
+                                    visible: item.visualFocus
+                                }
+                            }
+                        }
                     }
-                    UI.TButton {
-                        text: "Remove"
+                    RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        onClicked: {
-                            controller.stopProbe();
-                            let copy = dialog.draft.slice();
-                            copy.splice(dialog.current, 1);
-                            dialog.draft = copy;
-                            dialog.select(copy.length ? Math.min(dialog.current, copy.length - 1) : -1);
+                        spacing: 6
+                        UI.TButton {
+                            text: "+ Add"
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            enabled: dialog.draft.length < 64
+                            onClicked: dialog.add()
+                        }
+                        UI.TButton {
+                            text: "Remove"
+                            flat: true
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            onClicked: {
+                                controller.stopProbe();
+                                let copy = dialog.draft.slice();
+                                copy.splice(dialog.current, 1);
+                                dialog.draft = copy;
+                                dialog.select(copy.length ? Math.min(dialog.current, copy.length - 1) : -1);
+                            }
                         }
                     }
                 }
@@ -181,6 +243,13 @@ UI.TDialog {
                 Item {
                     Layout.fillHeight: true
                 }
+                UI.TIcon {
+                    name: "sensors"
+                    color: UI.Theme.muted
+                    Layout.alignment: Qt.AlignHCenter
+                    implicitWidth: 28
+                    implicitHeight: 28
+                }
                 Label {
                     Layout.fillWidth: true
                     text: "No network sensors yet.\nAdd a sensor to read values from Home Assistant, MQTT, HTTP or TCP/UDP."
@@ -188,6 +257,9 @@ UI.TDialog {
                     wrapMode: Text.WordWrap
                     horizontalAlignment: Text.AlignHCenter
                     lineHeight: 1.4
+                    font.family: UI.Theme.uiFont
+                    font.pixelSize: 13
+                    font.hintingPreference: Font.PreferNoHinting
                 }
                 UI.TButton {
                     text: "+ Add sensor"
@@ -234,7 +306,8 @@ UI.TDialog {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 Layout.preferredWidth: 1
-                                UI.TCaption {
+                                spacing: 6
+                                SmallLabel {
                                     text: "Protocol"
                                 }
                                 UI.TCombo {
@@ -250,7 +323,8 @@ UI.TDialog {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 Layout.preferredWidth: 1
-                                UI.TCaption {
+                                spacing: 6
+                                SmallLabel {
                                     text: "Value type"
                                 }
                                 UI.TCombo {
@@ -335,12 +409,8 @@ UI.TDialog {
                             checked: dialog.field("tls", false)
                             onClicked: dialog.setField("tls", checked)
                         }
-                        Label {
+                        Note {
                             text: "Secrets use your operating system credential vault."
-                            color: UI.Theme.muted
-                            font.pixelSize: 11
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
                         }
                     }
                     UI.TSection {
@@ -394,7 +464,8 @@ UI.TDialog {
                                 visible: dialog.field("value_type", "number") === "number"
                                 Layout.fillWidth: true
                                 Layout.preferredWidth: 1
-                                UI.TCaption {
+                                spacing: 6
+                                SmallLabel {
                                     text: "Decimal places"
                                 }
                                 UI.TCombo {
@@ -443,12 +514,8 @@ UI.TDialog {
                                 }
                             }
                         }
-                        Label {
+                        Note {
                             text: "TCP/UDP accept unauthenticated data. Use trusted senders."
-                            color: UI.Theme.muted
-                            font.pixelSize: 11
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
                         }
                     }
                 }

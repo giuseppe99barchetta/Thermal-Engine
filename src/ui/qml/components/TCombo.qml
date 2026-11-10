@@ -3,16 +3,18 @@ import QtQuick.Controls
 
 ComboBox {
     id: control
-    implicitHeight: Theme.controlHeight
-    font.family: Theme.font
+    implicitHeight: Theme.fieldHeight
+    font.family: Theme.uiFont
+    font.hintingPreference: Font.PreferNoHinting
     font.pixelSize: 13
     leftPadding: 10
     rightPadding: 28
+    opacity: enabled ? 1 : 0.45
     Accessible.name: displayText
     contentItem: Text {
         text: control.displayText
         font: control.font
-        color: control.enabled ? Theme.text : Theme.muted
+        color: Theme.text
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
@@ -25,23 +27,27 @@ ComboBox {
     }
     background: Rectangle {
         color: Theme.input
-        radius: Theme.radius
-        border.color: control.activeFocus ? Theme.accent : Theme.borderStrong
+        radius: Theme.radiusSmall
+        border.width: control.visualFocus || control.popup.visible ? 2 : 1
+        border.color: control.visualFocus || control.popup.visible ? Theme.accent : Theme.borderStrong
     }
     delegate: ItemDelegate {
         id: option
         required property int index
-        width: control.width
+        width: control.width - 8
+        implicitHeight: Theme.controlHeight
         text: control.textRole ? control.model[index][control.textRole] : control.model[index]
         highlighted: control.highlightedIndex === index
         contentItem: Text {
             text: option.text
             color: Theme.text
             font: control.font
+            verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
         background: Rectangle {
-            color: option.highlighted ? Theme.accentDark : Theme.raised
+            radius: 6
+            color: option.highlighted ? Theme.selected : "transparent"
         }
     }
     popup: Popup {
