@@ -74,3 +74,11 @@ def test_date_source_renders_todays_date(monkeypatch):
     renderer.render({"background_color": "#000000", "elements": [(1, element.to_dict())]}, (100, 50))
     now = datetime.datetime.now()
     assert rendered == [f"{now:%A, %B} {now.day}"]
+
+
+def test_one_broken_element_does_not_abort_the_frame():
+    renderer = ThemeRenderer()
+    bad = ThemeElement("circle_gauge", x=20, y=20, radius=3, color="#ff0000")
+    good = ThemeElement("rectangle", x=0, y=0, width=10, height=10, color="#00ff00")
+    snapshot = {"background_color": "#000000", "elements": [(1, bad.to_dict()), (2, good.to_dict())]}
+    assert renderer.render(snapshot, (40, 40)).getpixel((5, 5)) == (0, 255, 0)

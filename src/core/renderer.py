@@ -17,6 +17,7 @@ from src.core.conditions import apply_condition
 from src.core.security import is_safe_path
 
 logger = logging.getLogger(__name__)
+_logged_failures = set()
 
 # Global font cache for PIL fonts (shared across instances)
 _pil_font_cache = {}
@@ -301,7 +302,12 @@ class ThemeRenderer:
                     element.text = text
                     element.source = "static"
             if element.visible:
-                self.render_element_with_opacity(img, element, cache_key=cache_key)
+                try:
+                    self.render_element_with_opacity(img, element, cache_key=cache_key)
+                except Exception:  # one bad element must not freeze the whole frame
+                    if cache_key not in _logged_failures:  # log once per element, not every frame
+                        _logged_failures.add(cache_key)
+                        logger.exception("Skipping element %s (%s): render failed", cache_key, element.type)
         return img.convert("RGB")
 
     def render_element_with_opacity(self, img, element, cache_key=None):
