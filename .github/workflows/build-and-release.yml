@@ -231,13 +231,14 @@ jobs:
 
     - name: Create tag
       if: steps.version_bump.outputs.should_release == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
       run: |
         $newVersion = "${{ steps.version_bump.outputs.new_version }}"
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git tag -a $newVersion -m "Release $newVersion"
-        git push origin $newVersion
-        echo "Created and pushed tag: $newVersion"
+        # Through the API: a `git push` of the tag is refused for the Actions app when the history touches workflow files
+        gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$newVersion" -f sha="${{ github.sha }}"
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        echo "Created tag: $newVersion"
 
     - name: Create Release
       if: steps.version_bump.outputs.should_release == 'true'
