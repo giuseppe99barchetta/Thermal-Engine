@@ -80,6 +80,10 @@ class QuickCanvas(CanvasBehavior, QQuickPaintedItem):
     def setFocus(self, *args):
         self.forceActiveFocus()
 
+    def mousePressEvent(self, event):
+        self.forceActiveFocus()  # otherwise Ctrl+C/V/A/G and arrow keys never reach the canvas
+        super().mousePressEvent(event)
+
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         if self._controller:

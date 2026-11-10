@@ -324,3 +324,15 @@ def test_network_form_validates_inline_and_preserves_numeric_ports(editor_window
     assert qml_value(dialog, "check()")
     assert qml_value(dialog, "footer.height > 0")
     assert not window.qml_errors, window.qml_errors
+
+
+def test_clicking_the_canvas_takes_keyboard_focus(monkeypatch):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QMouseEvent
+    canvas = QuickCanvas()
+    calls = []
+    monkeypatch.setattr(canvas, "forceActiveFocus", lambda *a: calls.append(1))
+    point = QPointF(5, 5)
+    canvas.mousePressEvent(QMouseEvent(QEvent.Type.MouseButtonPress, point, point, Qt.MouseButton.LeftButton,
+                                       Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+    assert calls == [1]
