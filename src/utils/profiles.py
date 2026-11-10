@@ -74,6 +74,14 @@ def _get_foreground_app():
         return "", ""
 
 
+def _wait_while_running(monitor, step_ms=100):
+    """Sleep one poll interval in short steps so stop() returns at once instead of after a full interval."""
+    waited = 0
+    while monitor._running and waited < monitor.poll_interval_ms:
+        monitor.msleep(step_ms)
+        waited += step_ms
+
+
 class ForegroundAppMonitor(QThread):
     """Polls the foreground window and emits signals on app changes."""
 
@@ -99,7 +107,7 @@ class ForegroundAppMonitor(QThread):
             except Exception as e:
                 logger.error(f"Foreground monitor error: {e}")
 
-            self.msleep(self.poll_interval_ms)
+            _wait_while_running(self)
 
 
 class SystemStateMonitor(QThread):
@@ -166,7 +174,7 @@ class SystemStateMonitor(QThread):
             except Exception as e:
                 logger.error(f"SystemStateMonitor error: {e}")
 
-            self.msleep(self.poll_interval_ms)
+            _wait_while_running(self)
 
 
 class ProfileManager:

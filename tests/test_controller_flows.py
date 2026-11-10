@@ -235,3 +235,15 @@ def test_color_swatches_put_recent_picks_before_theme_colors(controller):
     assert swatches[0] == "#123456"
     assert swatches.index("#ff0000") < swatches.index("#000000")  # used twice vs once
     assert len(swatches) == len(set(swatches)) <= 10
+
+
+def test_profile_monitors_stop_without_waiting_for_a_full_poll_interval(monkeypatch):
+    import time
+    from src.utils import profiles
+    monkeypatch.setattr(profiles, "_get_foreground_app", lambda: ("", ""))
+    monitor = profiles.ForegroundAppMonitor(poll_interval_ms=5000)
+    monitor.start()
+    time.sleep(0.3)
+    started = time.monotonic()
+    monitor.stop()
+    assert not monitor.isRunning() and time.monotonic() - started < 1.5
