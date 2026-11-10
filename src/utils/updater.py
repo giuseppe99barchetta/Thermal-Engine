@@ -46,6 +46,17 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
 
+TRUSTED_DOWNLOAD_HOSTS = ("github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com")
+
+
+def is_trusted_download_url(url):
+    """Only this repo's GitHub release assets (and GitHub's asset CDN, reached by redirect) may be auto-installed."""
+    parsed = urlparse(url or "")
+    if parsed.scheme != "https" or parsed.hostname not in TRUSTED_DOWNLOAD_HOSTS:
+        return False
+    return parsed.hostname != "github.com" or parsed.path.startswith(f"/{GITHUB_REPO}/releases/download/")
+
+
 def _asset_digest(asset):
     digest = asset.get("digest", "")
     if digest.startswith("sha256:"):
@@ -216,8 +227,11 @@ class UpdateDownloader(QThread):
     def run(self):
         """Download the installer in background."""
         try:
-            # Create temp directory for download
-            temp_dir = tempfile.gettempdir()
+            if not is_trusted_download_url(self.download_url):
+                self.error.emit("Security error: the update is not hosted on the official GitHub releases.")
+                return
+            # Private random directory: a predictable path in %TEMP% could be swapped between verification and launch
+            temp_dir = tempfile.mkdtemp(prefix="thermal-engine-update-")
             installer_filename = get_download_filename(
                 self.download_url,
                 self.asset_name or f"ThermalEngine-{self.version}.zip",

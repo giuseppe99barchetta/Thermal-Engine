@@ -1,3 +1,4 @@
+import pytest
 import importlib
 import os
 import sys
@@ -148,3 +149,25 @@ def test_windows_update_actually_launches_the_installer(monkeypatch):
     monkeypatch.setattr(os, "startfile", launched.append, raising=False)
     result = updater.install_downloaded_update("C:/tmp/setup.exe", "Setup.exe", platform="win32")
     assert launched == ["C:/tmp/setup.exe"] and result["action"] == "launch-installer"
+
+
+def test_only_official_github_release_urls_are_trusted_for_download():
+    from src.utils import updater
+    repo = updater.GITHUB_REPO
+    assert updater.is_trusted_download_url(f"https://github.com/{repo}/releases/download/v1/App.exe")
+    assert updater.is_trusted_download_url("https://objects.githubusercontent.com/x/App.exe")
+    for bad in (f"http://github.com/{repo}/releases/download/v1/App.exe",
+                "https://github.com/someone-else/Thermal-Engine/releases/download/v1/App.exe",
+                "https://github.com.evil.example/x", "https://example.com/App.exe", "", None):
+        assert not updater.is_trusted_download_url(bad)
+
+
+def test_downloader_refuses_untrusted_hosts_without_touching_the_network(monkeypatch):
+    import urllib.request
+    from src.utils import updater
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: pytest.fail("network used"))
+    errors = []
+    downloader = updater.UpdateDownloader("https://example.com/Setup.exe", "1.0.0", "abc", "Setup.exe")
+    downloader.error.connect(errors.append)
+    downloader.run()
+    assert errors and "official GitHub" in errors[0]

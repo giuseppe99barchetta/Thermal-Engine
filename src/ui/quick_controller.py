@@ -1392,8 +1392,8 @@ class EditorController(QObject, FramePipeline):
     @Slot('QVariantMap')
     def downloadUpdate(self, info):
         if getattr(self, "_update_downloader", None) and self._update_downloader.isRunning(): return
-        from src.utils.updater import UpdateDownloader, can_auto_install_asset
-        if not can_auto_install_asset(info["asset"], expected_hash=info["checksum"]):
+        from src.utils.updater import UpdateDownloader, can_auto_install_asset, is_trusted_download_url
+        if not can_auto_install_asset(info["asset"], expected_hash=info["checksum"]) or not is_trusted_download_url(info["url"]):
             from PySide6.QtGui import QDesktopServices
             from src.utils.updater import GITHUB_RELEASES_URL
             QDesktopServices.openUrl(QUrl(GITHUB_RELEASES_URL))
