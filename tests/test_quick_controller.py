@@ -418,3 +418,11 @@ def test_setup_wizard_asks_before_replacing_unsaved_edits(controller):
     controller.dirty = True
     controller.finishOnboarding(-1, controller.document.width, controller.document.height, "")
     assert dialogs == ["unsaved"] and controller.document.theme_name == "Mine"
+
+
+def test_failed_installer_launch_keeps_the_app_open(controller):
+    from unittest.mock import Mock
+    controller.window = Mock()
+    controller._update_info = {"asset": "setup.exe"}
+    controller._install_update("download.exe", Mock(side_effect=OSError("declined")))
+    assert not controller.window.force_quit.called

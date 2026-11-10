@@ -137,3 +137,12 @@ class TestUpdaterAssetSelection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_windows_update_actually_launches_the_installer(monkeypatch):
+    import os
+    from src.utils import updater
+    launched = []
+    monkeypatch.setattr(os, "startfile", launched.append, raising=False)
+    result = updater.install_downloaded_update("C:/tmp/setup.exe", "Setup.exe", platform="win32")
+    assert launched == ["C:/tmp/setup.exe"] and result["action"] == "launch-installer"

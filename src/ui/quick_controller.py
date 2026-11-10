@@ -1411,8 +1411,12 @@ class EditorController(QObject, FramePipeline):
                      lambda: self.guard_changes(lambda: self._install_update(path, install_downloaded_update)))
 
     def _install_update(self, path, install):
-        if install(path, self._update_info["asset"]):
-            if self.window: self.window.force_quit()
+        try:
+            started = install(path, self._update_info["asset"])
+        except (OSError, ValueError) as exc:  # e.g. the UAC prompt was declined: stay open instead of quitting
+            self.error(f"Could not start the update installer: {exc}")
+            return
+        if started and self.window: self.window.force_quit()
 
     @Slot()
     def startup(self):

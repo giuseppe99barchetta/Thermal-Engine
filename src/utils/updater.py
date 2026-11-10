@@ -120,6 +120,7 @@ def install_downloaded_update(installer_path, asset_name, platform=None):
     lowered = (asset_name or "").lower()
 
     if platform == "win32" and lowered.endswith(".exe"):
+        os.startfile(installer_path)  # ShellExecute: shows the UAC prompt the installer needs; returns at once
         return {"action": "launch-installer", "path": installer_path}
 
     if platform.startswith("linux") and lowered.endswith(".appimage"):
