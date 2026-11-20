@@ -104,10 +104,11 @@ def test_contextual_property_sections_and_display_rotation(controller, monkeypat
     assert "animation_speed" in {row["key"] for row in controller.propertyRows}
     monkeypatch.setattr(settings, "SETTINGS_FILE", str(tmp_path / "settings.json"))
     assert controller.saveSettings({"display_orientation": "rotate_90_cw"})
-    image = Image.new("RGB", (180, 160))
+    image = Image.new("RGB", (160, 160), "black")
+    image.paste((255, 255, 255), (0, 0, 40, 40))
     from io import BytesIO
     with Image.open(BytesIO(controller.image_to_jpeg(image))) as output:
-        assert output.size == (160, 180)
+        assert output.size == (160, 160) and output.getpixel((140, 20))[0] > 200 and output.getpixel((20, 20))[0] < 50  # top-left corner turned to top-right
 
 
 def test_pages_not_clipped_and_logo_available(monkeypatch):
@@ -158,3 +159,27 @@ def test_control_outlines_and_selection_meet_3_to_1_contrast_in_every_theme():
         for outline in ("borderStrong", "accentBorder"):
             for ground in ("surface", "input"):
                 assert contrast(token[outline], token[ground]) >= 3, (name, outline, ground)
+
+
+def test_picked_or_dropped_network_media_never_reaches_the_document(controller, monkeypatch):
+    import PIL.Image
+    controller.document.elements = [ThemeElement("image")]
+    controller.select_indices([0])
+    before = controller.document.export()
+    monkeypatch.setattr(PIL.Image, "open", lambda *a, **k: pytest.fail("network path opened"))
+    for action in ("image", "gif", "video"):
+        controller.fileChosen(action, QUrl("file://evil/share/x.png"))
+    controller.dropFiles([QUrl("file://evil/share/x.png")], 0, 0)
+    assert controller.document.export() == before
+
+
+def test_quarter_turns_only_on_square_displays(controller, monkeypatch, tmp_path):
+    from io import BytesIO
+    monkeypatch.setattr(settings, "SETTINGS_FILE", str(tmp_path / "settings.json"))
+    monkeypatch.setattr(controller, "error", lambda message: None)
+    controller.document.width, controller.document.height = 1280, 480
+    assert not controller.saveSettings({"display_orientation": "rotate_90_cw"})
+    controller.document.width = controller.document.height = 480
+    assert controller.saveSettings({"display_orientation": "rotate_90_cw"})
+    with Image.open(BytesIO(controller.image_to_jpeg(Image.new("RGB", (180, 160))))) as output:
+        assert output.size == (180, 160)  # a stale quarter turn never reshapes a wide frame

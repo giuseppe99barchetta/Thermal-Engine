@@ -171,3 +171,35 @@ def test_downloader_refuses_untrusted_hosts_without_touching_the_network(monkeyp
     downloader.error.connect(errors.append)
     downloader.run()
     assert errors and "official GitHub" in errors[0]
+
+
+def _download_progress(monkeypatch, payload, known_size):
+    import io
+    import urllib.request
+    from src.utils import updater
+
+    class Response(io.BytesIO):
+        headers = {"Content-Length": str(len(payload))} if known_size else {}
+        def __enter__(self): return self
+        def __exit__(self, *a): self.close()
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Response(payload))
+    url = f"https://github.com/{updater.GITHUB_REPO}/releases/download/v9/ThermalEngine-9.zip"
+    downloader = updater.UpdateDownloader(url, "9.0.0", None, "ThermalEngine-9.zip")
+    sent, done = [], []
+    downloader.progress.connect(lambda got, total: sent.append((got, total)))
+    downloader.finished.connect(done.append)
+    downloader.run()
+    assert done
+    return sent
+
+
+def test_download_progress_is_sent_once_per_percent(monkeypatch):
+    payload = b"x" * (1024 * 1024 + 123)
+    sent = _download_progress(monkeypatch, payload, known_size=True)
+    assert 1 < len(sent) <= 101 and sent[-1] == (len(payload), len(payload))
+
+
+def test_download_progress_without_size_is_sent_once_per_mib(monkeypatch):
+    sent = _download_progress(monkeypatch, b"x" * (7 * 512 * 1024), known_size=False)
+    assert [got >> 20 for got, _ in sent] == [0, 1, 2, 3]

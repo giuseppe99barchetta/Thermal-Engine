@@ -101,3 +101,17 @@ def test_import_drops_external_paths_and_unsupported_assets(tmp_path, monkeypatc
     assert data["elements"][0]["image_path"] == ""  # UNC would trigger an SMB connection when rendered
     assert data["elements"][1]["image_path"].endswith("ok.png")
     assert not list(tmp_path.rglob("evil.exe"))
+
+
+@pytest.mark.parametrize("path", ["\\\\evil\\share\\x.png", "//evil/share/x.png", r"\/evil/share/x.png", r"/\evil\share\x.png"])
+def test_network_paths_are_rejected_before_any_file_access(path):
+    from src.core.document import EditorDocument
+    from src.core.security import is_safe_path
+    assert not is_safe_path(path)[0]
+    with pytest.raises(ValueError):
+        EditorDocument().load({"name": "Shared", "elements": [{"type": "image", "image_path": path}]})
+
+
+def test_local_paths_stay_allowed():
+    from src.core.security import is_safe_path
+    assert is_safe_path(r"C:\images\a.png")[0] and is_safe_path("images/a.png")[0]

@@ -104,14 +104,15 @@ class FramePipeline:
         Both the editor preview and the device loop call this (GUI thread only).
         """
         now = time.perf_counter()
-        current, last = self._animated_values.get(id(element), (target, now))
+        # Stored on the element (to_dict skips "_" keys): new elements start fresh, no id() reuse
+        current, last = getattr(element, "_animation", (target, now))
         dt = min(now - last, 0.5)
         diff = target - current
         speed = min(0.9, element.animation_speed * (1.0 + min(1.0, abs(diff) / 50.0) * 2.0))
         current += diff * (1 - (1 - speed) ** (dt * 60))
         if abs(target - current) < 0.05:
             current = target
-        self._animated_values[id(element)] = (current, now)
+        element._animation = (current, now)
         return current
 
     def start_continuous_send(self):
@@ -192,6 +193,8 @@ class FramePipeline:
             img = img.transpose(Image.FLIP_LEFT_RIGHT)
         elif self.display_orientation == 'rotate_180':
             img = img.transpose(Image.ROTATE_180)
+        elif img.width != img.height:
+            pass  # a 90° turn would not fit a non-square panel; send it unrotated
         elif self.display_orientation == 'rotate_90_cw':
             img = img.transpose(Image.ROTATE_270)
         elif self.display_orientation == 'rotate_90_ccw':

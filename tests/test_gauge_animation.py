@@ -7,7 +7,7 @@ from src.core.element import ThemeElement
 
 
 def _run(calls_per_second, seconds=0.5):
-    window = SimpleNamespace(_animated_values={})
+    window = SimpleNamespace()
     animate = MethodType(FramePipeline._animated_value, window)
     gauge = ThemeElement("circle_gauge", animate_gauge=True, animation_speed=0.05)
     clock = [0.0]
@@ -27,6 +27,14 @@ class TestGaugeAnimation(unittest.TestCase):
 
     def test_reaches_target(self):
         self.assertEqual(_run(30, seconds=5), 100.0)
+
+    def test_new_element_starts_at_its_own_target(self):
+        animate = MethodType(FramePipeline._animated_value, SimpleNamespace())
+        old = ThemeElement("circle_gauge", animate_gauge=True)
+        animate(old, 20.0)
+        fresh = ThemeElement("circle_gauge", animate_gauge=True)
+        self.assertEqual(animate(fresh, 80.0), 80.0)
+        self.assertNotIn("_animation", old.to_dict())
 
 
 if __name__ == "__main__":

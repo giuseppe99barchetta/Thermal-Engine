@@ -213,7 +213,7 @@ def render_image(draw, img, element):
 
     # Validate path is safe before loading
     if gif_path:
-        safe, _, err = is_safe_path(gif_path, allow_absolute=True)
+        safe, _, err = is_safe_path(gif_path)
         if not safe:
             logger.warning(f"GIF unsafe path blocked: {gif_path} - {err}")
             return

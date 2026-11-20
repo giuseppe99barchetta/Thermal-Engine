@@ -390,7 +390,7 @@ class ThemeRenderer:
         elif element.type == "image":
             if element.image_path:
                 # Validate image path is safe
-                safe, resolved_path, err = is_safe_path(element.image_path, allow_absolute=True)
+                safe, resolved_path, err = is_safe_path(element.image_path)
                 if not safe or not os.path.exists(element.image_path):
                     if not safe:
                         logger.warning(f"Unsafe image path blocked: {element.image_path} - {err}")

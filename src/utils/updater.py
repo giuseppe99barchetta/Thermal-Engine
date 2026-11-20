@@ -4,7 +4,6 @@ Checks GitHub Releases for new versions.
 """
 
 import json
-import webbrowser
 import urllib.request
 import urllib.error
 import os
@@ -14,11 +13,8 @@ import tempfile
 from urllib.parse import urlparse, unquote
 from packaging import version as version_parser
 try:
-    from PySide6.QtWidgets import QMessageBox
     from PySide6.QtCore import QThread, Signal
 except ImportError:  # pragma: no cover - test fallback
-    QMessageBox = None
-
     class Signal:
         def __init__(self, *args, **kwargs):
             self._subscribers = []
@@ -248,6 +244,7 @@ class UpdateDownloader(QThread):
                 total_size = int(response.headers.get('Content-Length', 0))
                 downloaded = 0
                 chunk_size = 8192
+                reported = -1  # last percent (or MiB when the size is unknown) sent to the UI
 
                 with open(installer_path, 'wb') as f:
                     while not self._cancelled:
@@ -257,7 +254,11 @@ class UpdateDownloader(QThread):
 
                         f.write(chunk)
                         downloaded += len(chunk)
-                        self.progress.emit(downloaded, total_size)
+                        # One signal per percent, not per 8 KB chunk: each one repaints the UI
+                        step = downloaded * 100 // total_size if total_size else downloaded >> 20
+                        if step != reported:
+                            reported = step
+                            self.progress.emit(downloaded, total_size)
 
                 if self._cancelled:
                     # Clean up partial download
@@ -291,63 +292,3 @@ class UpdateDownloader(QThread):
         except Exception as e:
             self.error.emit(f"Download failed: {e}")
 
-
-def check_for_updates(parent=None, silent=False):
-    """
-    Check for updates and show dialog if available.
-
-    Args:
-        parent: Parent widget for dialogs
-        silent: If True, only show dialog if update is available
-    """
-    checker = UpdateChecker()
-
-    def on_update_available(version, download_url, release_notes, expected_hash=None, asset_name=""):
-        # Create custom message box with download button
-        msg_box = QMessageBox(parent)
-        msg_box.setWindowTitle("Update Available")
-        msg_box.setIcon(QMessageBox.Icon.Information)
-
-        # Truncate release notes if too long
-        notes = release_notes[:500] + "..." if len(release_notes) > 500 else release_notes
-
-        msg_box.setText("A new version of Thermal Engine is available!")
-        msg_box.setInformativeText(
-            f"Current version: {__version__}\n"
-            f"Latest version: {version}\n\n"
-            f"Release notes:\n{notes}"
-        )
-
-        # Add custom buttons
-        button_text = "Download Update" if asset_name else "Open Releases"
-        download_btn = msg_box.addButton(button_text, QMessageBox.ButtonRole.AcceptRole)
-        msg_box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
-
-        msg_box.exec()
-
-        if msg_box.clickedButton() == download_btn:
-            webbrowser.open(download_url)
-
-    def on_no_update():
-        if not silent:
-            QMessageBox.information(
-                parent,
-                "No Updates",
-                f"You are running the latest version ({__version__})."
-            )
-
-    def on_error(error_msg):
-        if not silent:
-            QMessageBox.warning(
-                parent,
-                "Update Check Failed",
-                f"Could not check for updates:\n{error_msg}"
-            )
-
-    checker.update_available.connect(on_update_available)
-    checker.no_update.connect(on_no_update)
-    checker.error.connect(on_error)
-
-    checker.start()
-
-    return checker

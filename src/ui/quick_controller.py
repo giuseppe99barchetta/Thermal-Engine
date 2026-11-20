@@ -21,7 +21,7 @@ from src.core.frame_pipeline import FramePipeline
 from src.core.element import ThemeElement
 from src.core.renderer import ThemeRenderer
 from src.core.preset_repository import PresetRepository, resolve_assets, preview_background
-from src.core.security import validate_element_schema, is_valid_color
+from src.core.security import validate_element_schema, is_valid_color, is_safe_path
 from src.core.display_size import validate_display_size, get_device_size_override, device_size_key, DISPLAY_SIZE_PROFILES
 from src.core.device_backends import enumerate_available_devices, create_backend
 from src.core.network_sensors import validate_sources, NetworkSensorManager
@@ -119,7 +119,6 @@ class EditorController(QObject, FramePipeline):
         self._frame_snapshot = self._frame_error = None
         self._last_frame_request_time = 0
         self._canvas_update_counter, self._canvas_update_interval = 0, 3
-        self._animated_values = {}
         self._collapsed_groups = set()  # Group names folded in the layer list
         self._recent_colors = []  # Most recent first; feeds the color swatches
         self.frame_times = []
@@ -726,6 +725,8 @@ class EditorController(QObject, FramePipeline):
             path = str(Path(QUrl(url).toLocalFile()))  # native separators in saved themes
             suffix = Path(path).suffix.lower()
             try:
+                safe, _, err = is_safe_path(path)
+                if not safe: raise ValueError(err)
                 if suffix == ".gif":
                     self._add_media("gif", path, point)
                 elif suffix in self.IMAGE_TYPES:
@@ -999,6 +1000,8 @@ class EditorController(QObject, FramePipeline):
                 if not success: raise ValueError(error)
                 self._set_autosave_target(None)
                 self.document.load(data); self._restore_video(); self.refresh()
+            elif action in ("image", "gif", "video") and not is_safe_path(path)[0]:
+                raise ValueError(is_safe_path(path)[2])  # before PIL/OpenCV touch the path
             elif action in ("image", "gif"):
                 self.edit(action + "_path", path)
                 if action == "image":
@@ -1234,6 +1237,8 @@ class EditorController(QObject, FramePipeline):
             if "target_fps" in data and int(data["target_fps"]) not in (10, 20, 30, 60): raise ValueError("Choose 10, 20, 30 or 60 FPS")
             if "display_brightness" in data and not 0 <= int(data["display_brightness"]) <= 100: raise ValueError("Brightness must be between 0 and 100")
             if "display_orientation" in data and data["display_orientation"] not in ("normal", "flip_v", "flip_h", "rotate_180", "rotate_90_cw", "rotate_90_ccw"): raise ValueError("Invalid orientation")
+            if data.get("display_orientation") in ("rotate_90_cw", "rotate_90_ccw") and self.document.width != self.document.height:
+                raise ValueError("90° rotation needs a square display")
             if "ui_theme" in data and data["ui_theme"] not in ("obsidian", "studio", "hud"): raise ValueError("Invalid interface theme")
             for key, lower, upper in (("layers_panel_width", 220, 440), ("inspector_panel_width", 280, 520)):
                 if key in data and (type(data[key]) not in (int, float) or not lower <= data[key] <= upper):

@@ -6,23 +6,23 @@ Handles path validation, schema validation, and integrity checks.
 import os
 import re
 from src.core.conditions import ACTIONS, COMPARISONS
-from src.utils.app_path import get_app_dir
-
-# Allowed directories for file loading (relative to app dir)
-ALLOWED_SUBDIRS = ['presets', 'elements', 'themes', 'images', 'videos']
 
 
-def is_safe_path(file_path, allow_absolute=False):
+def is_safe_path(file_path):
     """
     Validate that a file path is safe to use.
 
     - Prevents path traversal attacks
-    - Optionally restricts to app directory
+    - Rejects network (UNC) paths: Windows would send the user's NTLM hash to that host
 
     Returns: (is_safe: bool, resolved_path: str or None, error: str or None)
     """
     if not file_path:
         return False, None, "Empty path"
+
+    # Checked on the raw string, before anything can touch the filesystem
+    if file_path.replace('\\', '/').startswith('//'):
+        return False, None, "Network paths are not allowed"
 
     # Normalize the path
     try:
@@ -40,22 +40,6 @@ def is_safe_path(file_path, allow_absolute=False):
     for part in path_parts:
         if part in dangerous_patterns:
             return False, None, "Path traversal detected"
-
-    if allow_absolute:
-        # Allow any absolute path, but verify it exists
-        return True, resolved, None
-
-    # Restrict to app directory and subdirectories
-    app_dir = get_app_dir()
-
-    # Check if path is within app directory
-    try:
-        common = os.path.commonpath([resolved, app_dir])
-        if common != app_dir:
-            return False, None, "Path outside application directory"
-    except ValueError:
-        # Different drives on Windows
-        return False, None, "Path on different drive"
 
     return True, resolved, None
 
@@ -162,7 +146,7 @@ def validate_preset_schema(data):
                     return False, errors
                 # Allow relative asset paths from .thermal packages
                 if not (vp.startswith("assets/") and ".." not in vp):
-                    safe, _, err = is_safe_path(vp, allow_absolute=True)
+                    safe, _, err = is_safe_path(vp)
                     if not safe:
                         errors.append(f"video_background path: {err}")
 
@@ -215,7 +199,7 @@ def validate_element_schema(element, index):
             # Allow relative asset paths from .thermal packages
             if path.startswith("assets/") and ".." not in path:
                 continue
-            safe, _, err = is_safe_path(path, allow_absolute=True)
+            safe, _, err = is_safe_path(path)
             if not safe:
                 errors.append(f"{prefix}: {field}: {err}")
 
