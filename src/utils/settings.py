@@ -58,6 +58,15 @@ DEFAULT_SETTINGS = {
     "network_sensors": [],  # Local connections; never included in exported themes
     "onboarding_completed": False,
     "ui_theme": "obsidian",  # Editor look: obsidian | studio | hud
+    # Scheduled dimming of the display output (the editor preview is never dimmed)
+    "dim_night_enabled": False,
+    "dim_night_start": "22:00",
+    "dim_night_end": "07:00",
+    "dim_night_level": 30,
+    "dim_idle_enabled": False,
+    "dim_idle_minutes": 10,
+    "dim_idle_level": 10,
+    "secondary_displays": [],  # Extra displays: [{"identity", "name", "preset"}]
 }
 
 _settings = None

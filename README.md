@@ -23,6 +23,9 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
   - Works with WinUSB-compatible displays
 - **Expandable canvas**: Full-screen editing area with margins for precise image cropping
 - **Display orientation controls**: Flip/rotate output for any mounting position
+- **Scheduled dimming**: lower the display brightness at night and when the PC is idle (Display tab)
+- **More displays** (experimental): each extra connected display shows a saved theme with live readings
+- **Home Assistant import**: add sensors from MQTT discovery in one step ([guide](docs/NETWORK-SENSORS.md))
 - **Real-time sensor data**: CPU/GPU temperature, utilization, clock speed, power
 - **Game FPS and frametime** via the bundled Intel PresentMon (Windows, administrator)
 - **Cooling and storage sensors**: pump/fan RPM, liquid temperature, disk
@@ -49,7 +52,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Auto Profiles**: automatically switch presets based on the foreground app or system load state (idle / gaming)
 - **Theme packages**: export and import themes as `.thermal` or `.zip` archives with embedded images
 - **Element grouping** for organizing complex themes
-- **Conditional rules**: Properties > Data source > Add conditional rule changes color/text or visibility based on a numeric, text or boolean sensor. Shapes and media expose Conditional visibility. Missing data never matches and manual hiding is preserved.
+- **Conditional rules**: Properties > Data source > Add conditional rule changes color/text, visibility or makes the element blink based on a numeric, text or boolean sensor. Shapes and media expose Conditional visibility. Missing data never matches and manual hiding is preserved.
 - **Undo/Redo** support
 - **Property controls**: collapsible sections and numeric labels you can drag
   horizontally (hold `Shift` for steps of ten)

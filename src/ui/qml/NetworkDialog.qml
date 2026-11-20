@@ -10,6 +10,7 @@ UI.TDialog {
     property int current: -1
     property var validation: ({})
     property bool showProbe: false
+    signal discoverRequested(var broker)
     title: "Network sensors"
     width: Math.min(940, parent.width - 40)
     function initialize() {
@@ -115,6 +116,12 @@ UI.TDialog {
                     dialog.showProbe = true;
                     controller.testNetwork(dialog.draft[dialog.current]);
                 }
+            }
+            UI.TButton {
+                objectName: "discoverHomeAssistant"
+                text: "Discover Home Assistant sensors…"
+                visible: dialog.current >= 0 && dialog.field("protocol", "") === "mqtt"
+                onClicked: dialog.discoverRequested(dialog.draft[dialog.current])
             }
             Item {
                 Layout.fillWidth: true

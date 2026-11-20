@@ -248,7 +248,7 @@ ApplicationWindow {
                     id: connectionPill
                     objectName: "connectionPill"
                     visible: root.width >= 800
-                    implicitWidth: pillRow.implicitWidth + 28
+                    implicitWidth: pillRow.implicitWidth + 28 + leftPadding + rightPadding  // the row's margins plus the button's own padding
                     // Long device names ("Thermalright WinUSB Display (FW / Stream Vision)") elide instead of pushing the title bar off-screen
                     Layout.maximumWidth: root.width >= 1000 ? 420 : root.width >= 900 ? 230 : 150
                     Accessible.name: editor.state.device + ", " + editor.state.width + " by " + editor.state.height + ", " + (editor.state.connected ? "connected" : "disconnected")

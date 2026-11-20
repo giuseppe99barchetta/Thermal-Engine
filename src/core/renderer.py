@@ -285,8 +285,17 @@ class ThemeRenderer:
         for cache_key, data in reversed(snapshot["elements"]):
             element = ThemeElement.from_dict(data)
             apply_condition(element, snapshot.get("sensor_data", {}))
-            live_value = snapshot.get("sensor_data", {}).get(element.source)
-            if element.source.startswith(("network_", "hardware_")) or (element.source in ("cpu_temp", "gpu_temp") and live_value is None):
+            sensor_data = snapshot.get("sensor_data", {})
+            live_value = sensor_data.get(element.source)
+            # Missing = the reading exists but is None (sensor not on this PC), or a source that only
+            # exists while it delivers data (network, hardware, game) is absent
+            missing = element.source != "static" and live_value is None and (
+                element.source in sensor_data or element.source in ("cpu_temp", "gpu_temp")
+                or element.source.startswith(("network_", "hardware_", "game_")))
+            if element.type in ("circle_gauge", "bar_gauge") and missing:
+                element.value = 0
+                element.missing_value = True  # plain attribute: part of the cache hash; the gauge prints "--"
+            elif element.source.startswith(("network_", "hardware_", "game_")) or missing:
                 if element.type == "text":
                     element.value = live_value
                 elif live_value is None or isinstance(live_value, str):
@@ -811,7 +820,7 @@ class ThemeRenderer:
             self._fast_alpha_composite(overlay, value_layer)
 
         # Draw value text
-        value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
+        value_text = "--" if getattr(element, "missing_value", False) else get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
         bbox = draw.textbbox((0, 0), value_text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -1027,7 +1036,7 @@ class ThemeRenderer:
         bar_text_position = getattr(element, 'bar_text_position', 'inside')
 
         if bar_text_mode != 'none':
-            value_text = get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
+            value_text = "--" if getattr(element, "missing_value", False) else get_value_with_unit(value, element.source, getattr(element, 'temp_hide_unit', False))
 
             # Value font
             value_font = self.get_pil_font(element, element.font_size)

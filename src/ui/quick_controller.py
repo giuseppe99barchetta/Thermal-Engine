@@ -24,8 +24,11 @@ from src.core.renderer import ThemeRenderer
 from src.core.preset_repository import PresetRepository, resolve_assets, preview_background
 from src.core.security import validate_element_schema, is_valid_color, is_safe_path
 from src.core.display_size import validate_display_size, get_device_size_override, device_size_key, DISPLAY_SIZE_PROFILES
-from src.core.device_backends import enumerate_available_devices, create_backend
+from src.core.device_backends import enumerate_available_devices, create_backend, resolve_device
+from src.core.secondary_display import SecondaryDisplay, uses_game_sources
 from src.core.network_sensors import validate_sources, NetworkSensorManager
+from src.core.brightness import DIM_KEYS, valid_time, effective_brightness
+from src.utils.idle import seconds_since_input
 from src.ui.video_background import video_background, HAS_CV2
 from src.ui.quick_models import RowsModel
 from src.utils import settings
@@ -54,6 +57,20 @@ ALL_TYPE_FIELDS = set().union(*TYPE_FIELDS.values())
 TYPE_LABELS = {"text": "Text", "rectangle": "Rectangle", "circle_gauge": "Circle gauge", "bar_gauge": "Bar gauge",
                "line_chart": "Line chart", "image": "Image", "gif": "GIF", "clock": "Digital clock",
                "digital_clock": "Digital clock", "analog_clock": "Analog clock"}
+# Inspector labels where "key with spaces" reads badly; other keys keep the generated label.
+PROPERTY_LABELS = {
+    "temp_hide_unit": "Hide °C/°F unit", "max_value": "Maximum value", "auto_color_change": "Color by value",
+    "background_color_opacity": "Background opacity", "color_opacity": "Opacity", "text_color_opacity": "Text opacity",
+    "bar_text_mode": "Value text", "bar_text_position": "Value position", "bar_border": "Border",
+    "bar_border_color": "Border color", "bar_border_opacity": "Border opacity", "bar_border_position": "Border position",
+    "bar_border_width": "Border width", "border_radius": "Corner radius", "clip": "Clip to box",
+    "gauge_rounded_ends": "Rounded ends", "gif_path": "GIF file", "image_path": "Image file",
+    "scale_proportionally": "Keep aspect ratio", "show_am_pm": "Show AM/PM", "smooth": "Smooth line",
+    "use_custom_text_color": "Custom text color", "font_bold": "Bold", "font_italic": "Italic",
+    "label_font_bold": "Label bold", "label_font_italic": "Label italic", "animate_gauge": "Animate changes",
+    "gradient_stops": "Gradient colors", "scale_mode": "Fit", "clock_face_style": "Clock face",
+    "show_seconds_hand": "Seconds hand", "show_clock_border": "Clock border", "x": "X", "y": "Y",
+}
 PROFILE_SETTINGS = {"system_profile_enabled": False, "system_idle_preset": None, "system_gaming_preset": None,
                     "system_idle_threshold": 15, "system_idle_seconds": 60,
                     "system_gaming_threshold": 60, "system_gaming_seconds": 10, "display_orientation": "normal"}
@@ -96,6 +113,7 @@ class EditorController(QObject, FramePipeline):
     videoRestored = Signal(int, str)
     frameDelivered = Signal()
     previewReady = Signal(object, int)
+    homeAssistantFound = Signal('QVariantList', int, str)  # entities, skipped count, error
 
     def __init__(self, start_services=True, parent=None):
         QObject.__init__(self, parent)
@@ -136,6 +154,7 @@ class EditorController(QObject, FramePipeline):
         self.revision = 0
         self.target_fps = settings.get_setting("target_fps", 30)
         self.display_brightness = settings.get_setting("display_brightness", 100)
+        self.output_brightness, self._dim_reason = self.display_brightness, ""  # what the display gets now
         self.display_orientation = settings.get_setting("display_orientation", "normal")
         self.theme_path = None
         self._autosave_name = None  # the only user preset autosave may overwrite
@@ -162,6 +181,8 @@ class EditorController(QObject, FramePipeline):
         self._console_handler = ConsoleHandler(self)
         logging.getLogger().addHandler(self._console_handler)
         self._foreground_monitor = self._system_state_monitor = None
+        self.secondaries = {}  # identity -> SecondaryDisplay (extra displays showing a saved preset)
+        self._retired = {}  # removed outputs whose worker has not exited yet: their device stays reserved
         self._profile_manager = None
         self._reconnect_timer = QTimer(self)
         self._reconnect_timer.setSingleShot(True)
@@ -227,6 +248,11 @@ class EditorController(QObject, FramePipeline):
                 "snap": self.canvas.snap_to_grid if self.canvas else settings.get_setting("snap_to_grid", True),
                 "rotation": self.rotation.isActive(), "rotationInterval": self.rotation_interval,
                 "orientation": self.display_orientation, "brightness": self.display_brightness,
+                "outputBrightness": self.output_brightness, "dimReason": self._dim_reason, "idleSupported": sys.platform == "win32",
+                "dim": {key: settings.get_setting(key) for key in DIM_KEYS},
+                "secondary": [{"identity": key, "name": out.name, "preset": out.preset, "status": out.status}
+                              for key, out in self.secondaries.items()],
+                "presetNames": sorted(self.repository.presets, key=str.lower),
                 "previewFraction": -1 if self.preview_fraction is None else self.preview_fraction,
                 "video": video_background.to_dict(), "version": get_version(), "probeResult": self._probe_result,
                 "networkError": self._network_error,
@@ -287,7 +313,7 @@ class EditorController(QObject, FramePipeline):
             minimum, maximum = (0, 100) if "opacity" in key else (1, 10000) if key in ("width", "height", "radius", "font_size", "label_font_size", "max_value", "page", "line_thickness") else (0.01, 0.9) if key == "animation_speed" else (0.001, 1000) if key == "aspect_ratio" else (-10000, 10000)
             integer = isinstance(value, int)
             unit = "%" if "opacity" in key else "px" if key in ("x", "y", "width", "height", "radius", "font_size", "label_font_size", "border_radius") else ""
-            rows.append({"key": key, "label": key.replace("_", " ").capitalize(), "value": json.dumps(value) if field_type == "json" else value,
+            rows.append({"key": key, "label": PROPERTY_LABELS.get(key, key.replace("_", " ").capitalize()), "value": json.dumps(value) if field_type == "json" else value,
                          "kind": field_type, "choices": choices, "section": section,
                          "minimum": minimum, "maximum": maximum, "integer": integer,
                          "step": 1 if integer else 0.01 if key == "animation_speed" else 0.1, "unit": unit})
@@ -931,6 +957,7 @@ class EditorController(QObject, FramePipeline):
                 self.thumbnails["preset/" + name] = pil_image(frame)
             except Exception: logger.warning("Could not render preset thumbnail %s", name)
         self.renderer.forget("preset/")  # thumbnail overlays are full-size; don't keep them for the session
+        self._sync_secondaries()
         self.presets_model.replace([{"id": name, "name": name, "builtin": info["builtin"],
                                     "width": info["data"].get("display_width", 1280), "height": info["data"].get("display_height", 480)}
                                    for name, info in sorted(self.repository.presets.items(), key=lambda p: (p[0] != "Default", p[0].lower()))])
@@ -970,16 +997,31 @@ class EditorController(QObject, FramePipeline):
         self.document.theme_name = name.strip()[:100]
         self.save()
 
+    def _sync_secondaries(self):
+        """Extra displays follow edits to their saved theme (save, autosave, reload)."""
+        changed = False
+        for out in getattr(self, "secondaries", {}).values():
+            info = self.repository.presets.get(out.preset)
+            if info and info["data"] != out.data:
+                out.set_preset(out.preset, info["data"])
+                changed = True
+        if changed and self._start_services:
+            sensors.set_game_fps_enabled(self._uses_game_sources())
+
     def _autosave(self):
         if self._autosave_name != self.document.theme_name:
             return
         try:
             self.repository.save(self.document.theme_name, self.document.export(), self.render_theme_image())
+            self._sync_secondaries()
             self.dirty = False
             self.notify("Autosaved " + self.document.theme_name)
         except Exception as exc: self.notify("Autosave failed: " + str(exc))
 
     def _delete_preset(self, name):
+        users = [out.name for out in self.secondaries.values() if out.preset == name]
+        if users:
+            raise ValueError(f"{name} is shown on {', '.join(users)}. Choose another theme for that display first.")
         self.repository.delete(name); self.reload_presets(); self.changed.emit()
 
     @Slot(str, QUrl)
@@ -1054,12 +1096,26 @@ class EditorController(QObject, FramePipeline):
 
     def get_sensor_data(self): return sensors.get_cached_sensors()
 
+    def _update_output_brightness(self):
+        import datetime
+        self.output_brightness, self._dim_reason = effective_brightness(
+            self.display_brightness, {key: settings.get_setting(key) for key in DIM_KEYS},
+            datetime.datetime.now(), seconds_since_input())
+
     def refresh_sensors(self):
+        self._update_output_brightness()  # once a second, with the sensor tick
+        for key in [key for key, out in self._retired.items() if not out.running]:
+            del self._retired[key]  # worker gone, device released
+        for out in self.secondaries.values():
+            out.display_brightness, out.output_brightness, out.target_fps = self.display_brightness, self.output_brightness, self.target_fps
         if self._start_services:  # PresentMon runs (and costs ETW tracing) only while a theme shows game sources
             sensors.set_game_fps_enabled(self._uses_game_sources())
         constants.register_hardware_sources(sensors.get_hardware_sensor_catalog())
         values = self.get_sensor_data()
         groups = {source[0]: category for category, sources in constants.DATA_SOURCES_CATEGORIZED.items() for source in sources}
+        game_status = sensors.get_game_fps_status()
+        # PresentMon starts only once a theme uses a game source, so list those sensors before they report
+        game_ready = "not bundled" not in game_status and "needs Windows" not in game_status
         rows = []
         for key, info in constants.SOURCE_UNITS.items():
             if key == "static": continue
@@ -1070,8 +1126,11 @@ class EditorController(QObject, FramePipeline):
                 identifier = name.rsplit(" [", 1)[-1].lower()
                 name = name.split(" [", 1)[0]
                 category = "CPU" if "cpu/" in identifier else "GPU" if "gpu/" in identifier else "Storage" if any(word in identifier for word in ("storage/", "hdd/", "ssd/", "nvme/")) else "Memory" if "memory/" in identifier else "Cooling & motherboard"
+            reading = values.get(key)
+            waiting = key.startswith("game_") and reading is None and game_ready
             rows.append({"id": key, "name": name, "scope": scope, "category": category,
-                         "value": constants.get_value_with_unit(values.get(key), key), "available": key in values and values[key] is not None})
+                         "value": "Starts when used" if waiting else constants.get_value_with_unit(reading, key),
+                         "available": reading is not None or waiting})
         self.sensors_model.replace(sorted(rows, key=lambda r: (r["scope"], r["category"], r["name"])))
         self._filter_sensors()
         self.changed.emit()
@@ -1079,8 +1138,9 @@ class EditorController(QObject, FramePipeline):
             self.checkHardwareAccess()
 
     def _uses_game_sources(self):
-        return any(e.source.startswith("game_") or ((e.condition or {}).get("source") or "").startswith("game_")
-                   or "{game_" in str(getattr(e, "text", "")) for e in self.elements)
+        """PresentMon demand: the editor document and every extra display's preset."""
+        return uses_game_sources(self.elements) or any(
+            uses_game_sources(out.data.get("elements", [])) for out in self.secondaries.values())
 
     def _preview_tick(self):
         if not (self.canvas and self.window and self.window.isVisible()): return
@@ -1126,13 +1186,22 @@ class EditorController(QObject, FramePipeline):
     @Slot()
     def openDevices(self):
         self._device_defs = enumerate_available_devices()
-        self.devices_model.replace([{"index": i, "name": device.name, "experimental": device.experimental,
-                                     "width": device.width, "height": device.height} for i, device in enumerate(self._device_defs)])
+        self._fill_devices_model()
         self.requestDialog.emit("devices", {})
+
+    def _fill_devices_model(self):
+        self.devices_model.replace([{"index": i, "name": device.name, "experimental": device.experimental,
+                                     "width": device.width, "height": device.height,
+                                     "claimed": not self._may_open(device),
+                                     "ambiguous": bool(device.extra_params.get("ambiguous"))}
+                                    for i, device in enumerate(self._device_defs)])
 
     @Slot(int)
     def connectDevice(self, index):
         if not 0 <= index < len(getattr(self, "_device_defs", [])): return
+        if not self._may_open(self._device_defs[index]):
+            self.error("This display may already show a theme as an extra display. Remove it there first.")
+            return
         device = copy.copy(self._device_defs[index])
         device.extra_params = dict(device.extra_params)
         self.selected_device_def = device
@@ -1142,6 +1211,9 @@ class EditorController(QObject, FramePipeline):
 
     def connect_display(self, silent=False):
         if not self.selected_device_def: return False
+        if not self._may_open(self.selected_device_def):
+            if not silent: self.error("This display may already show a theme as an extra display.")
+            return False
         self.disconnect_display()
         device = self.selected_device_def
         override = get_device_size_override(settings.get_setting("display_size_overrides", {}), device)
@@ -1185,7 +1257,40 @@ class EditorController(QObject, FramePipeline):
     def _attempt_reconnect(self):
         if self._closed: return
         self._reconnect_attempts += 1
-        if not self.connect_display(silent=True): self._start_reconnect_timer()
+        if not self._refresh_selected_device() or not self.connect_display(silent=True): self._start_reconnect_timer()
+
+    def _may_open(self, device):
+        """Never open a display an extra display may own: its identity, or an ambiguous entry of the same model."""
+        identity = device.extra_params.get("identity")
+        owners = set(self.secondaries) | set(self._retired)
+        if identity in owners:
+            return False
+        if device.extra_params.get("ambiguous"):
+            model = f"{'hid' if device.backend_type == 'hid' else 'usb'}:{device.vendor_id:04x}:{device.product_id:04x}:"
+            return not any(key.startswith(model) for key in owners)
+        return True
+
+    def _refresh_selected_device(self):
+        """Find the main display again: a replug can change its USB address or HID path.
+
+        False when no unclaimed device matches: the stale path/address may now belong to another display.
+        """
+        current = self.selected_device_def
+        if not current: return False
+        if "identity" not in current.extra_params: return True  # not from enumeration: connect as before
+        if current.extra_params["identity"] in self.secondaries or current.extra_params["identity"] in self._retired:
+            return False  # now owned by an extra display: never fall back to another device
+        candidates = [d for d in enumerate_available_devices() if self._may_open(d)]
+        device = resolve_device(current.extra_params["identity"], candidates)
+        if device is None:  # as before for a single device: the only unclaimed one of this model
+            same = [d for d in candidates if (d.vendor_id, d.product_id, d.backend_type) ==
+                    (current.vendor_id, current.product_id, current.backend_type)]
+            device = same[0] if len(same) == 1 else None
+        if device is None: return False
+        device = copy.copy(device)
+        device.extra_params = dict(device.extra_params)
+        self.selected_device_def = device
+        return True
 
     def sleep(self):
         self._was_connected_before_sleep = self.device is not None
@@ -1194,8 +1299,8 @@ class EditorController(QObject, FramePipeline):
 
     def wake(self):
         video_background.reset_timing()
-        from elements.gif import reset_all_playback
-        reset_all_playback()
+        gif = (get_custom_element("gif") or {}).get("module")  # the instance that renders, not `import elements.gif`
+        if gif: gif.reset_all_playback()
         sensors.invalidate_sensor_cache()
         if self._was_connected_before_sleep: self._start_reconnect_timer()
 
@@ -1279,6 +1384,13 @@ class EditorController(QObject, FramePipeline):
             if "display_brightness" in data and not 0 <= int(data["display_brightness"]) <= 100: raise ValueError("Brightness must be between 0 and 100")
             if "display_orientation" in data and data["display_orientation"] not in ("normal", "flip_v", "flip_h", "rotate_180", "rotate_90_cw", "rotate_90_ccw"): raise ValueError("Invalid orientation")
             if "ui_theme" in data and data["ui_theme"] not in ("obsidian", "studio", "hud"): raise ValueError("Invalid interface theme")
+            for key in ("dim_night_start", "dim_night_end"):
+                if key in data and not valid_time(data[key]): raise ValueError("Use a time between 00:00 and 23:59 (HH:MM)")
+            for key, lower, upper in (("dim_night_level", 0, 100), ("dim_idle_level", 0, 100), ("dim_idle_minutes", 1, 240)):
+                if key in data and (type(data[key]) not in (int, float) or not lower <= data[key] <= upper):
+                    raise ValueError(f"{key.replace('_', ' ').capitalize()} must be between {lower} and {upper}")
+            for key in ("dim_night_enabled", "dim_idle_enabled"):
+                if key in data and not isinstance(data[key], bool): raise ValueError("Invalid dimming switch")
             for key, lower, upper in (("layers_panel_width", 220, 440), ("inspector_panel_width", 280, 520)):
                 if key in data and (type(data[key]) not in (int, float) or not lower <= data[key] <= upper):
                     raise ValueError("Invalid workspace panel width")
@@ -1306,6 +1418,7 @@ class EditorController(QObject, FramePipeline):
             settings._settings = updated
             self.target_fps = settings.get_setting("target_fps", 30)
             self.display_brightness = max(0, min(100, settings.get_setting("display_brightness", 100)))
+            self._update_output_brightness()
             self.display_orientation = settings.get_setting("display_orientation", "normal")
             canvas = canvas_size(*self.panel_size, self.display_orientation)
             if canvas != (self.document.width, self.document.height):  # entering/leaving portrait: canvas only,
@@ -1404,6 +1517,96 @@ class EditorController(QObject, FramePipeline):
             field = next((key for marker, key in markers.items() if marker.lower() in message.lower()), "form")
             return {"index": index, "field": field, "message": message}
 
+    # --- Extra displays (experimental): each shows a saved preset -------------------------------
+    def _start_secondary(self, identity, name, preset):
+        out = SecondaryDisplay(identity, name, preset, self.repository.presets[preset]["data"], self.target_fps,
+                               settings.get_setting("display_size_overrides", {}))
+        out.display_brightness, out.output_brightness = self.display_brightness, self.output_brightness
+        self.secondaries[identity] = out
+        out.start()
+
+    def _save_secondaries(self):
+        settings.set_setting("secondary_displays", [{"identity": key, "name": out.name, "preset": out.preset}
+                                                    for key, out in self.secondaries.items()])
+
+    def _restore_secondaries(self):
+        for entry in settings.get_setting("secondary_displays", []) or []:
+            if isinstance(entry, dict) and entry.get("identity") and entry.get("preset") in self.repository.presets \
+                    and entry["identity"] not in self.secondaries:
+                self._start_secondary(entry["identity"], str(entry.get("name") or "Display"), entry["preset"])
+
+    @Slot()
+    def openSecondaryPicker(self):
+        self._device_defs = enumerate_available_devices()
+        self._fill_devices_model()
+        self.requestDialog.emit("secondary", {})
+
+    @Slot(int, str)
+    def addSecondaryDisplay(self, index, preset):
+        if not 0 <= index < len(getattr(self, "_device_defs", [])): return
+        device = self._device_defs[index]
+        identity = device.extra_params.get("identity")
+        # The main display stays reserved while connected and while it waits to reconnect
+        reserved = self.selected_device_def and (self.device or self._reconnect_timer.isActive())
+        primary = self.selected_device_def.extra_params.get("identity") if reserved else None
+        if preset not in self.repository.presets: return self.error("Choose a saved theme for this display.")
+        if not identity or device.extra_params.get("ambiguous"):
+            return self.error("This display cannot be told apart from another one of the same model, so it can only be the main display.")
+        if identity in self.secondaries or identity in self._retired or identity == primary:
+            return self.error("This display is already in use.")
+        self._start_secondary(identity, device.name, preset)
+        self._save_secondaries(); self.refresh_sensors()
+
+    @Slot(str)
+    def removeSecondaryDisplay(self, identity):
+        out = self.secondaries.pop(identity, None)
+        if out:
+            self._retired[identity] = out  # reserved until its worker has released the device
+            out.stop()
+        self._save_secondaries(); self.refresh_sensors()
+
+    @Slot(str, str)
+    def setSecondaryPreset(self, identity, preset):
+        if identity in self.secondaries and preset in self.repository.presets:
+            self.secondaries[identity].set_preset(preset, self.repository.presets[preset]["data"])
+            self._save_secondaries(); self.refresh_sensors()
+
+    @Slot('QVariantMap')
+    def discoverHomeAssistant(self, broker):
+        """Read Home Assistant discovery configs from the broker of an MQTT draft row (worker thread)."""
+        if hasattr(broker, "toVariant"): broker = broker.toVariant()
+        broker = dict(broker)
+
+        def run():
+            from src.core.ha_discovery import discover
+            try:
+                entities, skipped = discover(broker)
+                self.homeAssistantFound.emit(entities, skipped, "")
+            except Exception as exc:  # message only: never echo credentials
+                logger.warning("Home Assistant discovery failed: %s", type(exc).__name__)
+                reason = str(exc) if isinstance(exc, (ConnectionRefusedError, TimeoutError)) else type(exc).__name__
+                self.homeAssistantFound.emit([], 0, f"Could not read discovery data from {broker.get('host', 'the broker')}: {reason}")
+        threading.Thread(target=run, daemon=True, name="ha-discovery").start()
+
+    MAX_NETWORK_SENSORS = 64  # validate_sources limit
+
+    @Slot('QVariantList', 'QVariantList', 'QVariantMap', result='QVariantList')
+    def addDiscovered(self, draft, entities, broker):
+        """Append discovered entities to the draft with the broker settings of the row they came from."""
+        draft = [dict(row) for row in draft]
+        if len(draft) + len(entities) > self.MAX_NETWORK_SENSORS:
+            self.error(f"At most {self.MAX_NETWORK_SENSORS} network sensors: {self.MAX_NETWORK_SENSORS - len(draft)} more can be added.")
+            return draft
+        taken = {row.get("id") for row in draft}
+        for entity in entities:
+            row = {**dict(entity), **{key: broker.get(key) for key in ("host", "port", "tls", "username", "password") if key in broker}}
+            base, number = row["id"], 2
+            while row["id"] in taken:
+                row["id"], number = f"{base[:44]}_{number}", number + 1
+            taken.add(row["id"])
+            draft.append(row)
+        return draft
+
     @Slot('QVariantMap')
     def testNetwork(self, source):
         self.stopProbe()
@@ -1472,13 +1675,14 @@ class EditorController(QObject, FramePipeline):
     def startup(self):
         if not self._start_services: return
         self._restore_video()
+        self._restore_secondaries()  # before the main display picks among the unclaimed devices
         if not sensors.get_sensor_status()["cpu_thermal_available"]:
             self.notify("CPU temperature unavailable. Open Hardware setup from the project menu for diagnostics and remedies.", sticky=True)
         if not settings.get_setting("onboarding_completed", False) and not settings.get_setting("last_preset") and not settings.get_setting("default_preset"):
             self.openDevices()
             self.requestDialog.emit("onboarding", {})
         else:
-            devices = enumerate_available_devices()
+            devices = [d for d in enumerate_available_devices() if self._may_open(d)]
             if len(devices) == 1 and not devices[0].experimental:
                 self.selected_device_def = copy.copy(devices[0]); self.selected_device_def.extra_params = dict(devices[0].extra_params)
                 self.connect_display(silent=True)
@@ -1515,5 +1719,7 @@ class EditorController(QObject, FramePipeline):
             if worker and worker.isRunning():
                 if hasattr(worker, "cancel"): worker.cancel()
                 worker.wait()
+        for out in list(self.secondaries.values()) + list(self._retired.values()): out.stop()
+        self.secondaries.clear(); self._retired.clear()
         if self._start_services: sensors.stop_sensors()
         if self._start_services or self._owns_video: video_background.close()

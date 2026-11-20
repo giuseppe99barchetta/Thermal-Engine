@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 
 // Stroke icons on a 16px grid (stroke 1.6). "color" tints the glyph; "stroke" is kept for older callers.
 Item {
@@ -40,9 +41,16 @@ Item {
     function css(c) {
         return "rgb(" + Math.round(c.r * 255) + "," + Math.round(c.g * 255) + "," + Math.round(c.b * 255) + ")";
     }
+    // A square glyph on whole pixels, rasterised at the screen's real density: filling a non-square
+    // content area stretched it, and a fixed 2x raster blurred it on 125 %/150 % screens.
+    readonly property int side: Math.max(1, Math.floor(Math.min(width, height)))
     Image {
-        anchors.fill: parent
-        sourceSize: Qt.size(width * 2, height * 2)
+        x: Math.round((icon.width - icon.side) / 2)
+        y: Math.round((icon.height - icon.side) / 2)
+        width: icon.side
+        height: icon.side
+        fillMode: Image.PreserveAspectFit
+        sourceSize: Qt.size(Math.round(icon.side * Screen.devicePixelRatio), Math.round(icon.side * Screen.devicePixelRatio))
         source: "data:image/svg+xml;utf8," + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='none' stroke='" + icon.css(icon.stroke) + "' stroke-opacity='" + icon.stroke.a + "' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' d='" + (icon.paths[icon.name] || "") + "'/></svg>")
     }
 }

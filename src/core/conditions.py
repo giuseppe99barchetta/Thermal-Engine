@@ -1,10 +1,11 @@
 """One explicit condition per element; never evaluate user expressions."""
 import math
 import operator
+import time
 
 COMPARISONS = {"==": operator.eq, "!=": operator.ne, ">": operator.gt,
                ">=": operator.ge, "<": operator.lt, "<=": operator.le}
-ACTIONS = ("color", "text", "show", "hide")
+ACTIONS = ("color", "text", "show", "hide", "blink")
 
 
 def condition_matches(rule, values):
@@ -33,7 +34,7 @@ def condition_matches(rule, values):
     return comparison(value, target)
 
 
-def apply_condition(element, values):
+def apply_condition(element, values, now=None):
     rule = element.condition
     if not rule:
         return
@@ -42,7 +43,10 @@ def apply_condition(element, values):
     if action == "show":
         element.visible = element.visible and matched
     elif matched:
-        if action == "hide":
+        if action == "blink":  # 1 Hz: visible for the first half of every second
+            now = time.monotonic() if now is None else now
+            element.visible = element.visible and int(now * 2) % 2 == 0
+        elif action == "hide":
             element.visible = False
         elif action == "color":
             element.color = element.text_color = element.label_text_color = rule["color"]

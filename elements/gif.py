@@ -39,6 +39,12 @@ _gif_cache_order = []  # Track insertion order for LRU eviction
 _playback_state = {}
 
 
+def forget_playback(prefix):
+    """Drop GIF playback state whose element name starts with prefix."""
+    for key in [k for k in _playback_state if isinstance(k, str) and k.startswith(prefix)]:
+        del _playback_state[key]
+
+
 def reset_all_playback():
     """Reset all GIF playback timing after system wake or other disruption."""
     global _playback_state

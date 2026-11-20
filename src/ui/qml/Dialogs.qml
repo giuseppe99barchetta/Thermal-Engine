@@ -114,6 +114,9 @@ Item {
             } else if (kind === "diagnostics") {
                 diagnosticText.text = data.text;
                 diagnosticsDialog.open();
+            } else if (kind === "secondary") {
+                secondaryDialog.deviceIndex = -1;
+                secondaryDialog.open();
             } else if (kind === "console") {
                 consoleDialog.open();
             } else if (kind === "hardware")
@@ -326,7 +329,7 @@ Item {
                     conditionSource.currentIndex = i;
             conditionComparison.currentIndex = Math.max(0, ["==", "!=", ">", ">=", "<", "<="].indexOf(rule.operator || ">"));
             conditionValue.text = rule.value === undefined ? "80" : String(rule.value);
-            conditionAction.currentIndex = Math.max(0, ["color", "text", "show", "hide"].indexOf(rule.action || "color"));
+            conditionAction.currentIndex = Math.max(0, ["color", "text", "show", "hide", "blink"].indexOf(rule.action || "color"));
             conditionColor.text = rule.color || "#ff4444";
             conditionText.text = rule.text || "";
         }
@@ -350,7 +353,7 @@ Item {
                         source: hub.controller.sources[conditionSource.currentIndex].id,
                         operator: conditionComparison.currentText,
                         value: conditionValue.text,
-                        action: ["color", "text", "show", "hide"][conditionAction.currentIndex],
+                        action: ["color", "text", "show", "hide", "blink"][conditionAction.currentIndex],
                         color: conditionColor.text,
                         text: conditionText.text
                     } : {});
@@ -401,7 +404,7 @@ Item {
                 UI.TCombo {
                     id: conditionAction
                     Layout.fillWidth: true
-                    model: ["Change color", "Change text", "Show only when matched", "Hide when matched"]
+                    model: ["Change color", "Change text", "Show only when matched", "Hide when matched", "Blink when matched"]
                 }
                 UI.TField {
                     id: conditionColor
@@ -820,6 +823,158 @@ Item {
     NetworkDialog {
         id: networkDialog
         controller: hub.controller
+        onDiscoverRequested: broker => haDialog.start(broker)
+    }
+    // Extra display: pick an unclaimed device and the saved theme it shows
+    UI.TDialog {
+        id: secondaryDialog
+        objectName: "secondaryDialog"
+        title: "Add a display"
+        width: Math.min(520, parent.width - 40)
+        property int deviceIndex: -1
+        footerContent: RowLayout {
+            width: parent.width
+            spacing: 8
+            Item {
+                Layout.fillWidth: true
+            }
+            UI.TButton {
+                text: "Cancel"
+                flat: true
+                onClicked: secondaryDialog.close()
+            }
+            UI.TButton {
+                text: "Add display"
+                primary: true
+                enabled: secondaryDialog.deviceIndex >= 0 && secondaryPreset.currentIndex >= 0
+                onClicked: {
+                    hub.controller.addSecondaryDisplay(secondaryDialog.deviceIndex, hub.controller.state.presetNames[secondaryPreset.currentIndex]);
+                    secondaryDialog.close();
+                }
+            }
+        }
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: UI.Theme.secondary
+                font.pixelSize: 12
+                text: secondaryDevices.count ? "Choose the display and the saved theme it shows." : "No display found. Plug it in and try again."
+            }
+            ListView {
+                id: secondaryDevices
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(240, contentHeight)
+                model: hub.controller.devices
+                spacing: 6
+                clip: true
+                delegate: UI.TButton {
+                    required property var row
+                    width: secondaryDevices.width
+                    // In use as the main display or as another extra display, or not distinguishable: not selectable
+                    enabled: !row.claimed && !row.ambiguous && !(hub.controller.state.connected && hub.controller.state.device === row.name)
+                    selected: secondaryDialog.deviceIndex === row.index
+                    text: row.name + "  ·  " + row.width + " × " + row.height + (row.claimed ? "  ·  in use" : row.ambiguous ? "  ·  main display only" : "")
+                    onClicked: secondaryDialog.deviceIndex = row.index
+                }
+            }
+            UI.TCombo {
+                id: secondaryPreset
+                Layout.fillWidth: true
+                model: hub.controller.state.presetNames
+                Accessible.name: "Theme for this display"
+            }
+        }
+    }
+    // Home Assistant MQTT discovery: pick entities to add to the network sensor draft
+    UI.TDialog {
+        id: haDialog
+        objectName: "homeAssistantDialog"
+        title: "Home Assistant sensors"
+        width: Math.min(620, parent.width - 40)
+        property var broker: ({})
+        property var entities: []
+        property var picked: []
+        property int skipped: 0
+        property string error: ""
+        property bool busy: false
+        readonly property int capacity: 64 - networkDialog.draft.length
+        function start(row) {
+            broker = row;
+            entities = [];
+            picked = [];
+            skipped = 0;
+            error = "";
+            busy = true;
+            open();
+            hub.controller.discoverHomeAssistant(row);
+        }
+        function toggle(index, on) {
+            let copy = picked.filter(i => i !== index);
+            if (on && copy.length < capacity)
+                copy.push(index);
+            picked = copy;
+        }
+        Connections {
+            target: hub.controller
+            function onHomeAssistantFound(found, skippedCount, message) {
+                haDialog.busy = false;
+                haDialog.entities = found;
+                haDialog.skipped = skippedCount;
+                haDialog.error = message;
+            }
+        }
+        footerContent: RowLayout {
+            width: parent.width
+            spacing: 8
+            Label {
+                Layout.fillWidth: true
+                text: haDialog.picked.length + " selected · " + Math.max(0, haDialog.capacity - haDialog.picked.length) + " more can be added"
+                color: UI.Theme.muted
+                font.pixelSize: 12
+            }
+            UI.TButton {
+                text: "Cancel"
+                flat: true
+                onClicked: haDialog.close()
+            }
+            UI.TButton {
+                text: "Add selected"
+                primary: true
+                enabled: haDialog.picked.length > 0
+                onClicked: {
+                    let chosen = haDialog.picked.map(i => haDialog.entities[i]);
+                    networkDialog.draft = hub.controller.addDiscovered(networkDialog.draft, chosen, haDialog.broker);
+                    networkDialog.current = networkDialog.draft.length - 1;
+                    haDialog.close();
+                }
+            }
+        }
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: haDialog.error ? UI.Theme.danger : UI.Theme.secondary
+                font.pixelSize: 12
+                text: haDialog.busy ? "Reading discovery data from " + (haDialog.broker.host || "the broker") + "…" : haDialog.error ? haDialog.error : haDialog.entities.length + " entities found" + (haDialog.skipped ? " · " + haDialog.skipped + " skipped (unsupported template or payload)" : "") + ". Imported sensors keep their value until Home Assistant's expiry (24 h by default); change it per sensor."
+            }
+            Repeater {
+                model: haDialog.entities
+                UI.TCheck {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    text: modelData.name + "  ·  " + modelData.topic + (modelData.unit ? "  ·  " + modelData.unit : "")
+                    checked: haDialog.picked.indexOf(index) >= 0
+                    enabled: checked || haDialog.picked.length < haDialog.capacity
+                    onClicked: haDialog.toggle(index, checked)
+                }
+            }
+        }
     }
     SettingsDialog {
         id: settingsDialog

@@ -37,6 +37,13 @@ MAX_HISTORY = 100
 UPDATE_INTERVAL = 0.05  # Add a point every 50ms (20 points per second max)
 
 
+def forget_history(prefix):
+    """Drop chart histories whose element name starts with prefix (an extra display that went away)."""
+    for store in (_value_history, _last_update_time):
+        for key in [k for k in store if isinstance(k, str) and k.startswith(prefix)]:
+            del store[key]
+
+
 def get_history(element):
     """Get or create history for this element."""
     key = getattr(element, 'name', id(element))

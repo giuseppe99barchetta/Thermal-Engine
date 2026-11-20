@@ -22,24 +22,34 @@ import psutil
 logger = logging.getLogger(__name__)
 
 
+# None = not measured on this PC; a real reading of 0 stays 0
 DEFAULT_SENSOR_DATA = {
-    "cpu_temp": 0.0,
-    "cpu_clock": 0.0,
-    "cpu_power": 0.0,
-    "gpu_temp": 0.0,
-    "gpu_percent": 0.0,
-    "gpu_clock": 0.0,
-    "gpu_memory_clock": 0.0,
-    "gpu_memory_percent": 0.0,
-    "gpu_power": 0.0,
-    "pump_rpm": 0.0,
-    "fan_rpm": 0.0,
-    "liquid_temp": 0.0,
-    "disk_temp": 0.0,
-    "disk_percent": 0.0,
+    "cpu_temp": None,
+    "cpu_clock": None,
+    "cpu_power": None,
+    "gpu_temp": None,
+    "gpu_percent": None,
+    "gpu_clock": None,
+    "gpu_memory_clock": None,
+    "gpu_memory_percent": None,
+    "gpu_power": None,
+    "pump_rpm": None,
+    "fan_rpm": None,
+    "liquid_temp": None,
+    "disk_temp": None,
+    "disk_percent": None,
 }
 
 _LHM_TYPES = None
+
+
+def _first_present(*values):
+    """First reading that exists; a real 0 is kept (unlike `a or b`)."""
+    return next((value for value in values if value is not None), None)
+
+
+def _whole(value):
+    return None if value is None else int(value)
 
 
 def _is_pawnio_installed():
@@ -78,7 +88,7 @@ class _SystemUsageSampler:
     def update(self, data):
         data["cpu_percent"] = float(psutil.cpu_percent(interval=None))
         freq = psutil.cpu_freq()
-        if freq and freq.current and data.get("cpu_clock", 0) <= 0:
+        if freq and freq.current and (data.get("cpu_clock") or 0) <= 0:
             data["cpu_clock"] = float(freq.current)
 
         vm = psutil.virtual_memory()
@@ -252,9 +262,9 @@ class _PdhGpuReader:
     def get_gpu_usage(self):
         status = self._pdh.PdhCollectQueryData(self._query)
         if status != self.ERROR_SUCCESS:
-            return 0.0
+            return None
 
-        total = 0.0
+        total, valid = 0.0, False
         value_type = ctypes.c_ulong(0)
         value = self._PDH_FMT_COUNTERVALUE_DOUBLE()
         for counter in self._counters:
@@ -266,8 +276,9 @@ class _PdhGpuReader:
             )
             if status == self.ERROR_SUCCESS and value.CStatus == self.ERROR_SUCCESS:
                 total += max(0.0, value.doubleValue)
+                valid = True
 
-        return min(100.0, total)
+        return min(100.0, total) if valid else None
 
     def close(self):
         if self._query:
@@ -329,7 +340,7 @@ class _LinuxReader:
                 return float(raw) / scale
             except (FileNotFoundError, ValueError, OSError):
                 continue
-        return 0.0
+        return None
 
     def _pick_temperature(self, entries):
         best = 0.0
@@ -380,7 +391,7 @@ class _LinuxReader:
                 self._last_cpu_temp_source = f"psutil:{group}"
                 return best
 
-        return 0.0
+        return None
 
     def _read_nvidia_smi(self):
         self._last_nvidia_smi_error = None
@@ -421,15 +432,11 @@ class _LinuxReader:
         def _parse(index):
             try:
                 return float(parts[index])
-            except (IndexError, ValueError):
-                return 0.0
+            except (IndexError, ValueError):  # "N/A", "[Not Supported]", empty
+                return None
 
-        return {
-            "gpu_temp": _parse(0),
-            "gpu_percent": _parse(1),
-            "gpu_clock": _parse(2),
-            "gpu_power": _parse(3),
-        }
+        readings = {"gpu_temp": _parse(0), "gpu_percent": _parse(1), "gpu_clock": _parse(2), "gpu_power": _parse(3)}
+        return {key: value for key, value in readings.items() if value is not None}
 
     def _read_sysfs_gpu(self):
         data = {}
@@ -447,19 +454,17 @@ class _LinuxReader:
                 temp = self._read_first_float(hwmon / "temp1_input", scale=1000.0)
                 power = self._read_first_float(hwmon / "power1_average", scale=1000000.0)
                 clock = self._read_first_float(hwmon / "freq1_input", scale=1000000.0)
-                if temp > 0 and data.get("gpu_temp", 0.0) <= 0:
-                    data["gpu_temp"] = temp
-                if power > 0 and data.get("gpu_power", 0.0) <= 0:
-                    data["gpu_power"] = power
-                if clock > 0 and data.get("gpu_clock", 0.0) <= 0:
-                    data["gpu_clock"] = clock
+                # A parsed value counts even when it is 0 (idle GPU); None = file absent/unreadable
+                for key, value in (("gpu_temp", temp), ("gpu_power", power), ("gpu_clock", clock)):
+                    if value is not None and data.get(key) is None:
+                        data[key] = value
 
             busy = self._read_first_float(device_path / "gpu_busy_percent")
-            if busy > 0 and data.get("gpu_percent", 0.0) <= 0:
+            if busy is not None and data.get("gpu_percent") is None:
                 data["gpu_percent"] = busy
 
             intel_clock = self._read_first_float(device_path / "gt_cur_freq_mhz")
-            if intel_clock > 0 and data.get("gpu_clock", 0.0) <= 0:
+            if intel_clock is not None and data.get("gpu_clock") is None:
                 data["gpu_clock"] = intel_clock
 
             if data:
@@ -574,7 +579,7 @@ class _LibreHardwareMonitorReader:
             sensor = self._sensor_mapping_cache[cache_key]
             if sensor is not None and sensor.Value is not None:
                 return float(sensor.Value)
-            return 0.0
+            return None
 
         names_lower = [name.lower() for name in names]
         for sensor, label in sensors:
@@ -586,10 +591,10 @@ class _LibreHardwareMonitorReader:
                     self._sensor_mapping_cache[cache_key] = sensor
                     if sensor.Value is not None:
                         return float(sensor.Value)
-                    return 0.0
+                    return None
 
         self._sensor_mapping_cache[cache_key] = None
-        return 0.0
+        return None  # no such sensor on this PC
 
     def _find_best_cpu_temperature(self, sensors=None):
         _, SensorType = _load_lhm_types()
@@ -639,13 +644,13 @@ class _LibreHardwareMonitorReader:
                     continue
                 self._cpu_temp_sensors.append(sensor)
 
-        best = 0.0
+        best = None
         for sensor in self._cpu_temp_sensors:
             if sensor.Value is None:
                 continue
             value = float(sensor.Value)
             if 5.0 <= value <= 125.0:
-                best = max(best, value)
+                best = value if best is None else max(best, value)
 
         return best
 
@@ -665,7 +670,7 @@ class _LibreHardwareMonitorReader:
             SensorType.Temperature,
             sensors,
         )
-        if cpu_temp > 0:
+        if cpu_temp and cpu_temp > 0:
             return cpu_temp
         return self._find_best_cpu_temperature(sensors)
 
@@ -691,13 +696,13 @@ class _LibreHardwareMonitorReader:
 
     def get_gpu_clock(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return (self._find_sensor(["gpu core clock", "gpu clock"], SensorType.Clock, sensors)
-                or self._find_sensor(["gpu core"], SensorType.Clock, sensors, suffix=True))
+        return _first_present(self._find_sensor(["gpu core clock", "gpu clock"], SensorType.Clock, sensors),
+                              self._find_sensor(["gpu core"], SensorType.Clock, sensors, suffix=True))
 
     def get_gpu_memory_clock(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return (self._find_sensor(["memory clock"], SensorType.Clock, sensors)
-                or self._find_sensor(["gpu memory"], SensorType.Clock, sensors, suffix=True))
+        return _first_present(self._find_sensor(["memory clock"], SensorType.Clock, sensors),
+                              self._find_sensor(["gpu memory"], SensorType.Clock, sensors, suffix=True))
 
     def get_gpu_usage(self, sensors=None):
         _, SensorType = _load_lhm_types()
@@ -722,34 +727,34 @@ class _LibreHardwareMonitorReader:
                 if self._gpu_usage_fallback is None and "3d" in label:
                     self._gpu_usage_fallback = sensor
 
-        best = 0.0
+        best = None  # None until some sensor gives a valid reading (0 % is valid)
         for sensor in self._gpu_usage_sensors:
             if sensor.Value is not None:
-                best = max(best, float(sensor.Value))
+                best = float(sensor.Value) if best is None else max(best, float(sensor.Value))
 
-        if best > 0.0:
+        if best is not None and best > 0.0:
             return best
 
         if self._gpu_usage_fallback and self._gpu_usage_fallback.Value is not None:
             return float(self._gpu_usage_fallback.Value)
 
-        return 0.0
+        return best
 
     def get_gpu_memory_usage(self, sensors=None):
         _, SensorType = _load_lhm_types()
         # suffix: "GPU Memory Controller" is a different load and must not match
-        return (self._find_sensor(["memory load", "memory usage"], SensorType.Load, sensors)
-                or self._find_sensor(["gpu memory"], SensorType.Load, sensors, suffix=True))
+        return _first_present(self._find_sensor(["memory load", "memory usage"], SensorType.Load, sensors),
+                              self._find_sensor(["gpu memory"], SensorType.Load, sensors, suffix=True))
 
     def get_gpu_power(self, sensors=None):
         _, SensorType = _load_lhm_types()
-        return (self._find_sensor(["gpu power", "board power"], SensorType.Power, sensors)
-                or self._find_sensor(["gpu package"], SensorType.Power, sensors, suffix=True))
+        return _first_present(self._find_sensor(["gpu power", "board power"], SensorType.Power, sensors),
+                              self._find_sensor(["gpu package"], SensorType.Power, sensors, suffix=True))
 
     def get_cooling_storage_sensors(self, sensors):
         """Use explicit sensor names; never guess that an unnamed fan is a pump."""
         _, SensorType = _load_lhm_types()
-        values = {key: 0.0 for key in (
+        values = {key: None for key in (
             "pump_rpm", "fan_rpm", "liquid_temp", "disk_temp", "disk_percent"
         )}
         for sensor, _ in sensors:
@@ -772,7 +777,7 @@ class _LibreHardwareMonitorReader:
                   and "used space" in name):
                 key = "disk_percent"
             if key:
-                values[key] = max(values[key], value)
+                values[key] = value if values[key] is None else max(values[key], value)
         return values
 
     def get_thermal_sensors(self):
@@ -786,12 +791,12 @@ class _LibreHardwareMonitorReader:
                         specific[source] = value
             return {
                 "cpu_temp": self.get_cpu_temp(sensors),
-                "cpu_clock": int(self.get_cpu_clock(sensors)),
+                "cpu_clock": _whole(self.get_cpu_clock(sensors)),
                 "cpu_power": self.get_cpu_power(sensors),
                 "gpu_temp": self.get_gpu_temp(sensors),
                 "gpu_percent": self.get_gpu_usage(sensors),
-                "gpu_clock": int(self.get_gpu_clock(sensors)),
-                "gpu_memory_clock": int(self.get_gpu_memory_clock(sensors)),
+                "gpu_clock": _whole(self.get_gpu_clock(sensors)),
+                "gpu_memory_clock": _whole(self.get_gpu_memory_clock(sensors)),
                 "gpu_memory_percent": self.get_gpu_memory_usage(sensors),
                 "gpu_power": self.get_gpu_power(sensors),
                 **self.get_cooling_storage_sensors(sensors),

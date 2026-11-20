@@ -26,27 +26,28 @@ SENSOR_ERROR = None
 _sensor_thread = None
 _sensor_thread_running = False
 _sensor_data_lock = threading.Lock()
+# None until a poll succeeds: never show a reading that was not measured
 _latest_sensor_data = {
-    "cpu_temp": 0,
-    "cpu_clock": 0,
-    "cpu_power": 0,
-    "gpu_temp": 0,
-    "gpu_percent": 0,
-    "gpu_clock": 0,
-    "gpu_memory_clock": 0,
-    "gpu_memory_percent": 0,
-    "gpu_power": 0,
-    "cpu_percent": 0,
-    "ram_percent": 0,
-    "ram_used": 0,
-    "ram_available": 0,
-    "net_upload": 0,
-    "net_download": 0,
-    "pump_rpm": 0,
-    "fan_rpm": 0,
-    "liquid_temp": 0,
-    "disk_temp": 0,
-    "disk_percent": 0,
+    "cpu_temp": None,
+    "cpu_clock": None,
+    "cpu_power": None,
+    "gpu_temp": None,
+    "gpu_percent": None,
+    "gpu_clock": None,
+    "gpu_memory_clock": None,
+    "gpu_memory_percent": None,
+    "gpu_power": None,
+    "cpu_percent": None,
+    "ram_percent": None,
+    "ram_used": None,
+    "ram_available": None,
+    "net_upload": None,
+    "net_download": None,
+    "pump_rpm": None,
+    "fan_rpm": None,
+    "liquid_temp": None,
+    "disk_temp": None,
+    "disk_percent": None,
 }
 
 # Smoothing configuration
@@ -127,7 +128,7 @@ def _apply_smoothing(raw_data):
     for key in _SMOOTHED_SENSORS:
         if key in raw_data:
             raw = raw_data[key]
-            if raw <= 0:
+            if raw is None or raw <= 0:  # missing sensor or a real 0: shown as is, no smoothing
                 smoothed[key] = raw
                 _smoothed_values.pop(key, None)
                 continue
@@ -168,8 +169,8 @@ def _sensor_polling_thread():
                     _hardware_catalog = catalog
                 _update_status(smoothed)
         except Exception as e:
-            with _sensor_data_lock:
-                _latest_sensor_data = {key: value for key, value in _latest_sensor_data.items() if not key.startswith("hardware_")}
+            with _sensor_data_lock:  # a failed poll keeps no stale readings
+                _latest_sensor_data = {key: None for key in _latest_sensor_data if not key.startswith("hardware_")}
             _update_status(get_cached_sensors(), e)
             with _reader_lock:
                 if _reader and hasattr(_reader, "invalidate_cache"):

@@ -191,8 +191,9 @@ class FramePipeline:
 
     def image_to_jpeg(self, img, quality=80):
         """Convert image to JPEG bytes with optimized settings."""
-        if self.display_brightness < 100:
-            img = ImageEnhance.Brightness(img).enhance(self.display_brightness / 100)
+        brightness = getattr(self, 'output_brightness', self.display_brightness)  # scheduled dimming applied
+        if brightness < 100:
+            img = ImageEnhance.Brightness(img).enhance(brightness / 100)
         if self.display_orientation == 'flip_v':
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
         elif self.display_orientation == 'flip_h':

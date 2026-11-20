@@ -19,7 +19,7 @@ def test_missing_cpu_temperature_is_not_a_zero_reading(monkeypatch):
     monkeypatch.setattr(renderer, "render_element_with_opacity", lambda image, element, **kwargs: rendered.append(element))
     renderer.render({"background_color": "#000000", "sensor_data": readings,
                      "elements": [(1, {"type": "circle_gauge", "source": "cpu_temp", "value": 0})]}, (480, 480))
-    assert rendered[0].type == "text" and rendered[0].text == "--"
+    assert rendered[0].type == "circle_gauge" and rendered[0].missing_value and rendered[0].value == 0  # keeps its arc, prints "--"
 
 
 def sensor(name, kind, value, hardware="Cooler"):
@@ -42,7 +42,7 @@ def test_cooling_storage_sensors_use_type_names_and_highest_valid_value():
     reader = _LibreHardwareMonitorReader.__new__(_LibreHardwareMonitorReader)
     with patch("src.core.libre_hw_monitor._load_lhm_types", return_value=(None, types)):
         result = reader.get_cooling_storage_sensors(values)
-        assert reader.get_cooling_storage_sensors([]) == dict.fromkeys(result, 0)
+        assert reader.get_cooling_storage_sensors([]) == dict.fromkeys(result, None)  # absent, not 0
     assert result == {"pump_rpm": 2400, "fan_rpm": 1200, "liquid_temp": 32,
                       "disk_temp": 50, "disk_percent": 72}
     assert set(result) <= set(DATA_SOURCES) & set(SOURCE_UNITS)

@@ -36,8 +36,8 @@ class TestSafeHardwareMonitor(unittest.TestCase):
         self.assertEqual(sensors["ram_percent"], 60.0)
         self.assertEqual(sensors["ram_used"], 8.0)
         self.assertEqual(sensors["ram_available"], 12.0)
-        self.assertEqual(sensors["cpu_temp"], 0.0)
-        self.assertEqual(sensors["cpu_power"], 0.0)
+        self.assertIsNone(sensors["cpu_temp"])  # no driver: not measured, not 0
+        self.assertIsNone(sensors["cpu_power"])  # not measured without the driver
 
     @patch("src.core.libre_hw_monitor.sys.platform", "win32")
     @patch("src.core.libre_hw_monitor._PdhGpuReader")

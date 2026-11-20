@@ -60,11 +60,16 @@ def test_typed_payloads(payload, path, kind, expected):
     assert parse_value(payload, path, kind) == expected
 
 
-@pytest.mark.parametrize("payload,kind", [(b"{}", "text"), (b"12", "text"),
+@pytest.mark.parametrize("payload,kind", [(b"{}", "text"), (b"true", "text"),
     (b"x" * 513, "text"), (b'"\\ud800"', "text"), (b"2", "boolean"), (b"unknown", "boolean")])
 def test_typed_payload_validation(payload, kind):
     with pytest.raises(ValueError):
         parse_value(payload, "", kind)
+
+
+def test_text_accepts_a_json_number_as_its_text():
+    assert parse_value(b"12", "", "text") == "12"  # unitless Home Assistant entities
+    assert parse_value(b'{"count": 5}', "count", "text") == "5"
 
 
 def test_text_and_boolean_render_without_mutating_persisted_value():
@@ -436,6 +441,8 @@ def test_offline_reading_is_visible_and_zero_remains_valid(kind):
     if kind == "text":
         assert captured[-1][2] is None
         assert get_value_with_unit(captured[-1][2], "network_room") == "--"
+    elif kind in ("circle_gauge", "bar_gauge"):
+        assert captured[-1][0] == kind and captured[-1][2] == 0  # keeps its arc/bar and prints "--"
     else:
         assert captured[-1][:2] == ("text", "--")
     snapshot["sensor_data"] = {"network_room": 0}

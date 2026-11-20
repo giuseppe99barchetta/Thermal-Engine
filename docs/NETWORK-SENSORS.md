@@ -26,6 +26,14 @@ Choose MQTT, enter the broker host and port (usually 1883, or 8883 with TLS), a 
 
 Example: ID `room_temperature`, topic `home/living_room/temperature`, suffix ` C`, empty JSON path. Publish `21.5`. A text label `Living room: {network_room_temperature}` displays `Living room: 21.5 C`. Configure the expiry longer than the sender's normal publish interval. Retained MQTT messages do not carry the measurement's age; expiry starts when Thermal Engine receives them.
 
+### Import from Home Assistant MQTT discovery
+
+If your broker carries Home Assistant discovery messages (from Zigbee2MQTT, ESPHome, Tasmota and similar), select an MQTT sensor with that broker and choose **Discover Home Assistant sensors…**. Thermal Engine reads the retained `homeassistant/…/config` messages for three seconds, lists the `sensor` and `binary_sensor` entities, and adds the ones you tick to the draft with the same broker settings; save as usual.
+
+- Only simple value templates are imported: `{{ value }}`, `{{ value_json.a.b }}` or `{{ value_json['a']['b'] }}`, optionally with `| float` or `| round(n)` (the rounding is applied to the value). Other templates, and binary sensors whose `payload_on`/`payload_off` do not mean on/off, are skipped and counted; templates are never evaluated.
+- Imported sensors keep their last value until Home Assistant's `expire_after`, or 24 hours when the entity has none, because many states are only republished when they change. Change **Expiry** per sensor if you prefer.
+- The 64-sensor limit applies; the dialog shows how many more can be added. Entity `availability` topics are not followed.
+
 ## HTTP / Home Assistant REST API
 
 Choose HTTP and enter a full HTTP or HTTPS URL. Thermal Engine sends a GET at the configured polling interval, with a three-second I/O timeout. HTTPS uses normal certificate verification. An optional bearer token supports Home Assistant authentication; tokens are never forwarded across redirects to another origin.
@@ -61,4 +69,4 @@ Existing plaintext sensor credentials are migrated on startup only after the OS 
 
 TCP/UDP have no authentication or encryption. UDP LAN binding accepts packets from any reachable sender; use trusted senders.
 
-This version supports up to 64 sensors. It does not decode binary telemetry or implement Home Assistant MQTT discovery. UDP binds IPv4 or IPv6 (any address containing `:`); TCP can resolve IPv4 or IPv6 hosts.
+This version supports up to 64 sensors. It does not decode binary telemetry or publish Thermal Engine's own sensors to Home Assistant. UDP binds IPv4 or IPv6 (any address containing `:`); TCP can resolve IPv4 or IPv6 hosts.

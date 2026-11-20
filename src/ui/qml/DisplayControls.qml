@@ -64,6 +64,51 @@ ColumnLayout {
         }
     }
     UI.TSection {
+        title: "More displays"
+        Label {
+            Layout.fillWidth: true
+            text: "Experimental: each extra display shows a saved theme with live readings."
+            wrapMode: Text.WordWrap
+            color: UI.Theme.secondary
+            font.pixelSize: 12
+            font.hintingPreference: Font.PreferNoHinting
+        }
+        Repeater {
+            model: controller.state.secondary
+            ColumnLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: 4
+                RowLayout {
+                    Layout.fillWidth: true
+                    UI.TCaption {
+                        Layout.fillWidth: true
+                        text: modelData.name + " · " + modelData.status
+                        elide: Text.ElideRight
+                    }
+                    UI.TIconButton {
+                        iconName: "close"
+                        ToolTip.text: "Stop using this display"
+                        Accessible.name: "Remove " + modelData.name
+                        onClicked: controller.removeSecondaryDisplay(modelData.identity)
+                    }
+                }
+                UI.TCombo {
+                    Layout.fillWidth: true
+                    model: controller.state.presetNames
+                    currentIndex: controller.state.presetNames.indexOf(modelData.preset)
+                    onActivated: controller.setSecondaryPreset(modelData.identity, controller.state.presetNames[currentIndex])
+                }
+            }
+        }
+        UI.TButton {
+            objectName: "addSecondaryDisplay"
+            Layout.fillWidth: true
+            text: "Add display…"
+            onClicked: controller.openSecondaryPicker()
+        }
+    }
+    UI.TSection {
         title: "Brightness & performance"
         RowLayout {
             Layout.fillWidth: true
@@ -87,6 +132,110 @@ ColumnLayout {
                     controller.saveSettings({
                         display_brightness: Number(text)
                     })
+            }
+        }
+        Label {
+            visible: controller.state.outputBrightness !== controller.state.brightness
+            Layout.fillWidth: true
+            text: "Now " + controller.state.outputBrightness + " % (" + (controller.state.dimReason === "night" ? "night" : "idle") + " dimming)"
+            wrapMode: Text.WordWrap
+            color: UI.Theme.accent
+            font.pixelSize: 12
+            font.hintingPreference: Font.PreferNoHinting
+        }
+        // Scheduled dimming: the display gets the lowest of Brightness and every active rule
+        UI.TCheck {
+            objectName: "dimNight"
+            text: "Dim at night"
+            checked: controller.state.dim.dim_night_enabled
+            onClicked: controller.saveSettings({
+                dim_night_enabled: checked
+            })
+        }
+        RowLayout {
+            visible: controller.state.dim.dim_night_enabled
+            Layout.fillWidth: true
+            spacing: 6
+            Repeater {
+                model: [{key: "dim_night_start", label: "From"}, {key: "dim_night_end", label: "to"}]
+                RowLayout {
+                    required property var modelData
+                    spacing: 6
+                    UI.TCaption {
+                        text: modelData.label
+                    }
+                    UI.TField {
+                        Layout.preferredWidth: 64
+                        font.family: UI.Theme.monoFont
+                        Accessible.name: modelData.key === "dim_night_start" ? "Night starts" : "Night ends"
+                        text: controller.state.dim[modelData.key]
+                        validator: RegularExpressionValidator {
+                            regularExpression: /([01][0-9]|2[0-3]):[0-5][0-9]/
+                        }
+                        onEditingFinished: if (acceptableInput) {
+                            let change = {};
+                            change[modelData.key] = text;
+                            controller.saveSettings(change);
+                        }
+                    }
+                }
+            }
+        }
+        RowLayout {
+            visible: controller.state.dim.dim_night_enabled
+            Layout.fillWidth: true
+            UI.TCaption {
+                text: "Night brightness (%)"
+                Layout.fillWidth: true
+            }
+            UI.TField {
+                Layout.preferredWidth: 72
+                font.family: UI.Theme.monoFont
+                Accessible.name: "Night brightness (%)"
+                text: controller.state.dim.dim_night_level
+                validator: IntValidator {
+                    bottom: 0
+                    top: 100
+                }
+                onEditingFinished: if (acceptableInput)
+                    controller.saveSettings({
+                        dim_night_level: Number(text)
+                    })
+            }
+        }
+        UI.TCheck {
+            objectName: "dimIdle"
+            visible: controller.state.idleSupported
+            text: "Dim when the PC is idle"
+            checked: controller.state.dim.dim_idle_enabled
+            onClicked: controller.saveSettings({
+                dim_idle_enabled: checked
+            })
+        }
+        Repeater {
+            model: controller.state.idleSupported && controller.state.dim.dim_idle_enabled ? [{key: "dim_idle_minutes", label: "After minutes without input", bottom: 1, top: 240}, {key: "dim_idle_level", label: "Idle brightness (%)", bottom: 0, top: 100}] : []
+            RowLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                UI.TCaption {
+                    text: modelData.label
+                    Layout.fillWidth: true
+                }
+                UI.TField {
+                    Layout.preferredWidth: 72
+                    font.family: UI.Theme.monoFont
+                    Accessible.name: modelData.label
+                    text: controller.state.dim[modelData.key]
+                    validator: IntValidator {
+                        bottom: modelData.bottom
+                        top: modelData.top
+                    }
+                    onEditingFinished: if (acceptableInput) {
+                        let change = {};
+                        change[modelData.key] = Number(text);
+                        controller.saveSettings(change);
+                    }
+                }
             }
         }
         UI.TCaption {

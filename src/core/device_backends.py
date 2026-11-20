@@ -6,7 +6,9 @@ Supports multiple display types with different communication protocols:
 - Experimental USB bulk/interrupt displays (e.g., Thermalright FW 360 Ultra)
 """
 
+import copy
 import logging
+import re
 import sys
 from abc import ABC, abstractmethod
 from typing import Optional, List
@@ -222,7 +224,11 @@ class HIDBackend(DisplayBackend):
 
         try:
             self.device = hid.device()
-            self.device.open(self.device_def.vendor_id, self.device_def.product_id)
+            path = self.device_def.extra_params.get("path")
+            if path:  # one specific physical device (several of the same model may be connected)
+                self.device.open_path(path)
+            else:
+                self.device.open(self.device_def.vendor_id, self.device_def.product_id)
 
             # Send initialization sequence if defined
             init_seq = self.device_def.extra_params.get('init_sequence')
@@ -313,6 +319,12 @@ class USBBulkBackend(DisplayBackend):
             logger.warning("   Protocol may be incomplete or incorrect")
             logger.warning("   Expect errors and missing functionality")
 
+    def _cache_key(self):
+        """(vid, pid) for the classic single device; plus (bus, address) when a specific one was enumerated."""
+        address = self.device_def.extra_params.get("usb_address")
+        base = (self.device_def.vendor_id, self.device_def.product_id)
+        return base + tuple(address) if address else base
+
     def connect(self) -> bool:
         """Connect to USB device via pyusb."""
         try:
@@ -325,7 +337,7 @@ class USBBulkBackend(DisplayBackend):
 
         try:
             # Check cache first to avoid slow enumeration
-            cache_key = (self.device_def.vendor_id, self.device_def.product_id)
+            cache_key = self._cache_key()
             self.device = self._device_cache.get(cache_key)
 
             if self.device:
@@ -333,10 +345,16 @@ class USBBulkBackend(DisplayBackend):
             else:
                 # Find device
                 logger.info(f"Searching for device {self.device_def.vendor_id:04X}:{self.device_def.product_id:04X}")
-                self.device = usb.core.find(
-                    idVendor=self.device_def.vendor_id,
-                    idProduct=self.device_def.product_id
-                )
+                address = self.device_def.extra_params.get("usb_address")
+                if address:
+                    self.device = usb.core.find(
+                        idVendor=self.device_def.vendor_id, idProduct=self.device_def.product_id,
+                        custom_match=lambda dev: (dev.bus, dev.address) == tuple(address))
+                else:
+                    self.device = usb.core.find(
+                        idVendor=self.device_def.vendor_id,
+                        idProduct=self.device_def.product_id
+                    )
 
                 if self.device:
                     self._device_cache[cache_key] = self.device
@@ -368,7 +386,7 @@ class USBBulkBackend(DisplayBackend):
                 # If set_configuration fails, the device might be stale
                 logger.warning(f"Could not set configuration: {e}")
                 if "Entity not found" in str(e) or "No such device" in str(e):
-                    cache_key = (self.device_def.vendor_id, self.device_def.product_id)
+                    cache_key = self._cache_key()
                     if cache_key in self._device_cache:
                         del self._device_cache[cache_key]
                         logger.info("Removed stale device from cache")
@@ -547,8 +565,7 @@ class USBBulkBackend(DisplayBackend):
 
     def disconnect(self):
         """Disconnect from USB device."""
-        cache_key = (self.device_def.vendor_id, self.device_def.product_id)
-        self._device_cache.pop(cache_key, None)
+        self._device_cache.pop(self._cache_key(), None)
         if self.device:
             try:
                 # Dispose resources (this releases interfaces automatically)
@@ -630,12 +647,12 @@ class USBBulkBackend(DisplayBackend):
         except self.usb.core.USBError as e:
             logger.error(f"USB write error: {e}")
             self.connected = False
-            self._device_cache.pop((self.device_def.vendor_id, self.device_def.product_id), None)
+            self._device_cache.pop(self._cache_key(), None)
             return False
         except Exception as e:
             logger.error(f"Unexpected error during frame send: {e}")
             self.connected = False
-            self._device_cache.pop((self.device_def.vendor_id, self.device_def.product_id), None)
+            self._device_cache.pop(self._cache_key(), None)
             return False
 
     def is_connected(self) -> bool:
@@ -671,50 +688,128 @@ def create_backend(device_def: DeviceDefinition) -> Optional[DisplayBackend]:
     return backend_class(device_def)
 
 
+def _instance(definition, identity, ambiguous=False, **params):
+    device = copy.copy(definition)
+    device.extra_params = {**definition.extra_params, **params, "identity": identity, "ambiguous": ambiguous}
+    return device
+
+
+def _hid_candidates(hid_devices, platform=None):
+    """One candidate per physical HID device. Grouping never uses the serial, so equal serials stay visible."""
+    platform = platform or sys.platform
+    groups = {}
+    for info in hid_devices:
+        vid, pid = info.get("vendor_id"), info.get("product_id")
+        definition = find_device_definition(vid, pid, backend_type="hid")
+        if not definition:
+            continue
+        path = info.get("path") or b""
+        text = path.decode("utf-8", "replace") if isinstance(path, bytes) else str(path)
+        # Windows paths carry one &mi_xx (interface) / &colxx (collection) token per HID interface
+        key = re.sub(r"&(mi_[0-9a-f]+|col[0-9a-f]+)", "", text, flags=re.IGNORECASE).lower() if platform == "win32" else text
+        groups.setdefault((vid, pid, key), (definition, []))[1].append(info)
+    models = {}
+    for (vid, pid, key), (definition, interfaces) in groups.items():
+        serial = next((str(info.get("serial_number")) for info in interfaces if info.get("serial_number")), "")
+        first = min(interfaces, key=lambda info: info.get("interface_number", 0) if info.get("interface_number", -1) >= 0 else 1 << 16)
+        models.setdefault((vid, pid), (definition, []))[1].append((key, serial, first.get("path")))
+    candidates = []
+    for (vid, pid), (definition, found) in models.items():
+        prefix = f"hid:{vid:04x}:{pid:04x}:"
+        if len(found) == 1:
+            key, serial, _ = found[0]
+            # A single device opens exactly as before (by VID/PID): no path, so no wrong-interface risk
+            candidates.append(_instance(definition, prefix + (f"sn:{serial}" if serial else f"path:{key}")))
+        elif all(serial for _, serial, _ in found) and len({serial for _, serial, _ in found}) == len(found):
+            # Several devices with distinct serials: each one is addressed by its own path
+            candidates += [_instance(definition, prefix + f"sn:{serial}", path=path) for _, serial, path in found]
+        else:
+            # Missing or repeated serials: interfaces of one device and several devices cannot be told
+            # apart (a repeated serial may be one device's interfaces or two devices); one entry, opened as
+            # before, usable as the main display but never saved as a secondary output
+            candidates.append(_instance(definition, prefix + "model", True))
+    return candidates
+
+
+def _usb_candidates(usb_core, usb_util):
+    candidates = []
+    for definition in SUPPORTED_DEVICES:
+        if definition.backend_type != "usb_bulk":
+            continue
+        for dev in usb_core.find(find_all=True, idVendor=definition.vendor_id, idProduct=definition.product_id) or []:
+            if not _has_bulk_out_endpoint(dev, usb_util):
+                continue
+            serial = None
+            try:
+                serial = usb_util.get_string(dev, dev.iSerialNumber) if getattr(dev, "iSerialNumber", 0) else None
+            except Exception:
+                serial = None  # reading strings can need access rights; fall back to the port
+            ports = getattr(dev, "port_numbers", None)
+            prefix = f"usb:{definition.vendor_id:04x}:{definition.product_id:04x}:"
+            if serial:
+                identity, complete = prefix + f"sn:{serial}", True
+            elif ports:
+                identity, complete = prefix + f"port:{dev.bus}-{'.'.join(map(str, ports))}", True
+            else:
+                identity, complete = prefix + f"addr:{dev.bus}-{dev.address}", False
+            device = _instance(definition, identity, usb_address=(dev.bus, dev.address))
+            device.extra_params["complete"] = complete
+            candidates.append(device)
+    return candidates
+
+
+def _finish(candidates):
+    """Mark identities that do not single out one device, and number duplicate names."""
+    seen, models = {}, {}
+    for device in candidates:
+        seen[device.extra_params["identity"]] = seen.get(device.extra_params["identity"], 0) + 1
+        model = (device.vendor_id, device.product_id, device.backend_type)
+        models[model] = models.get(model, 0) + 1
+    names = {}
+    for device in candidates:
+        params = device.extra_params
+        model = (device.vendor_id, device.product_id, device.backend_type)
+        # A bus/address identity is not stable (the address can go to another panel after a replug):
+        # never resolvable, even when this is the only device of its model right now
+        if seen[params["identity"]] > 1 or not params.pop("complete", True):
+            params["ambiguous"] = True
+        names[device.name] = names.get(device.name, 0) + 1
+        if names[device.name] > 1:
+            device.name = f"{device.name} #{names[device.name]}"
+    return candidates
+
+
+def resolve_device(identity, candidates):
+    """The one non-ambiguous candidate with this identity, else None (never a different device)."""
+    matches = [device for device in candidates if device.extra_params.get("identity") == identity]
+    return matches[0] if len(matches) == 1 and not matches[0].extra_params.get("ambiguous") else None
+
+
 def enumerate_available_devices() -> List[DeviceDefinition]:
     """
-    Enumerate all connected devices that match supported definitions.
-
-    Returns list of DeviceDefinition objects for detected devices.
+    Enumerate connected supported devices: one entry per physical device, each with
+    extra_params["identity"] (stable across replug/reorder where the hardware allows) and the
+    path/address to open it now.
     """
     available = []
 
-    # Try HID devices
     try:
         import hid
-        hid_devices = hid.enumerate()
-
-        for hid_dev in hid_devices:
-            vid = hid_dev['vendor_id']
-            pid = hid_dev['product_id']
-            device_def = find_device_definition(vid, pid, backend_type='hid')
-            if device_def:
-                if device_def not in available:
-                    available.append(device_def)
-                    logger.info(f"Found HID device: {device_def.name}")
+        available += _hid_candidates(hid.enumerate())
     except ImportError:
         logger.debug("hidapi not available for enumeration")
     except Exception as e:
         logger.debug(f"HID enumeration error: {e}")
 
-    # Try USB devices
     try:
         import usb.core
         import usb.util
-
-        for device_def in SUPPORTED_DEVICES:
-            if device_def.backend_type == 'usb_bulk':
-                dev = usb.core.find(
-                    idVendor=device_def.vendor_id,
-                    idProduct=device_def.product_id
-                )
-                if dev and _has_bulk_out_endpoint(dev, usb.util):
-                    if device_def not in available:
-                        available.append(device_def)
-                        logger.info(f"Found USB device: {device_def.name}")
+        available += _usb_candidates(usb.core, usb.util)
     except ImportError:
         logger.debug("pyusb not available for enumeration")
     except Exception as e:
         logger.debug(f"USB enumeration error: {e}")
 
-    return available
+    for device in available:
+        logger.info(f"Found {device.backend_type} device: {device.name}")
+    return _finish(available)

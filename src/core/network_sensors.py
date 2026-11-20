@@ -47,6 +47,10 @@ def validate_sources(sources):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 1e12:
                 raise ValueError(f"{key} must be a finite number within +/- 1e12.")
             config[key] = value
+        config.setdefault("round_digits", None)  # Home Assistant "| round(n)": applied to the value itself
+        digits = config["round_digits"]
+        if digits is not None and (isinstance(digits, bool) or not isinstance(digits, int) or not 0 <= digits <= 6):
+            raise ValueError("Rounding must be empty or an integer between 0 and 6.")
         config.setdefault("decimals", None)
         decimals = config["decimals"]
         if decimals is not None and (isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 6):
@@ -105,6 +109,8 @@ def parse_value(payload, path="", value_type="number"):
         for key in path.split("."):
             value = value[int(key)] if isinstance(value, list) else value[key]
     if value_type == "text":
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = str(value)  # a JSON number shown as text (unitless Home Assistant entities)
         if not isinstance(value, str) or len(value) > 512 or any(ord(c) < 32 and c not in "\n\t" for c in value):
             raise ValueError("Text must be a string of at most 512 characters without control characters.")
         value.encode("utf-8")
@@ -195,6 +201,8 @@ class NetworkSensorManager:
                 value = parse_value(payload, source["path"], source["value_type"])
                 if source["value_type"] == "number":
                     value = value * source["scale"] + source["offset"]
+                    if source.get("round_digits") is not None:
+                        value = round(value, source["round_digits"])
                     if not math.isfinite(value) or abs(value) > 1e12:
                         raise ValueError("Converted reading is out of range.")
             except (ValueError, KeyError, IndexError, TypeError, OverflowError, RecursionError):
