@@ -241,8 +241,8 @@ class NetworkSensorManager:
     def _socket_stream(self, sources):
         source = sources[0]
         udp = source["protocol"] == "udp"
-        # shortcut: UDP uses IPv4, add IPv6 binding when a supported sender needs it.
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) if udp else socket.create_connection((source["host"], source["port"]), timeout=3)
+        family = socket.AF_INET6 if ":" in source["host"] else socket.AF_INET  # "::" / "::1" bind IPv6
+        sock = socket.socket(family, socket.SOCK_DGRAM) if udp else socket.create_connection((source["host"], source["port"]), timeout=3)
         try:
             with self._lock:
                 self._sockets.add(sock)

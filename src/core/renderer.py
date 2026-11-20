@@ -66,6 +66,13 @@ class ThemeRenderer:
             self._element_render_cache.clear()
             self._analog_clock_cache.clear()
 
+    def forget(self, prefix):
+        """Drop cached overlays whose string key starts with prefix."""
+        with self._render_cache_lock:
+            for cache in (self._element_render_cache, self._analog_clock_cache):
+                for key in [k for k in cache if isinstance(k, str) and k.startswith(prefix)]:
+                    del cache[key]
+
     def _compute_element_state_hash(self, element):
         return hash(json.dumps(element.to_dict(), sort_keys=True, default=str))
 

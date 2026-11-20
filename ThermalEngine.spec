@@ -26,6 +26,10 @@ for package in (("pythonnet", "clr_loader") if sys.platform == "win32" else ()):
     binaries += package_binaries
     hiddenimports += package_hiddenimports
 
+# Game FPS sensor: Intel PresentMon console exe, downloaded (SHA-256 pinned) by the build scripts
+if sys.platform == "win32" and os.path.exists("build/deps/PresentMon.exe"):
+    datas.append(("build/deps/PresentMon.exe", "presentmon"))
+
 if sys.platform == "win32" and os.path.exists("libusb-1.0.dll"):
     binaries.append(("libusb-1.0.dll", "."))
 elif sys.platform == "win32" and os.path.exists("build/deps/libusb-1.0.dll"):

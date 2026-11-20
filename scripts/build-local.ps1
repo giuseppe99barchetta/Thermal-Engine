@@ -19,6 +19,13 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "libusb extraction failed (7-Zip required)" }
         Copy-Item -LiteralPath "build\deps\libusb\VS2019\MS64\dll\libusb-1.0.dll" -Destination "build\deps\libusb-1.0.dll" -Force
     }
+    if (-not (Test-Path "build\deps\PresentMon.exe")) {
+        New-Item -ItemType Directory -Path "build\deps" -Force | Out-Null
+        Invoke-WebRequest "https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe" -OutFile "build\deps\PresentMon.exe"
+        if ((Get-FileHash "build\deps\PresentMon.exe" -Algorithm SHA256).Hash -ne "B2A706BC6AD475749E3B7E3409263AA1E6906D45BDCF993F6DBC0F660188F1AF") {
+            Remove-Item "build\deps\PresentMon.exe"; throw "PresentMon checksum mismatch"
+        }
+    }
     $ErrorActionPreference = "Continue"
     & $Python -m PyInstaller --noconfirm --clean --workpath build/pyinstaller --distpath $OutputDirectory ThermalEngine.spec
     $ErrorActionPreference = "Stop"

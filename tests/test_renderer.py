@@ -92,3 +92,27 @@ def test_semi_transparent_image_alpha_is_not_squared(tmp_path):
     snapshot = {"background_color": "#000000", "elements": [(1, element.to_dict())]}
     # 50% white over black is ~128; squared alpha would give ~64
     assert 120 <= ThemeRenderer().render(snapshot, (20, 20)).getpixel((5, 5))[0] <= 136
+
+
+def test_frame_headers_carry_the_panel_size():
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from src.core.frame_pipeline import FramePipeline
+    from src.core.device_backends import USBBulkBackend, DeviceDefinition
+    sent = []
+    pipeline = SimpleNamespace(backend=SimpleNamespace(send_frame=lambda data: sent.append(data) or True),
+                               selected_device_def=SimpleNamespace(width=1280, height=480, backend_type="hid"))
+    FramePipeline.send_jpeg_frame(pipeline, b"\xff" * 600)
+    assert sent[0][8:12] == bytes([0x00, 0x05, 0xE0, 0x01])  # byte-identical to the captured Trofeo header
+    assert sent[0][16:20] == (600).to_bytes(4, "little") and len(sent) == 2 and all(len(c) == 512 for c in sent)
+    pipeline.selected_device_def.width, pipeline.selected_device_def.height = 960, 320
+    sent.clear(); FramePipeline.send_jpeg_frame(pipeline, b"\xff" * 10)
+    assert sent[0][8:12] == (960).to_bytes(2, "little") + (320).to_bytes(2, "little")
+
+    backend = USBBulkBackend(DeviceDefinition("Panel", 0x87AD, 0x70DB, "usb_bulk", width=640, height=480))
+    backend.device, backend.endpoint_out = MagicMock(), 1
+    backend.device.write.side_effect = lambda endpoint, data, timeout: len(data)
+    assert backend.send_frame(b"jpeg")
+    frame = backend.device.write.call_args[0][1]
+    assert frame[:4] == bytes([0x12, 0x34, 0x56, 0x78]) and frame[8:16] == (640).to_bytes(4, "little") + (480).to_bytes(4, "little")
+    assert frame[60:64] == (4).to_bytes(4, "little") and frame[64:] == b"jpeg"

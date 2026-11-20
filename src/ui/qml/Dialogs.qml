@@ -582,12 +582,13 @@ Item {
         title: "Display resolution"
         width: Math.min(480, parent.width - 40)
         function initialize() {
-            resolutionWidth.text = hub.controller.state.width;
-            resolutionHeight.text = hub.controller.state.height;
+            let panel = hub.controller.state.panel;  // native size, also while the canvas is portrait
+            resolutionWidth.text = panel[0];
+            resolutionHeight.text = panel[1];
             let profiles = hub.controller.sizeProfiles;
             resolutionProfile.currentIndex = -1;
             for (let i = 0; i < profiles.length; i++)
-                if (profiles[i].width === hub.controller.state.width && profiles[i].height === hub.controller.state.height)
+                if (profiles[i].width === panel[0] && profiles[i].height === panel[1])
                     resolutionProfile.currentIndex = i;
         }
         footerContent: RowLayout {

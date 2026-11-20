@@ -11,7 +11,7 @@ ColumnLayout {
     spacing: 14
     Label {
         Layout.fillWidth: true
-        text: "These controls affect the physical display. The editor keeps the original layout."
+        text: "These controls affect the physical display. A 90° turn on a wide panel switches the canvas to portrait; other options keep the layout."
         wrapMode: Text.WordWrap
         color: UI.Theme.secondary
         font.pixelSize: 12
@@ -54,10 +54,9 @@ ColumnLayout {
         UI.TCombo {
             objectName: "displayOrientation"
             Layout.fillWidth: true
-            // 90° turns only fit square panels
-            property var options: [["Original orientation", "normal"], ["Rotate 90° clockwise", "rotate_90_cw"], ["Rotate 180°", "rotate_180"], ["Rotate 90° counterclockwise", "rotate_90_ccw"], ["Mirror horizontally", "flip_h"], ["Flip vertically", "flip_v"]].filter(o => controller.state.width === controller.state.height || o[1].indexOf("rotate_90") !== 0)
-            model: options.map(o => o[0])
-            property var values: options.map(o => o[1])
+            // On a wide panel a 90° turn makes the canvas portrait (the panel size is swapped)
+            model: ["Original orientation", "Rotate 90° clockwise", "Rotate 180°", "Rotate 90° counterclockwise", "Mirror horizontally", "Flip vertically"].map((label, i) => i % 2 === 1 && i < 4 && controller.state.width !== controller.state.height ? label + " (portrait)" : label)
+            property var values: ["normal", "rotate_90_cw", "rotate_180", "rotate_90_ccw", "flip_h", "flip_v"]
             currentIndex: Math.max(0, values.indexOf(controller.state.orientation))
             onActivated: controller.saveSettings({
                 display_orientation: values[currentIndex]

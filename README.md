@@ -24,6 +24,7 @@ A visual theme editor for **LCD AIO cooler displays**. Create custom monitoring 
 - **Expandable canvas**: Full-screen editing area with margins for precise image cropping
 - **Display orientation controls**: Flip/rotate output for any mounting position
 - **Real-time sensor data**: CPU/GPU temperature, utilization, clock speed, power
+- **Game FPS and frametime** via the bundled Intel PresentMon (Windows, administrator)
 - **Cooling and storage sensors**: pump/fan RPM, liquid temperature, disk
   temperature and used space on hardware supported by LibreHardwareMonitor
 - Runs as a standard user; some hardware sensors may require administrator access
@@ -226,6 +227,26 @@ If your display appears upside-down or rotated, adjust the orientation:
    - **Rotate 90° CCW** - Counter-clockwise rotation
 
 The setting is saved automatically and applied to all frames.
+
+**Portrait mounting:** on a wide panel (for example 1280 × 480), choosing a 90° rotation
+switches the canvas to portrait (480 × 1280); the finished frame is turned back to the
+panel's native shape. Elements keep their size and position, so rearrange them (or load
+a portrait theme) for the new canvas. Choosing a non-90° option returns the canvas to
+landscape, unchanged. The resolution dialog always shows the panel's native size.
+
+### Game FPS (PresentMon)
+
+Choose **Gaming → Game FPS** or **Game Frametime** as a data source, or use
+`{game_fps}` / `{game_frametime}` in a text element. Thermal Engine then starts the
+bundled [Intel PresentMon](https://github.com/GameTechDev/PresentMon) in the
+background and reports the application that presents the most frames (normally
+the game you are playing). PresentMon runs only while the current theme uses a
+game source.
+
+PresentMon reads Windows performance traces, which require **administrator rights**
+(or membership of the *Performance Log Users* group). The elevated startup task
+already provides this; otherwise use **Restart as Administrator** from Hardware
+setup. The status is listed under `gameFps` in Diagnostics.
 
 ### Auto Profiles
 

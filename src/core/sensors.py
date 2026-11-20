@@ -1,6 +1,7 @@
 """Background hardware sensor monitoring with an honest degraded state."""
 
 import logging
+import sys
 import threading
 import time
 
@@ -8,9 +9,11 @@ from src.core.libre_hw_monitor import (
     SafeHardwareMonitorReader,
 )
 from src.core.network_sensors import NetworkSensorManager
+from src.core import presentmon
 from src.core.constants import register_network_sources
 
 logger = logging.getLogger(__name__)
+_game_fps = None  # PresentMon monitor, running only while a theme shows game_* sources
 
 # Configuration
 _SENSOR_UPDATE_INTERVAL = 0.5
@@ -220,7 +223,31 @@ def get_cached_sensors():
     manager = _network_manager
     if manager:
         data.update(manager.snapshot())
+    game = _game_fps
+    if game:
+        data.update(game.snapshot())
     return data
+
+
+def set_game_fps_enabled(enabled):
+    """Start PresentMon when a theme first uses game_* sources; stop it when none does."""
+    global _game_fps
+    if enabled and _game_fps is None and sys.platform == "win32":
+        executable = presentmon.find_presentmon()
+        if executable:
+            _game_fps = presentmon.GameFpsMonitor(executable)
+            _game_fps.start()
+    elif not enabled and _game_fps:
+        monitor, _game_fps = _game_fps, None
+        monitor.stop()
+
+
+def get_game_fps_status():
+    if _game_fps:
+        return _game_fps.status
+    if sys.platform != "win32":
+        return "Game FPS needs Windows"
+    return "Not running (no theme uses game sources)" if presentmon.find_presentmon() else "PresentMon is not bundled in this build"
 
 
 def get_hardware_sensor_catalog():
@@ -289,6 +316,7 @@ def get_sensor_diagnostics():
     diagnostics["connected"] = HAS_LHM
     diagnostics["sensor_error"] = SENSOR_ERROR or diagnostics.get("sensor_error")
     diagnostics["network_sensors"] = get_network_sensor_statuses()
+    diagnostics["game_fps"] = get_game_fps_status()
     return diagnostics
 
 
@@ -303,6 +331,7 @@ def stop_sensors():
     global _hardware_catalog, _latest_sensor_data
 
     logger.info("Stopping sensor monitoring")
+    set_game_fps_enabled(False)
     if _network_manager:
         _network_manager.stop()
         _network_manager = None

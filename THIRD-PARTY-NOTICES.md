@@ -15,6 +15,10 @@
 - PawnIO 2.2.0 is downloaded unchanged from its
   [official release](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0)
   and installed only when the user selects the installer task.
+- Intel PresentMon 2.6.0 (console application) is bundled unchanged from its
+  [official release](https://github.com/GameTechDev/PresentMon/releases/tag/v2.6.0)
+  under the [MIT License](https://github.com/GameTechDev/PresentMon/blob/v2.6.0/LICENSE.txt)
+  (Copyright Intel Corporation); it powers the optional game FPS sensor.
 - Bundled preset backgrounds use credited NASA/ESA/CSA/STScI media under the
   applicable [NASA media usage guidelines](https://www.nasa.gov/nasa-brand-center/images-and-media/).
   Per-file sources and credits are listed in

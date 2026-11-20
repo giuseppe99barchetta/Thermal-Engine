@@ -60,6 +60,8 @@ DATA_SOURCES = [
     "liquid_temp",
     "disk_temp",
     "disk_percent",
+    "game_fps",
+    "game_frametime",
 ]
 
 # Categorized data sources for UI display
@@ -99,6 +101,10 @@ DATA_SOURCES_CATEGORIZED = {
     "Storage": [
         ("disk_temp", "Disk Temperature (highest)", "temp", "°C"),
         ("disk_percent", "Disk Space Used (highest)", "percent", "%"),
+    ],
+    "Gaming": [
+        ("game_fps", "Game FPS (PresentMon)", "fps", " FPS"),
+        ("game_frametime", "Game Frametime (PresentMon)", "frametime", " ms"),
     ],
 }
 
@@ -175,7 +181,7 @@ def get_value_with_unit(value, source, temp_hide_unit=False):
         return f"{value:.0f}{symbol}"
     elif unit_type == "size":
         return f"{value:.1f}{symbol}"
-    elif unit_type == "speed":
+    elif unit_type in ("speed", "frametime"):
         return f"{value:.1f}{symbol}"
     else:  # percent
         return f"{value:.0f}{symbol}"

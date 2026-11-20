@@ -38,7 +38,7 @@ Thermal Engine connects as a TCP client to your configured host/port. The sender
 
 ## UDP / telemetry senders
 
-Thermal Engine listens on the configured IPv4 bind address/port. Use `127.0.0.1` for a sender on the same PC, or `0.0.0.0` to accept LAN traffic. Send one UTF-8 number or JSON document per datagram. If your sender uses binary telemetry, convert it into this format first; protocol support alone does not decode a game's or SimHub's specific packet format.
+Thermal Engine listens on the configured bind address/port. Use `127.0.0.1` (or `::1` for IPv6) for a sender on the same PC, or `0.0.0.0` (or `::`) to accept LAN traffic. Send one UTF-8 number or JSON document per datagram. If your sender uses binary telemetry, convert it into this format first; protocol support alone does not decode a game's or SimHub's specific packet format.
 
 Multiple sensors with the same TCP endpoint or UDP bind address/port share a receiver. For example, configure `speed` with path `speed` and `rpm` with path `rpm` on UDP port 9000; send `{"speed":123.5,"rpm":4200}` and choose the two sources for different elements.
 
@@ -61,4 +61,4 @@ Existing plaintext sensor credentials are migrated on startup only after the OS 
 
 TCP/UDP have no authentication or encryption. UDP LAN binding accepts packets from any reachable sender; use trusted senders.
 
-This version supports up to 64 sensors. It does not decode binary telemetry or implement Home Assistant MQTT discovery. UDP uses IPv4; TCP can resolve IPv4 or IPv6 hosts.
+This version supports up to 64 sensors. It does not decode binary telemetry or implement Home Assistant MQTT discovery. UDP binds IPv4 or IPv6 (any address containing `:`); TCP can resolve IPv4 or IPv6 hosts.

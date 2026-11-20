@@ -251,6 +251,23 @@ def test_udp_shared_listener():
     assert all(not thread.is_alive() for thread in manager._threads)
 
 
+@pytest.mark.skipif(not socket.has_ipv6, reason="no IPv6 stack")
+def test_udp_listens_on_ipv6():
+    with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sock:
+        sock.bind(("::1", 0))
+        port = sock.getsockname()[1]
+    manager = NetworkSensorManager([{"id": "room", "protocol": "udp", "host": "::1", "port": port}])
+    try:
+        manager.start()
+        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sender:
+            def send_and_check():
+                sender.sendto(b"21.5", ("::1", port))
+                return manager.snapshot().get("network_room") == 21.5
+            wait_for(send_and_check)
+    finally:
+        manager.stop()
+
+
 def test_tcp_framing_and_reconnect():
     with socket.socket() as server:
         server.bind(("127.0.0.1", 0))

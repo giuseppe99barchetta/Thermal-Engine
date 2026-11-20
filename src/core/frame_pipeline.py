@@ -9,6 +9,12 @@ from src.core import constants
 from src.core.device_backends import DeviceIOError
 from src.ui.video_background import video_background
 logger = logging.getLogger(__name__)
+QUARTER_TURNS = ('rotate_90_cw', 'rotate_90_ccw')
+
+
+def canvas_size(width, height, orientation):
+    """Design canvas for a panel (and back): a quarter turn swaps width and height."""
+    return (height, width) if orientation in QUARTER_TURNS else (width, height)
 
 
 def simulate_snapshot(snapshot, fraction):
@@ -193,12 +199,13 @@ class FramePipeline:
             img = img.transpose(Image.FLIP_LEFT_RIGHT)
         elif self.display_orientation == 'rotate_180':
             img = img.transpose(Image.ROTATE_180)
-        elif img.width != img.height:
-            pass  # a 90° turn would not fit a non-square panel; send it unrotated
-        elif self.display_orientation == 'rotate_90_cw':
-            img = img.transpose(Image.ROTATE_270)
-        elif self.display_orientation == 'rotate_90_ccw':
-            img = img.transpose(Image.ROTATE_90)
+        elif self.display_orientation in QUARTER_TURNS:
+            # Portrait canvas → panel: turn only when the result has the panel's shape
+            # (e.g. undo restored a landscape canvas; sending it unrotated still fits)
+            device = self.selected_device_def
+            panel = (device.width, device.height) if device else (img.width, img.height)
+            if (img.height, img.width) == panel:
+                img = img.transpose(Image.ROTATE_270 if self.display_orientation == 'rotate_90_cw' else Image.ROTATE_90)
         buffer = io.BytesIO()
         img.save(buffer, format='JPEG', quality=quality, optimize=False, subsampling=2)
         return buffer.getvalue()
@@ -212,7 +219,8 @@ class FramePipeline:
             header = bytearray(512)
             header[0:4] = MAGIC
             header[4] = 2
-            header[8:12] = bytes([0, 5, 224, 1])
+            device = self.selected_device_def  # panel size, little-endian 16-bit (Trofeo: 00 05 E0 01)
+            header[8:12] = device.width.to_bytes(2, 'little') + device.height.to_bytes(2, 'little')
             header[12] = 2
             jpeg_len = len(jpeg_data)
             header[16] = jpeg_len & 255

@@ -114,6 +114,14 @@ jobs:
         Copy-Item "libusb\VS2019\MS64\dll\libusb-1.0.dll" -Destination "." -Force
         echo "libusb-1.0.dll downloaded and ready"
 
+    - name: Download PresentMon (game FPS sensor)
+      if: steps.version_bump.outputs.should_release == 'true'
+      run: |
+        New-Item -ItemType Directory -Path "build\deps" -Force | Out-Null
+        Invoke-WebRequest -Uri "https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe" -OutFile "build\deps\PresentMon.exe"
+        $hash = (Get-FileHash "build\deps\PresentMon.exe" -Algorithm SHA256).Hash
+        if ($hash -ne "B2A706BC6AD475749E3B7E3409263AA1E6906D45BDCF993F6DBC0F660188F1AF") { throw "PresentMon checksum mismatch: $hash" }
+
     - name: Verify Windows sensor dependencies
       if: steps.version_bump.outputs.should_release == 'true'
       shell: powershell

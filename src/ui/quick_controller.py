@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, Signal, Slot, QTimer, QUrl, Qt
@@ -17,7 +18,7 @@ from PySide6.QtGui import QImage
 from elements import get_custom_element_types, get_custom_element
 from src.core import constants, sensors
 from src.core.document import EditorDocument
-from src.core.frame_pipeline import FramePipeline
+from src.core.frame_pipeline import FramePipeline, canvas_size
 from src.core.element import ThemeElement
 from src.core.renderer import ThemeRenderer
 from src.core.preset_repository import PresetRepository, resolve_assets, preview_background
@@ -94,12 +95,14 @@ class EditorController(QObject, FramePipeline):
     videoResult = Signal(bool, str)
     videoRestored = Signal(int, str)
     frameDelivered = Signal()
+    previewReady = Signal(object, int)
 
     def __init__(self, start_services=True, parent=None):
         QObject.__init__(self, parent)
         self.document = EditorDocument()
-        self.document.width = settings.get_setting("last_display_width", 480)
-        self.document.height = settings.get_setting("last_display_height", 480)
+        # last_display_* is the panel's native size; a 90° orientation gives a portrait canvas
+        self.panel_size = (settings.get_setting("last_display_width", 480), settings.get_setting("last_display_height", 480))
+        self.document.width, self.document.height = canvas_size(*self.panel_size, settings.get_setting("display_orientation", "normal"))
         constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT = validate_display_size(self.document.width, self.document.height)
         self.layers_model, self.pages_model = RowsModel(self), RowsModel(self)
         self.presets_model, self.devices_model, self.sensors_model = RowsModel(self), RowsModel(self), RowsModel(self)
@@ -126,6 +129,9 @@ class EditorController(QObject, FramePipeline):
         self.renderer = ThemeRenderer()
         self.thumbnails = {}
         self._preview_frame = None
+        self._preview_generation = 0  # bumped by every synchronous render; older async frames are dropped
+        self._preview_busy = False
+        self._preview_worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="preview")
         self._last_device_frame = None  # Latest frame rendered by the device worker
         self.revision = 0
         self.target_fps = settings.get_setting("target_fps", 30)
@@ -177,6 +183,7 @@ class EditorController(QObject, FramePipeline):
         self.videoResult.connect(self._video_result)
         self.videoRestored.connect(self._video_restored, Qt.ConnectionType.QueuedConnection)
         self.frameDelivered.connect(self.record_frame_time, Qt.ConnectionType.QueuedConnection)
+        self.previewReady.connect(self._preview_ready, Qt.ConnectionType.QueuedConnection)
         self.reload_presets()
         self.refresh_sensors()
         default = settings.get_setting("default_preset") or settings.get_setting("last_preset") or self._starter_preset()
@@ -209,6 +216,7 @@ class EditorController(QObject, FramePipeline):
     def state(self):
         return {"name": self.document.theme_name, "background": self.background_color,
                 "width": self.document.width, "height": self.document.height, "page": self.current_page,
+                "panel": list(self.panel_size),
                 "pages": list(self.document.pages),
                 "connected": self.device is not None, "device": self.selected_device_def.name if self.selected_device_def else "Offline editor",
                 "fps": self.target_fps, "actualFps": round(len(self.frame_times) / sum(self.frame_times), 1) if self.frame_times and sum(self.frame_times) else 0,
@@ -426,6 +434,7 @@ class EditorController(QObject, FramePipeline):
 
     def refresh(self, mark_dirty=True):
         constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT = self.document.width, self.document.height
+        self._preview_generation += 1
         self._preview_frame = self.render_theme_image()
         # Only the edited page changes; other pages' thumbnails are rebuilt when missing
         self.update_thumbnails({self.current_page} | {p for p in self.document.pages if f"page/{p}" not in self.thumbnails})
@@ -561,6 +570,7 @@ class EditorController(QObject, FramePipeline):
                 changed = self.document.commit()
                 self.refresh(mark_dirty=changed)
             else:
+                self._preview_generation += 1
                 self._preview_frame = self.render_theme_image()
                 if self.canvas: self.canvas.update()
         except (ValueError, TypeError, OverflowError) as exc:
@@ -920,6 +930,7 @@ class EditorController(QObject, FramePipeline):
                 frame.thumbnail((240, 150))
                 self.thumbnails["preset/" + name] = pil_image(frame)
             except Exception: logger.warning("Could not render preset thumbnail %s", name)
+        self.renderer.forget("preset/")  # thumbnail overlays are full-size; don't keep them for the session
         self.presets_model.replace([{"id": name, "name": name, "builtin": info["builtin"],
                                     "width": info["data"].get("display_width", 1280), "height": info["data"].get("display_height", 480)}
                                    for name, info in sorted(self.repository.presets.items(), key=lambda p: (p[0] != "Default", p[0].lower()))])
@@ -1044,6 +1055,8 @@ class EditorController(QObject, FramePipeline):
     def get_sensor_data(self): return sensors.get_cached_sensors()
 
     def refresh_sensors(self):
+        if self._start_services:  # PresentMon runs (and costs ETW tracing) only while a theme shows game sources
+            sensors.set_game_fps_enabled(self._uses_game_sources())
         constants.register_hardware_sources(sensors.get_hardware_sensor_catalog())
         values = self.get_sensor_data()
         groups = {source[0]: category for category, sources in constants.DATA_SOURCES_CATEGORIZED.items() for source in sources}
@@ -1065,12 +1078,38 @@ class EditorController(QObject, FramePipeline):
         if self._hardware_check_ready:
             self.checkHardwareAccess()
 
+    def _uses_game_sources(self):
+        return any(e.source.startswith("game_") or ((e.condition or {}).get("source") or "").startswith("game_")
+                   or "{game_" in str(getattr(e, "text", "")) for e in self.elements)
+
     def _preview_tick(self):
-        if self.canvas and self.window and self.window.isVisible():
-            # While streaming, show the frame the device worker just rendered instead of rendering twice
-            device_frame = self._last_device_frame if self.live_preview_timer and self.preview_fraction is None else None
-            self._preview_frame = device_frame or self.render_theme_image()
+        if not (self.canvas and self.window and self.window.isVisible()): return
+        # While streaming, show the frame the device worker just rendered instead of rendering twice
+        device_frame = self._last_device_frame if self.live_preview_timer and self.preview_fraction is None else None
+        if device_frame:
+            self._preview_frame = device_frame
             self.canvas.update()
+        elif not self._preview_busy:  # one frame in flight at most; a slow theme skips ticks instead of queuing
+            self._preview_busy = True
+            snapshot, size = self._editor_snapshot(), (constants.DISPLAY_WIDTH, constants.DISPLAY_HEIGHT)
+            self._preview_worker.submit(self._render_preview, snapshot, size, self._preview_generation)
+
+    def _render_preview(self, snapshot, size, generation):
+        """Preview worker thread: the GUI thread only copies state, never renders on the timer."""
+        try:
+            background = video_background.get_frame_pil() if video_background.enabled else None
+            frame = self.renderer.render(snapshot, size, background)
+        except Exception:
+            logger.exception("Preview render failed")
+            frame = None
+        self.previewReady.emit(frame, generation)
+
+    @Slot(object, int)
+    def _preview_ready(self, frame, generation):
+        self._preview_busy = False
+        if self._closed or frame is None or generation != self._preview_generation: return
+        self._preview_frame = frame
+        if self.canvas: self.canvas.update()
 
     @Slot()
     def record_frame_time(self):
@@ -1113,7 +1152,8 @@ class EditorController(QObject, FramePipeline):
         try:
             if not backend or not backend.connect(): raise RuntimeError("Device unavailable or in use by another application")
             self.backend = self.device = backend
-            self.document.resize(device.width, device.height)
+            self.panel_size = (device.width, device.height)
+            self.document.resize(*canvas_size(*self.panel_size, self.display_orientation))
             self.refresh(mark_dirty=False)
             self.start_continuous_send()
             self._reconnect_timer.stop()
@@ -1216,7 +1256,8 @@ class EditorController(QObject, FramePipeline):
         return json.dumps({"version": get_version(), "sensors": sensors.get_sensor_status(),
                            "hardwareAccess": self.hardwareStatus,
                            "checks": self.healthChecks, "networkDetails": self.networkHealth,
-                           "network": sensors.get_network_sensor_statuses(), "display": self.state["device"],
+                           "network": sensors.get_network_sensor_statuses(), "gameFps": sensors.get_game_fps_status(),
+                           "display": self.state["device"],
                            "resolution": [self.document.width, self.document.height],
                            "fps": self.state["actualFps"]}, indent=2, default=str)
 
@@ -1237,8 +1278,6 @@ class EditorController(QObject, FramePipeline):
             if "target_fps" in data and int(data["target_fps"]) not in (10, 20, 30, 60): raise ValueError("Choose 10, 20, 30 or 60 FPS")
             if "display_brightness" in data and not 0 <= int(data["display_brightness"]) <= 100: raise ValueError("Brightness must be between 0 and 100")
             if "display_orientation" in data and data["display_orientation"] not in ("normal", "flip_v", "flip_h", "rotate_180", "rotate_90_cw", "rotate_90_ccw"): raise ValueError("Invalid orientation")
-            if data.get("display_orientation") in ("rotate_90_cw", "rotate_90_ccw") and self.document.width != self.document.height:
-                raise ValueError("90° rotation needs a square display")
             if "ui_theme" in data and data["ui_theme"] not in ("obsidian", "studio", "hud"): raise ValueError("Invalid interface theme")
             for key, lower, upper in (("layers_panel_width", 220, 440), ("inspector_panel_width", 280, 520)):
                 if key in data and (type(data[key]) not in (int, float) or not lower <= data[key] <= upper):
@@ -1268,6 +1307,10 @@ class EditorController(QObject, FramePipeline):
             self.target_fps = settings.get_setting("target_fps", 30)
             self.display_brightness = max(0, min(100, settings.get_setting("display_brightness", 100)))
             self.display_orientation = settings.get_setting("display_orientation", "normal")
+            canvas = canvas_size(*self.panel_size, self.display_orientation)
+            if canvas != (self.document.width, self.document.height):  # entering/leaving portrait: canvas only,
+                self.document.resize(*canvas)                            # elements keep their size (lossless)
+                self.refresh(mark_dirty=False)
             if self.live_preview_timer: self.live_preview_timer.setInterval(round(1000 / self.target_fps))
             self._start_profiles()
             self.changed.emit()
@@ -1277,8 +1320,10 @@ class EditorController(QObject, FramePipeline):
 
     @Slot(int, int, bool)
     def resizeDisplay(self, width, height, stretch):
+        """width/height are the panel's native size; the canvas is turned for portrait orientations."""
         try:
-            self.document.resize(width, height, stretch)
+            self.document.resize(*canvas_size(width, height, self.display_orientation), stretch)
+            self.panel_size = (width, height)
             settings.set_setting("last_display_width", width); settings.set_setting("last_display_height", height)
             if self.selected_device_def:
                 overrides = dict(settings.get_setting("display_size_overrides", {}))
@@ -1463,6 +1508,7 @@ class EditorController(QObject, FramePipeline):
         for timer in (self.preview_timer, self.sensors_timer, self.autosave, self.rotation, self._reconnect_timer): timer.stop()
         self.stopProbe()
         self.disconnect_display()
+        self._preview_worker.shutdown(wait=True)
         for monitor in (self._foreground_monitor, self._system_state_monitor):
             if monitor: monitor.stop()
         for worker in (getattr(self, "_update_checker", None), getattr(self, "_update_downloader", None)):

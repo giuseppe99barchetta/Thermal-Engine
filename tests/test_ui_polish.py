@@ -173,13 +173,80 @@ def test_picked_or_dropped_network_media_never_reaches_the_document(controller, 
     assert controller.document.export() == before
 
 
-def test_quarter_turns_only_on_square_displays(controller, monkeypatch, tmp_path):
+def test_quarter_turn_on_a_wide_panel_designs_in_portrait(controller, monkeypatch, tmp_path):
     from io import BytesIO
+    from src.core.device_backends import DeviceDefinition
     monkeypatch.setattr(settings, "SETTINGS_FILE", str(tmp_path / "settings.json"))
-    monkeypatch.setattr(controller, "error", lambda message: None)
-    controller.document.width, controller.document.height = 1280, 480
-    assert not controller.saveSettings({"display_orientation": "rotate_90_cw"})
-    controller.document.width = controller.document.height = 480
+    controller.resizeDisplay(1280, 480, False)
+    controller.document.elements = [ThemeElement("rectangle", x=10, y=20, width=1280, height=480)]
+    controller.selected_device_def = DeviceDefinition("Panel", 0x87AD, 0x70DB, "usb_bulk", width=1280, height=480)
     assert controller.saveSettings({"display_orientation": "rotate_90_cw"})
-    with Image.open(BytesIO(controller.image_to_jpeg(Image.new("RGB", (180, 160))))) as output:
-        assert output.size == (180, 160)  # a stale quarter turn never reshapes a wide frame
+    assert (controller.document.width, controller.document.height) == (480, 1280)
+    assert controller.state["panel"] == [1280, 480]
+    with Image.open(BytesIO(controller.image_to_jpeg(Image.new("RGB", (480, 1280))))) as output:
+        assert output.size == (1280, 480)  # portrait canvas turned back to the panel's shape
+    controller._command("undo", None)  # canvas back to landscape, orientation still portrait
+    assert (controller.document.width, controller.document.height) == (1280, 480)
+    assert controller.state["panel"] == [1280, 480]  # stored, not derived from the canvas
+    with Image.open(BytesIO(controller.image_to_jpeg(Image.new("RGB", (1280, 480))))) as output:
+        assert output.size == (1280, 480)  # sent unrotated, still fits
+    controller._command("redo", None)
+    assert controller.saveSettings({"display_orientation": "normal"})
+    assert (controller.document.width, controller.document.height) == (1280, 480)
+    rect = controller.document.elements[0]
+    assert (rect.x, rect.y, rect.width, rect.height) == (10, 20, 1280, 480)  # round trip is lossless
+    assert controller.saveSettings({"display_orientation": "rotate_90_ccw"})
+    controller.resizeDisplay(640, 480, False)  # the dialog speaks panel sizes
+    assert (controller.document.width, controller.document.height) == (480, 640)
+    assert settings.get_setting("last_display_width") == 640  # settings keep the panel size
+
+
+def test_old_settings_with_quarter_turn_open_in_portrait(monkeypatch):
+    stored = copy.deepcopy(settings.DEFAULT_SETTINGS)
+    stored.update(last_display_width=1280, last_display_height=480, display_orientation="rotate_90_cw")
+    monkeypatch.setattr(settings, "_settings", stored)
+    monkeypatch.setattr(settings, "save_settings", lambda: None)
+    controller = EditorController(start_services=False)
+    try:
+        assert (controller.document.width, controller.document.height) == (480, 1280)
+        assert controller.state["panel"] == [1280, 480]
+    finally:
+        controller.cleanup()
+
+
+def test_preview_timer_renders_off_the_gui_thread(controller, monkeypatch):
+    import threading
+    threads = []
+    real_render = controller.renderer.render
+    monkeypatch.setattr(controller.renderer, "render", lambda *a: threads.append(threading.current_thread()) or real_render(*a))
+    controller.canvas = SimpleCanvas()
+    controller.window = SimpleCanvas()
+    controller._preview_tick()
+    controller._preview_tick()  # still in flight: skipped, not queued
+    controller._preview_worker.submit(lambda: None).result(timeout=5)
+    APP.processEvents()
+    assert threads == [threads[0]] and threads[0] is not threading.main_thread()
+    assert controller._preview_frame is not None and not controller._preview_busy
+    generation = controller._preview_generation
+    controller._preview_ready(None, generation)
+    controller._preview_ready(Image.new("RGB", (8, 8)), generation - 1)  # older than a synchronous render
+    assert controller._preview_frame.size != (8, 8)
+
+
+class SimpleCanvas:
+    def isVisible(self): return True
+    def update(self): pass
+
+
+def test_presentmon_follows_the_theme(controller, monkeypatch):
+    calls = []
+    monkeypatch.setattr(sensors, "set_game_fps_enabled", calls.append)
+    controller._start_services = True
+    controller.document.elements = [ThemeElement("text", text="CPU {cpu_temp}")]
+    controller.refresh_sensors()
+    controller.document.elements = [ThemeElement("text", text="FPS {game_fps}")]
+    controller.refresh_sensors()
+    controller.document.elements = [ThemeElement("circle_gauge", source="game_frametime")]
+    controller.refresh_sensors()
+    controller._start_services = False
+    assert calls == [False, True, True]

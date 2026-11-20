@@ -16,8 +16,8 @@ UI.TDialog {
         step = 0;
         deviceIndex = -1;
         presetName = "";
-        nativeWidth.text = controller.state.width;
-        nativeHeight.text = controller.state.height;
+        nativeWidth.text = controller.state.panel[0];
+        nativeHeight.text = controller.state.panel[1];
         profileCombo.currentIndex = -1;
     }
     component Body: Label {
@@ -298,12 +298,16 @@ UI.TDialog {
                     delegate: Button {
                         id: card
                         required property var row
+                        // Made for the canvas this panel gets (portrait orientations swap it)
+                        readonly property bool quarter: ["rotate_90_cw", "rotate_90_ccw"].indexOf(controller.state.orientation) >= 0
+                        readonly property bool fits: row.width === Number(quarter ? nativeHeight.text : nativeWidth.text) && row.height === Number(quarter ? nativeWidth.text : nativeHeight.text)
+                        opacity: fits || dialog.presetName === row.name ? 1 : 0.55
                         width: themes.cellWidth - 12
                         height: 164
                         padding: 0
                         hoverEnabled: true
                         text: row.name
-                        Accessible.name: row.name
+                        Accessible.name: row.name + (fits ? ", fits your display" : "")
                         Accessible.checked: dialog.presetName === row.name
                         onClicked: dialog.presetName = row.name
                         background: Rectangle {
@@ -343,9 +347,9 @@ UI.TDialog {
                                 x: 10
                                 y: 138
                                 width: parent.width - 20
-                                text: card.row.width + " × " + card.row.height + " · " + (card.row.builtin ? "Built-in" : "Personal")
+                                text: card.row.width + " × " + card.row.height + " · " + (card.fits ? "Fits your display" : card.row.builtin ? "Built-in" : "Personal")
                                 elide: Text.ElideRight
-                                color: UI.Theme.muted
+                                color: card.fits ? UI.Theme.accent : UI.Theme.muted
                                 font.family: UI.Theme.monoFont
                                 font.pixelSize: 11
                                 font.hintingPreference: Font.PreferNoHinting
