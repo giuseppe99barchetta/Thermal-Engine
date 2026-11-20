@@ -20,8 +20,9 @@ def is_safe_path(file_path):
     if not file_path:
         return False, None, "Empty path"
 
-    # Checked on the raw string, before anything can touch the filesystem
-    if file_path.replace('\\', '/').startswith('//'):
+    # Checked on the raw string, before anything can touch the filesystem.
+    # "//" covers \\host, \\?\UNC and \\.\ ; "/??/" is the NT prefix Win32 passes through (\??\UNC\host)
+    if file_path.replace('\\', '/').startswith(('//', '/??/')):
         return False, None, "Network paths are not allowed"
 
     # Normalize the path

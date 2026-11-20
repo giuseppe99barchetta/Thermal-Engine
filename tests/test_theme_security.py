@@ -103,7 +103,8 @@ def test_import_drops_external_paths_and_unsupported_assets(tmp_path, monkeypatc
     assert not list(tmp_path.rglob("evil.exe"))
 
 
-@pytest.mark.parametrize("path", ["\\\\evil\\share\\x.png", "//evil/share/x.png", r"\/evil/share/x.png", r"/\evil\share\x.png"])
+@pytest.mark.parametrize("path", ["\\\\evil\\share\\x.png", "//evil/share/x.png", r"\/evil/share/x.png", r"/\evil\share\x.png",
+                                  r"\??\UNC\evil\share\x.png", "\\\\?\\UNC\\evil\\share\\x.png", "\\\\.\\UNC\\evil\\share\\x.png"])
 def test_network_paths_are_rejected_before_any_file_access(path):
     from src.core.document import EditorDocument
     from src.core.security import is_safe_path
